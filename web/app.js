@@ -860,12 +860,12 @@ function githubPage(){
   if(!githubHelperEnabled())return `<div class="page-wrap github-page">${pageHeader('GitHub 助手','可选功能，不使用时不会发起任何 GitHub 请求')}<section class="surface optional-feature-empty"><div class="feature-illustration">${icon('github',34)}</div><h2>GitHub 助手尚未启用</h2><p>启用后可以网页登录、上传更新 ZIP、预览差异、Commit、Push、创建分支和 Pull Request。</p><button id="github-helper-install" class="primary-button">启用 GitHub 助手</button><a data-nav href="/tools" class="secondary-button">返回常用工具</a></section></div>`
   const defaults=githubDefaults(),data=state.github
   if(!state.githubAuth&&!state.loading.githubAuth){state.loading.githubAuth=true;queueMicrotask(async()=>{await loadGitHubAuth(true);state.loading.githubAuth=false;render()})}
-  const latest=data?.latest_release,tagSuggestion=latest?.tag_name?nextVersionSuggestion(latest.tag_name):'v0.9.7-beta'
+  const latest=data?.latest_release,tagSuggestion=latest?.tag_name?nextVersionSuggestion(latest.tag_name):'v0.9.8-beta'
   const actions=`<button id="github-helper-remove" class="secondary-button compact">停用助手</button>${data?`<a class="secondary-button compact" href="https://github.com/${escapeHTML(data.full_name)}/actions" target="_blank" rel="noopener">${icon('external',16)}<span>打开 Actions</span></a>`:''}`
   const repoEmpty=!data&&!state.loading.github&&!state.errors.github
   return `<div class="page-wrap github-page">${pageHeader('GitHub 助手','可选启用；仓库信息由你填写，不预设任何个人仓库',actions)}${githubAuthCard()}<form id="github-repo-form" class="surface github-repo-form"><div class="form-intro"><strong>选择要管理的仓库</strong><span>只会操作你明确填写并授权的仓库</span></div><label>所有者<input name="owner" value="${escapeHTML(data?.owner||defaults.owner)}" placeholder="例如 Luke-Lab666" autocomplete="off" required></label><label>仓库<input name="repo" value="${escapeHTML(data?.name||defaults.repo)}" placeholder="例如 LukePanel" autocomplete="off" required></label><button class="primary-button" type="submit">读取仓库</button></form>${errorBox(state.errors.github)}${state.loading.github?surfaceLoading('读取 GitHub 仓库'):repoEmpty?`<section class="surface github-repo-empty"><div>${icon('github',28)}</div><h2>还没有选择仓库</h2><p>填写所有者和仓库名后再读取。LukePanel 不会默认绑定开发者或你的任何仓库。</p></section>`:data?`<section class="github-summary-grid"><article class="surface status-card"><div class="card-heading">${icon('github',20)}<strong>${escapeHTML(data.full_name)}</strong></div><dl class="info-list"><div><dt>默认分支</dt><dd>${escapeHTML(data.default_branch)}</dd></div><div><dt>最新提交</dt><dd><code>${escapeHTML((data.main_sha||'').slice(0,12)||'-')}</code></dd></div><div><dt>分支</dt><dd>${data.branches?.length||0}</dd></div><div><dt>最新标签</dt><dd>${escapeHTML(data.tags?.[0]?.name||'暂无')}</dd></div><div><dt>最新 Release</dt><dd>${escapeHTML(latest?.tag_name||'暂无')}</dd></div></dl><div class="quick-copy-grid"><button class="secondary-button compact" data-copy-text="curl -fsSL https://raw.githubusercontent.com/${escapeHTML(data.full_name)}/main/install.sh | bash">复制安装命令</button><button class="secondary-button compact" data-copy-text="https://github.com/${escapeHTML(data.full_name)}">复制仓库地址</button></div></article><article class="surface status-card"><div class="card-heading">${icon('activity',20)}<strong>最近 Actions</strong></div><div class="workflow-list">${(data.workflow_runs||[]).slice(0,8).map(run=>`<div><span class="workflow-dot ${run.conclusion==='success'?'ok':run.status!=='completed'?'running':'bad'}"></span><div><strong>${escapeHTML(run.name)}</strong><small>${escapeHTML(run.head_branch||run.event)} · ${formatDate(run.created_at)}</small></div><div class="workflow-actions"><b>${workflowStatus(run)}</b><a href="${escapeHTML(run.html_url)}" target="_blank" rel="noopener">${icon('external',14)}</a>${['failure','cancelled','timed_out'].includes(run.conclusion)&&state.githubAuth?.connected?`<button data-github-rerun="${run.id}">重试</button>`:''}</div></div>`).join('')||'<div class="empty-list">暂无 Actions 记录</div>'}</div></article></section>${githubBranchHTML(data)}${githubImportHTML(data)}<section class="surface github-release-create"><div><h2>创建 GitHub Release</h2><p>适合已有 Tag 的版本，可生成发布说明；二进制附件仍建议由 Actions 自动上传。</p></div><form id="github-release-form" class="dialog-form"><label>Tag<input name="tag" value="${escapeHTML(data.tags?.[0]?.name||tagSuggestion)}" required></label><label>标题<input name="name" placeholder="留空则使用 Tag"></label><label>发布说明<textarea name="body" rows="5" placeholder="留空会让 GitHub 自动生成 Release Notes"></textarea></label><div class="option-row"><label class="checkbox-row"><input name="prerelease" type="checkbox" checked><span>预发布版本</span></label><label class="checkbox-row"><input name="draft" type="checkbox"><span>先保存为草稿</span></label></div><button class="primary-button" type="submit" ${state.githubAuth?.connected?'':'disabled'}>创建 Release</button></form></section><section class="surface release-helper"><div><h2>创建版本标签并触发 Release</h2><p>确认默认分支已经是要发布的版本后再创建 Tag。</p></div><form id="github-tag-form"><label>版本号<input name="tag" value="${escapeHTML(tagSuggestion)}" pattern="v[0-9][A-Za-z0-9._-]*" required></label><label>目标提交<input name="sha" value="${escapeHTML(data.main_sha||'')}" readonly></label><div class="release-warning">${icon('shield',17)}不会 Force Push，创建标签前需要二次验证。</div><button class="primary-button" type="submit" ${state.githubAuth?.connected?'':'disabled'}>${state.githubAuth?.connected?'创建 Tag 并触发发布':'请先连接 GitHub'}</button></form></section>`:''}</div>`
 }
-function nextVersionSuggestion(current){const match=String(current).match(/^v(\d+)\.(\d+)\.(\d+)(.*)$/);if(!match)return 'v0.9.7-beta';const major=Number(match[1]),minor=Number(match[2]),patch=Number(match[3]),suffix=match[4]||'';if(major===0&&minor<9)return 'v0.9.7-beta';if(major===0&&minor===9)return `v0.9.${patch+1}${suffix||'-beta'}`;return `v${major}.${minor+1}.0`}
+function nextVersionSuggestion(current){const match=String(current).match(/^v(\d+)\.(\d+)\.(\d+)(.*)$/);if(!match)return 'v0.9.8-beta';const major=Number(match[1]),minor=Number(match[2]),patch=Number(match[3]),suffix=match[4]||'';if(major===0&&minor<9)return 'v0.9.8-beta';if(major===0&&minor===9)return `v0.9.${patch+1}${suffix||'-beta'}`;return `v${major}.${minor+1}.0`}
 
 async function startGitHubDeviceFlow(form){
   const button=form.querySelector('button[type=submit]'),popup=window.open('about:blank','_blank')
@@ -1242,8 +1242,28 @@ filesPage=function(){let html=v09FilesPage();if(state.fileView!=='files')return 
 
 const v09LoadUpdates=loadUpdates
 loadUpdates=async function(){await v09LoadUpdates();try{state.aptSources=await api('/api/v1/system/apt/sources')}catch{}if(location.pathname==='/updates')render()}
+function aptSourceView(source){
+  const content=String(source?.content||'').trim()
+  const firstLine=content.split('\n').map(line=>line.trim()).find(line=>line&&!line.startsWith('#'))||'空配置'
+  const url=(firstLine.match(/https?:\/\/[^\s\]]+/i)||[])[0]||''
+  let host='未识别地址'
+  try{if(url)host=new URL(url).hostname}catch{}
+  const lower=host.toLowerCase()
+  let provider='第三方软件源',kind='generic'
+  if(lower==='deb.debian.org'||lower.endsWith('.debian.org')){provider='Debian 官方源';kind='debian'}
+  else if(lower.endsWith('.ubuntu.com')){provider='Ubuntu 官方源';kind='ubuntu'}
+  else if(lower.includes('docker.com')){provider='Docker 官方源';kind='docker'}
+  else if(lower.includes('microsoft.com')){provider='Microsoft 软件源';kind='microsoft'}
+  else if(lower.includes('nodesource.com')){provider='NodeSource 软件源';kind='node'}
+  else if(source?.name==='sources.list'){provider='系统主软件源';kind='system'}
+  return {content:firstLine,host,provider,kind}
+}
+function aptSourceCard(source){
+  const view=aptSourceView(source),deletable=source.path!='/etc/apt/sources.list'
+  return `<article class="apt-source-card"><div class="apt-source-card__head"><div class="apt-source-card__identity"><span class="apt-source-icon ${escapeHTML(view.kind)}">${icon(view.kind==='docker'?'container':'package',18)}</span><div><strong>${escapeHTML(view.provider)}</strong><small>${escapeHTML(source.name||'未命名软件源')}</small></div></div><span class="apt-source-state ${source.enabled?'enabled':'disabled'}"><i></i>${source.enabled?'已启用':'已停用'}</span></div><div class="apt-source-card__meta"><code>${escapeHTML(view.host)}</code><span>${escapeHTML(source.path)}</span></div><details class="apt-source-details"><summary>查看完整配置</summary><pre>${escapeHTML(view.content)}</pre></details><div class="apt-source-actions"><button class="secondary-button compact" data-source-toggle="${escapeHTML(source.path)}" data-enabled="${source.enabled}">${source.enabled?'停用':'启用'}</button>${deletable?`<button class="danger-button compact" data-source-delete="${escapeHTML(source.path)}">删除</button>`:''}</div></article>`
+}
 const v09UpdatesPage=updatesPage
-updatesPage=function(){let html=v09UpdatesPage();const section=`<section class="surface feature-panel"><div class="section-heading"><div><h2>软件源管理</h2><p>修改前自动快照；不熟悉源格式时不要随意添加</p></div><button id="add-apt-source" class="primary-button compact">添加软件源</button></div><div class="source-list">${(state.aptSources?.sources||[]).map(source=>`<article><div><strong>${escapeHTML(source.name)}</strong><p>${escapeHTML(source.path)} · ${escapeHTML(source.format)}</p><small>${escapeHTML(String(source.content||'').split('\n').find(line=>line.trim()&&!line.trim().startsWith('#'))||'空配置')}</small></div><div class="resource-actions"><button class="secondary-button compact" data-source-toggle="${escapeHTML(source.path)}" data-enabled="${source.enabled}">${source.enabled?'停用':'启用'}</button>${source.path!='/etc/apt/sources.list'?`<button class="danger-button compact" data-source-delete="${escapeHTML(source.path)}">删除</button>`:''}</div></article>`).join('')||'<div class="empty-list">没有读取到软件源</div>'}</div></section>`;return v09InsertBeforePageEnd(html,section)}
+updatesPage=function(){let html=v09UpdatesPage();const section=`<section class="surface feature-panel apt-sources-panel"><div class="section-heading"><div><h2>软件源管理</h2><p>修改前自动创建快照；系统主软件源不能删除</p></div><button id="add-apt-source" class="primary-button compact">添加软件源</button></div><div class="apt-source-list">${(state.aptSources?.sources||[]).map(aptSourceCard).join('')||'<div class="empty-list">没有读取到软件源</div>'}</div></section>`;return v09InsertBeforePageEnd(html,section)}
 
 const v09LoadHost=loadHostSettings
 loadHostSettings=async function(){await v09LoadHost();try{state.ntp=await api('/api/v1/system/host/ntp')}catch{}if(location.pathname==='/host')render()}
@@ -1256,7 +1276,7 @@ auditPage=function(){if(!state.audit&&!state.errors.audit){queueMicrotask(loadAu
 const v09LoadGitHub=loadGitHub
 loadGitHub=async function(owner,repo){await v09LoadGitHub(owner,repo);state.githubJobs=null;state.githubAssets=null}
 const v09GithubPage=githubPage
-githubPage=function(){let html=v09GithubPage();if(!githubHelperEnabled()||!state.githubAuth?.connected||!state.github)return html;const data=state.github;const section=`<section class="surface feature-panel"><div class="section-heading"><div><h2>Actions 运行详情</h2><p>点击一次运行查看 Job，再读取失败日志</p></div></div><div class="compact-list">${(data.workflow_runs||[]).slice(0,8).map(run=>`<button class="github-run-row" data-github-run="${run.id}"><span><strong>${escapeHTML(run.name)}</strong><small>${escapeHTML(run.head_branch||'')} · ${formatDate(run.created_at)}</small></span>${statusBadge(run.conclusion||run.status)}</button>`).join('')||'<div class="empty-list">暂无 Actions 运行</div>'}</div>${state.githubJobs?`<div class="github-jobs"><h3>Jobs</h3>${(state.githubJobs.jobs||[]).map(job=>`<article><div><strong>${escapeHTML(job.name)}</strong>${statusBadge(job.conclusion||job.status)}</div><button class="secondary-button compact" data-github-job="${job.id}">查看日志</button></article>`).join('')}</div>`:''}</section><section class="surface feature-panel"><div class="section-heading"><div><h2>Release 附件</h2><p>选择标签后查看或上传二进制、ZIP 和校验文件</p></div></div><form id="github-assets-form" class="inline-form"><input name="tag" placeholder="例如 v0.9.7-beta" required><button class="secondary-button" type="submit">查看附件</button><input name="file" type="file"><button class="primary-button" type="button" id="github-asset-upload">上传附件</button></form>${state.githubAssets?`<div class="compact-list">${(state.githubAssets.assets||[]).map(asset=>`<a href="${escapeHTML(asset.browser_download_url)}" target="_blank" rel="noopener"><strong>${escapeHTML(asset.name)}</strong><span>${formatBytes(asset.size)} · 下载 ${asset.download_count||0}</span></a>`).join('')||'<div class="empty-list">这个 Release 暂无附件</div>'}</div>`:''}</section>`;return v09InsertBeforePageEnd(html,section)}
+githubPage=function(){let html=v09GithubPage();if(!githubHelperEnabled()||!state.githubAuth?.connected||!state.github)return html;const data=state.github;const section=`<section class="surface feature-panel"><div class="section-heading"><div><h2>Actions 运行详情</h2><p>点击一次运行查看 Job，再读取失败日志</p></div></div><div class="compact-list">${(data.workflow_runs||[]).slice(0,8).map(run=>`<button class="github-run-row" data-github-run="${run.id}"><span><strong>${escapeHTML(run.name)}</strong><small>${escapeHTML(run.head_branch||'')} · ${formatDate(run.created_at)}</small></span>${statusBadge(run.conclusion||run.status)}</button>`).join('')||'<div class="empty-list">暂无 Actions 运行</div>'}</div>${state.githubJobs?`<div class="github-jobs"><h3>Jobs</h3>${(state.githubJobs.jobs||[]).map(job=>`<article><div><strong>${escapeHTML(job.name)}</strong>${statusBadge(job.conclusion||job.status)}</div><button class="secondary-button compact" data-github-job="${job.id}">查看日志</button></article>`).join('')}</div>`:''}</section><section class="surface feature-panel"><div class="section-heading"><div><h2>Release 附件</h2><p>选择标签后查看或上传二进制、ZIP 和校验文件</p></div></div><form id="github-assets-form" class="inline-form"><input name="tag" placeholder="例如 v0.9.8-beta" required><button class="secondary-button" type="submit">查看附件</button><input name="file" type="file"><button class="primary-button" type="button" id="github-asset-upload">上传附件</button></form>${state.githubAssets?`<div class="compact-list">${(state.githubAssets.assets||[]).map(asset=>`<a href="${escapeHTML(asset.browser_download_url)}" target="_blank" rel="noopener"><strong>${escapeHTML(asset.name)}</strong><span>${formatBytes(asset.size)} · 下载 ${asset.download_count||0}</span></a>`).join('')||'<div class="empty-list">这个 Release 暂无附件</div>'}</div>`:''}</section>`;return v09InsertBeforePageEnd(html,section)}
 
 loadSecurity=async function(){if(state.loading.security)return;state.loading.security=true;state.errors.security='';try{const [settings,sessions,totp,report,passkeys,devices,allowlist,notifications,firewall,fail2ban]=await Promise.all([api('/api/v1/settings'),api('/api/v1/auth/sessions'),api('/api/v1/auth/totp/status'),api('/api/v1/security/status'),api('/api/v1/auth/passkeys'),api('/api/v1/auth/trusted-devices'),api('/api/v1/security/ip-allowlist'),api('/api/v1/security/login-notifications'),api('/api/v1/security/firewall'),api('/api/v1/security/fail2ban')]);Object.assign(state,{settings,sessions,totpStatus:totp,securityReport:report,passkeys,trustedDevices:devices,ipAllowlist:allowlist,loginNotifications:notifications,firewall,fail2ban});state.username=settings.admin_user||state.username}catch(e){state.errors.security=e.message}finally{state.loading.security=false;render()}}
 const v09SecurityPage=securityPage
@@ -1495,17 +1515,15 @@ requestElevation=function(){
   return new Promise((resolve,reject)=>{
     const root=document.createElement('div')
     root.className='elevation-dialog-backdrop';root.dataset.elevationDialog='true'
-    root.innerHTML=`<section class="elevation-dialog-card" role="dialog" aria-modal="true" aria-labelledby="elevation-title"><form id="elevation-direct-form"><header><div class="elevation-icon">${icon('shield',24)}</div><div><strong id="elevation-title">二次验证</strong></div></header><label>当前密码<input id="elevation-direct-password" name="password" type="password" autocomplete="current-password" inputmode="text" enterkeyhint="done" autocapitalize="none" autocorrect="off" spellcheck="false" required></label><div class="form-error" hidden></div><footer><button type="button" class="secondary-button" data-elevation-cancel>取消</button><button type="submit" class="primary-button">验证</button></footer></form></section>`
-    const finish=(ok,value)=>{if(root.isConnected)root.remove();document.body.classList.remove('elevation-open');pendingElevation=null;ok?resolve(value):reject(value instanceof Error?value:new Error('操作已取消'))}
+    root.innerHTML=`<section class="elevation-dialog-card" role="dialog" aria-modal="true" aria-labelledby="elevation-title"><form id="elevation-direct-form"><header><div class="elevation-icon">${icon('shield',24)}</div><div><strong id="elevation-title">二次验证</strong><small>请输入当前登录密码</small></div></header><label><span>当前密码</span><input id="elevation-direct-password" name="password" type="password" autocomplete="current-password" inputmode="text" enterkeyhint="done" autocapitalize="none" autocorrect="off" spellcheck="false" required></label><div class="form-error" hidden></div><footer><button type="button" class="secondary-button" data-elevation-cancel>取消</button><button type="submit" class="primary-button">验证</button></footer></form></section>`
+    const finish=(ok,value)=>{if(root.isConnected)root.remove();document.body.classList.remove('elevation-open');syncOverlayState();pendingElevation=null;ok?resolve(value):reject(value instanceof Error?value:new Error('操作已取消'))}
     pendingElevation={resolve:value=>finish(true,value),reject:error=>finish(false,error)}
     const form=root.querySelector('form'),input=root.querySelector('input'),error=root.querySelector('.form-error'),submit=form.querySelector('button[type=submit]')
-    const focusInput=()=>{try{input.focus({preventScroll:true});input.setSelectionRange(input.value.length,input.value.length)}catch{input.focus()}}
+    const focusInput=()=>{try{input.focus({preventScroll:true})}catch{input.focus()}}
     root.querySelector('[data-elevation-cancel]').onclick=()=>finish(false,new Error('操作已取消'))
     root.onclick=event=>{if(event.target===root)finish(false,new Error('操作已取消'))}
-    input.addEventListener('pointerdown',()=>setTimeout(focusInput,0),{passive:true})
-    input.addEventListener('click',focusInput)
     form.onsubmit=async event=>{event.preventDefault();const password=input.value;if(!password){focusInput();return}submit.disabled=true;submit.textContent='正在验证…';error.hidden=true;try{await api('/api/v1/auth/elevate',{method:'POST',body:jsonBody({password})});finish(true,true)}catch(err){error.textContent=err.message;error.hidden=false;submit.disabled=false;submit.textContent='验证';focusInput()}}
-    document.body.appendChild(root);document.body.classList.add('elevation-open');requestAnimationFrame(()=>{root.classList.add('show');focusInput()})
+    document.body.appendChild(root);document.body.classList.add('elevation-open');syncOverlayState();syncVisualViewport();requestAnimationFrame(()=>{root.classList.add('show');focusInput()})
   })
 }
 
@@ -1554,23 +1572,41 @@ updatePasswordStrength=function(){
 
 function syncVisualViewport(){
   const viewport=window.visualViewport
-  const height=viewport?.height||window.innerHeight
-  const offsetTop=viewport?.offsetTop||0
+  const height=Math.max(320,viewport?.height||window.innerHeight)
+  const offsetTop=Math.max(0,viewport?.offsetTop||0)
   const layoutHeight=Math.max(window.innerHeight,document.documentElement.clientHeight||0)
-  const offsetBottom=Math.max(0,layoutHeight-height-offsetTop)
+  const focused=document.activeElement
+  const editable=focused&&['INPUT','TEXTAREA','SELECT'].includes(focused.tagName)&&focused.type!=='checkbox'&&focused.type!=='radio'
+  const keyboardGap=Math.max(0,layoutHeight-height-offsetTop)
+  const keyboardOpen=Boolean(viewport&&editable&&keyboardGap>100)
   document.documentElement.style.setProperty('--visual-viewport-height',`${Math.round(height)}px`)
   document.documentElement.style.setProperty('--visual-viewport-top',`${Math.round(offsetTop)}px`)
-  document.documentElement.style.setProperty('--visual-viewport-bottom',`${Math.round(offsetBottom)}px`)
-  document.body?.classList.toggle('keyboard-open',Boolean(viewport&&height<layoutHeight*0.78))
+  document.documentElement.style.setProperty('--keyboard-height',`${Math.round(keyboardOpen?keyboardGap:0)}px`)
+  document.body?.classList.toggle('keyboard-open',keyboardOpen)
 }
+let overlayScrollY=0
 function syncOverlayState(){
+  const body=document.body
+  if(!body)return
   const open=Boolean(document.querySelector('.modal-backdrop,.app-dialog-backdrop,.elevation-dialog-backdrop'))
-  document.body?.classList.toggle('overlay-open',open)
+  const locked=body.classList.contains('overlay-locked')
+  body.classList.toggle('overlay-open',open)
+  if(open&&!locked){
+    overlayScrollY=window.scrollY||document.documentElement.scrollTop||0
+    body.style.top=`-${overlayScrollY}px`
+    body.classList.add('overlay-locked')
+  }else if(!open&&locked){
+    body.classList.remove('overlay-locked','keyboard-open')
+    body.style.top=''
+    window.scrollTo(0,overlayScrollY)
+  }
 }
 syncVisualViewport()
 window.visualViewport?.addEventListener('resize',syncVisualViewport,{passive:true})
 window.visualViewport?.addEventListener('scroll',syncVisualViewport,{passive:true})
 window.addEventListener('resize',syncVisualViewport,{passive:true})
+document.addEventListener('focusin',syncVisualViewport,{passive:true})
+document.addEventListener('focusout',()=>setTimeout(syncVisualViewport,80),{passive:true})
 new MutationObserver(()=>{syncOverlayState();syncVisualViewport()}).observe(document.body,{childList:true,subtree:true})
 
 restore()
