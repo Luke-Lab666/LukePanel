@@ -3,14 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-  <meta name="theme-color" content="#f6f7f9">
+  <meta name="theme-color" content="#f5f7fb">
   <meta name="color-scheme" content="light dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="LukePanel">
+  <meta name="application-name" content="LukePanel">
   <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="/assets/favicon-64.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
   <link rel="stylesheet" href="/styles.css">
   <title>LukePanel</title>
 </head>
 <body>
-  <div id="app"><div class="boot-screen"><div class="login-logo">L</div><span>LukePanel 正在启动</span></div></div>
+  <div id="app">
+    <main class="boot-screen" aria-live="polite">
+      <img class="boot-logo" src="/assets/lukepanel-icon-192.png" alt="LukePanel">
+      <div><strong>LukePanel</strong><span>正在启动管理面板</span></div>
+    </main>
+  </div>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

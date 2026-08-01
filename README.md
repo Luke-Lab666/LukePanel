@@ -1,247 +1,266 @@
-# LukePanel
+<p align="center">
+  <img src="web/assets/lukepanel-icon-192.png" width="112" height="112" alt="LukePanel 图标">
+</p>
 
-面向 Debian 12/13 的轻量系统管理面板。移动端优先、桌面端增强；核心由 Go 单二进制构成，不依赖 Node.js 运行时、Redis、外部数据库、Prometheus 或 Grafana。
+<h1 align="center">LukePanel</h1>
 
-> 当前版本：`v0.9.8-beta`。核心单机管理功能已经进入功能冻结阶段；Beta 期间重点处理真实环境兼容性、安全审计和交互细节。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
+<p align="center">
+  轻量、移动端优先的单服务器 Linux 管理面板
+</p>
 
-## 设计目标
+<p align="center">
+  当前版本：<code>v0.9.9-beta</code>
+</p>
 
-- **低占用**：Web 和 root Agent 按需工作，概览离开前台后停止实时采集。
-- **手机好用**：底部导航、卡片式操作、触控尺寸、完整安全区留白。
-- **不藏风险**：停止服务、删除文件、修改 SSH、公有仓库写入等操作需要再次验证。
-- **不做 WebShell**：Agent 只开放固定动作，不接受浏览器传入的通用 `sh -c`。
+LukePanel 面向需要维护单台 Debian 或 Ubuntu 服务器的个人用户和小型团队。它提供系统、Docker、文件、SSH、安全与审计管理，同时避免把浏览器变成任意 root WebShell。
 
-## 已实现
+Web 服务以普通系统用户运行；需要 root 权限的操作由独立 Agent 通过本地 Unix Socket 执行。Agent 只接受经过校验的固定动作，不接收浏览器传入的任意 Shell 命令。
 
-### 实时系统概览
+## 主要特点
 
-- CPU、内存、Swap、系统盘、负载和运行时间
-- 实时上传/下载速率与累计流量
-- Server-Sent Events 每 2 秒推送，不刷新整个页面
-- 页面不可见或离开概览后立即断开实时流
-- SSE 不可用时自动切回低频兼容刷新
+- 适配手机、平板和桌面浏览器
+- 实时 CPU、内存、Swap、磁盘和网络概览
+- systemd 服务、进程、网络、存储和计划任务管理
+- 带预检、快照和后台任务的 APT 软件管理
+- Docker 容器、镜像、网络、存储卷和 Compose 管理
+- 从 `/` 开始的文件管理、回收站和历史版本
+- SSH 用户、公钥和安全设置管理
+- Passkey、TOTP、恢复码、会话和登录保护
+- UFW、Fail2ban、安全体检和审计日志
+- 可选 GitHub 仓库、Actions、Pull Request 和 Release 工作流
+- Go 单二进制运行，不依赖 Node.js、Redis 或外部数据库
 
-### 系统管理
+## 支持范围
 
-- systemd 服务搜索、运行/异常筛选、启动、停止、重启和日志
-- 进程 CPU/内存排行，支持 SIGTERM / SIGKILL
-- 网络接口、地址、累计流量和监听端口
-- 存储分区与空间占用；默认隐藏 overlay、netns、BPF、重复绑定挂载等虚拟项目
-- 安全计划任务：重启 systemd 服务、重启 Docker 容器、安全清理 Docker；不接受任意 Shell
-- 原生 systemd timer 查看
-- APT 升级预检、下载、执行、软件包搜索/安装/删除；长任务交给 Agent 后台运行，页面或反向代理断开后仍可继续查看结果
-- 主机名、时区、系统 DNS、Swap 和固定 sysctl 优化预设
-- 自动配置快照列表、内容查看、恢复和删除
-- SSH Server 状态、可登录用户与 `authorized_keys` 公钥管理
-- SSH ED25519 密钥生成与一次性私钥下载；可选私钥口令
-- SSH 端口、Root 登录、TCP/Agent/X11 转发可视化设置；端口变更采用双端口确认避免失联
-- 密钥登录确认后可安全关闭密码登录，配置校验失败自动回滚
+主要支持：
 
-### Docker
+- Debian 12 / 13
+- 使用 systemd 与 APT 的 Ubuntu
+- AMD64 / ARM64
 
-- Docker Engine 状态和版本；未安装时可使用 Debian/Ubuntu 软件源快捷安装
-- 概览页每 10 秒低频同步容器数量
-- 运行容器 CPU、内存、网络和块设备 I/O 按需实时统计
-- 容器列表、状态、镜像、端口、启停、重启和删除；日志每 2 秒按需刷新并支持暂停/复制
-- 非 Compose 容器全可视化编辑：镜像、环境变量、命令、端口、挂载、网络、特权模式和重启策略
-- 编辑采用安全重建事务；新容器失败时自动恢复旧容器
-- Compose YAML 多文件在线编辑、语法校验、保存前快照、失败回滚和可选立即部署
-- Compose 容器引导编辑对应 YAML，避免面板配置与 Compose 漂移
-- 镜像列表、Docker Hub 搜索、拉取、可视化构建和删除
-- 网络与存储卷查看、创建、删除、占用扫描、备份和恢复
-- 安全/深度清理预览，按需清理停止容器、未使用镜像、网络和存储卷
-- 自动识别 Docker Compose 项目，并支持新项目可视化向导
-- Compose 拉取、启动、停止、重启和下线
+LukePanel 只管理当前服务器，不是多节点控制中心，也不提供 Kubernetes、Docker Swarm、网站托管、邮件托管或浏览器任意 root Shell。
 
-### 文件管理
+## 安装
 
-- 从 `/` 浏览和管理完整文件系统；`/proc`、`/sys`、`/dev`、`/run` 等虚拟目录仅允许浏览
-- 可点击面包屑路径与一键复制完整路径
-- 当前目录筛选、全文件系统递归搜索、多文件上传、文件夹上传和下载
-- 图片/PDF/Markdown 预览、ZIP 内容浏览，ZIP/TAR.GZ 在线压缩
-- ZIP 安全解压，支持 iPhone 大批量文件导入，并阻止路径穿越与符号链接
-- 新建文件/文件夹、在线文本编辑（最大 2MB）
-- 重命名、复制、移动、八进制权限修改
-- 删除进入 LukePanel 回收站
-- 回收站查看、恢复到原位置/新位置、永久清理
-- 跨文件系统复制、移动和回收
-- 编辑前自动备份；文件备份总量自动限制为 500MB / 500 份
-- 单文件历史版本列表、差异对比和一键恢复；恢复前再次备份当前版本
-- 路径清理、符号链接解析和虚拟文件系统写入保护
-- 系统密码文件、SSH 私钥和面板密钥仅在二次验证窗口内允许读取或修改，并记录审计
+使用安装器前，请确认 GitHub Releases 中已经发布对应版本。
 
-### 工具、日志与审计
-
-- Ping、DNS、TCP 端口、HTTP 检查
-- 固定模板一键系统诊断：负载、内存、Swap、磁盘、异常服务和监听端口；不接受任意命令
-- systemd 系统日志按页面可见状态每 3 秒刷新，支持服务来源筛选、暂停页面后自动停采
-- JSONL 持久审计 + 可选 SQLite 索引；按用户、IP、模块、结果和时间检索，支持分页、复制与 JSON/文本导出
-- 审计文件 20MB 自动轮转，最多保留 3 个历史文件
-- 审计不记录密码、GitHub Token 或 Cookie
-
-### GitHub 新手助手（可选）
-
-- 默认关闭且不预设任何用户或仓库；从常用工具按需启用
-- GitHub OAuth Device Flow 网页登录；普通用户无需填写 Client ID、用户名、密码或 Client Secret
-- 授权 Token 只保存在当前 LukePanel 会话内存，退出或服务重启后清除
-- 检查仓库默认分支、最新提交、Tag、Release 和最近 Actions
-- 上传源码 ZIP，自动去掉外层目录并忽略 `.git`、macOS 元数据
-- 提交前预览新增、修改和未变化文件
-- 使用 Git Trees / Commit / Ref API 直接 Commit + Push，不依赖服务器安装 Git
-- 默认增量覆盖，不删除 ZIP 中缺失的仓库文件，不 Force Push
-- 预览后远端分支发生变化时拒绝提交，避免覆盖新提交
-- 创建分支、Pull Request，并在检查最新 Head SHA 后选择 squash/merge/rebase 合并，支持“新建分支 → ZIP 推送 → PR → 合并”的小白流程
-- 创建版本 Tag、Release、上传 Release Assets、查看 Actions Jobs/失败日志并重试失败任务
-- 修改 `.github/workflows` 需要 GitHub 授权包含 workflow 权限
-
-### 导航与账户体验
-
-- 所有非首页页面提供明确返回按钮，子模块返回系统管理，顶级模块返回概览
-- 当前页面写入浏览器会话状态；刷新或重新登录后回到原页面，而不是强制跳转概览
-- 登录、修改密码和二次验证统一使用英文键盘提示，关闭自动大写、纠错和拼写检查
-- 移动端“我的与安全”提供顶部退出和独立退出当前账号按钮
-- 内置 `lukepanel-uninstall` 命令；默认保留数据，`--purge` 可彻底卸载
-
-### 安全
-
-- PBKDF2-HMAC-SHA256 密码哈希（600,000 次迭代）
-- HttpOnly、SameSite=Strict、Secure Cookie
-- CSRF 防护与登录失败限速
-- 会话查看、可信设备与退出其他设备
-- TOTP 身份验证器与一次性恢复码；未开启时登录页完全不渲染验证码框，密码验证通过且已开启时才出现
-- 恢复码只保存哈希并在使用后立即作废
-- 用户名修改、两次新密码一致性校验与服务端弱密码拒绝
-- 主机安全体检、安全分、Fail2ban 防暴力破解、封禁解锁、白名单管理和自动安全更新
-- Fail2ban 自动忽略当前网页访问 IP、内网网段和现有 SSH 连接 IP；白名单移除会保护当前访问 IP并在失败时自动回滚
-- Passkey / WebAuthn、TOTP 与恢复码并存；高风险操作二次验证，授权窗口 5 分钟
-- Web 普通用户与 root Agent 通过本地 Unix Socket 隔离
-- Agent Secret 固定时序比较，Agent 不监听 TCP
-
-## v0.9 Beta 新增闭环
-
-- **完整面板备份/恢复**：导出配置、审计、快照、文件备份和回收站；恢复时保留本机监听地址、Agent Secret 和会话 Secret，并用临时目录完成原子切换。支持立即生成和 systemd 定时完整备份，默认保留最近 7 份。
-- **后台任务中心**：APT 下载/升级、软件安装删除和 Docker 镜像构建由 Agent 运行；关闭弹窗或断开网页不会取消任务。Agent 服务重启会终止仍在运行的任务，因此系统升级期间不要重启 Agent。
-- **UFW 与 Fail2ban**：防火墙启用具备 5 分钟自动恢复窗口；Fail2ban 可查看统计、解除封禁和维护 SSH 白名单。
-- **Passkey、可信设备、IP 允许列表与登录通知**：允许列表保存时自动保留当前 IP，并生成限时恢复入口；GitHub 和 Telegram Token 不进入审计。
-- **GitHub 日常闭环**：ZIP 差异预览、Commit/Push、分支、PR 创建与安全合并、Tag、Release、附件和 Actions 日志。
-- **审计索引**：安装器优先安装轻量 `sqlite3` CLI；不可用时自动退回 JSONL 兼容检索，不影响面板启动。
-
-## 安装或升级
-
-先确保最新版本已经出现在 GitHub Releases，然后以 root 执行：
+以 `root` 执行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Luke-Lab666/LukePanel/main/install.sh | bash
 ```
 
-首次安装会交互询问管理员用户名、管理员密码和本地监听端口；留空时分别使用 `admin`、自动生成的强密码和 `6767`。升级安装自动保留已有账号、密码和端口。
+首次安装会要求设置：
 
-也可以先保存安装脚本后使用参数：
+- 管理员用户名
+- 管理员密码
+- 本地监听端口
+
+密码留空时，安装器会生成随机强密码，并且只在首次安装终端中显示一次。升级安装会保留已有账号、端口、配置和数据。
+
+### 非交互安装
+
+不要把密码直接写进命令行参数或 Shell 历史。可以使用仅 root 可读的密码文件：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Luke-Lab666/LukePanel/main/install.sh -o /tmp/lukepanel-install.sh
-sudo bash /tmp/lukepanel-install.sh --username LukeAdmin --port 6767
-```
+curl -fsSL https://raw.githubusercontent.com/Luke-Lab666/LukePanel/main/install.sh \
+  -o /tmp/lukepanel-install.sh
 
-自动化安装应通过权限为 `0600` 的文件传入密码，避免密码进入 Shell 历史：
-
-```bash
-printf '%s\n' '你的强密码' > /root/.lukepanel-password
+printf '%s\n' '请替换为强密码' > /root/.lukepanel-password
 chmod 600 /root/.lukepanel-password
-sudo bash /tmp/lukepanel-install.sh --non-interactive --username LukeAdmin --port 6767 --password-file /root/.lukepanel-password
+
+bash /tmp/lukepanel-install.sh \
+  --non-interactive \
+  --username admin \
+  --port 6767 \
+  --password-file /root/.lukepanel-password
+
 rm -f /root/.lukepanel-password
 ```
 
-安装器会自动识别 AMD64 / ARM64，下载并校验二进制，安装或升级两个 systemd 服务。升级保留现有密码、配置、审计、备份和回收站，并安装 `lukepanel-uninstall` 卸载命令。
+## 网络部署
 
-默认链路：
+默认监听：
 
 ```text
-浏览器 → HTTPS / Nginx Proxy Manager → 127.0.0.1:6767
-                                      ↓ Unix Socket
-                              /run/lukepanel/agent.sock
+127.0.0.1:6767
 ```
 
-不要直接把 `6767`、Docker Socket 或 Agent Socket 暴露到公网。
+建议通过 Nginx、Caddy 或 Nginx Proxy Manager 提供 HTTPS：
+
+```text
+浏览器 ── HTTPS ── 反向代理 ── 127.0.0.1:6767
+                                      │
+                                      └── Unix Socket ── root Agent
+```
+
+不要把 Agent Socket 或 Docker Socket 暴露到网络。公网部署时，应使用防火墙、VPN、IP 允许列表或其他可信访问层限制面板入口。
+
+## 功能概览
+
+### 系统概览与管理
+
+- CPU、负载、内存、Swap、磁盘和网络实时状态
+- systemd 服务搜索、日志、启动、停止和重启
+- 进程 CPU / 内存排行与 TERM / KILL 操作
+- 网卡、IP、累计流量和监听端口
+- 文件系统和挂载点空间使用
+- 基于固定动作的安全计划任务
+- 主机名、时区、DNS、NTP、Swap 和受控 sysctl 预设
+
+### 软件管理
+
+- APT 升级模拟与风险预检
+- 下载、升级、安装和删除后台任务
+- 软件包搜索
+- 软件源添加、启用、停用和删除
+- 关键操作前自动创建配置快照
+
+### Docker
+
+- Docker Engine 检测与发行版软件包安装
+- 容器状态、日志、资源统计和生命周期操作
+- 容器可视化编辑与事务式重建
+- 镜像搜索、拉取、构建和删除
+- 网络与存储卷管理
+- 存储卷占用、备份和恢复
+- Compose 项目识别、编辑、校验和部署
+- 清理前预览未使用资源
+
+### 文件管理
+
+- 从文件系统根目录浏览
+- 文件、文件夹和 ZIP 上传
+- 文件和目录下载
+- 创建、编辑、复制、移动、重命名和权限修改
+- ZIP / TAR.GZ 压缩与安全解压
+- 图片、PDF 和 Markdown 预览
+- 回收站与永久删除
+- 自动备份、版本对比与恢复
+
+`/proc`、`/sys`、`/dev` 和 `/run` 等虚拟文件系统不会开放普通写入。敏感文件操作需要近期密码验证，并写入审计日志。
+
+### SSH 与安全
+
+- SSH 服务状态与端口管理
+- 登录用户和 `authorized_keys` 管理
+- ED25519 密钥生成与一次性私钥下载
+- 密码登录、Root 登录与转发设置
+- Passkey / WebAuthn 登录
+- TOTP、恢复码和可信设备
+- 活跃会话管理
+- 带限时恢复入口的 IP 允许列表
+- UFW 规则与受保护的首次启用流程
+- Fail2ban 状态、解封和白名单管理
+- Telegram 登录通知
+
+### 日志与备份
+
+- JSONL 持久审计日志与可选 SQLite 查询索引
+- 按用户、IP、动作、结果和时间筛选
+- systemd Journal 查看
+- 面板配置和数据备份
+- 定时备份与保留策略
+
+### GitHub 助手
+
+GitHub 助手是内置的可选功能，可以在“常用工具”中显示或隐藏入口。它支持：
+
+- GitHub Device Flow 登录
+- 仓库、分支、提交和 Actions 状态查看
+- ZIP 差异预览与 Commit / Push
+- Pull Request 创建与合并
+- Tag、Release 和附件管理
+- Actions Job 日志读取
+
+访问令牌只保存在 LukePanel 当前服务会话中，不显示在页面和审计日志里。服务重启或主动断开后，授权会被清除。
+
+## 安全模型
+
+LukePanel 将浏览器服务和高权限操作分离：
+
+- `lukepanel.service` 使用普通 `lukepanel` 用户运行
+- `lukepanel-agent.service` 使用 root 运行，只监听受保护的 Unix Socket
+- Agent 只提供固定、可校验的管理动作
+- 密码使用 PBKDF2-HMAC-SHA256 哈希保存
+- 会话 Cookie 使用 HttpOnly、SameSite 与 Secure 属性
+- 修改操作使用 CSRF 校验
+- 高风险操作需要短时有效的密码二次验证
+- 密码、Cookie、私钥和访问令牌不会写入审计内容
+
+公网部署前请阅读 [SECURITY.md](SECURITY.md)。
+
+## 配置与数据位置
+
+```text
+配置文件： /etc/lukepanel/config.json
+数据目录： /var/lib/lukepanel
+Agent：    /run/lukepanel/agent.sock
+Web 服务： lukepanel.service
+Agent 服务：lukepanel-agent.service
+```
+
+手动修改配置后：
+
+```bash
+systemctl restart lukepanel-agent.service lukepanel.service
+```
+
+## 升级
+
+再次执行安装命令即可：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Luke-Lab666/LukePanel/main/install.sh | bash
+```
+
+安装器会校验 Release 文件、更新二进制和 systemd 单元，并保留已有配置与数据。
 
 ## 卸载
 
-保留配置、密码、审计、备份和回收站：
+保留配置和数据：
 
 ```bash
 lukepanel-uninstall
 ```
 
-彻底删除程序与全部数据：
+删除程序及全部 LukePanel 数据：
 
 ```bash
 lukepanel-uninstall --purge
 ```
 
-默认卸载后重新运行安装命令，会继续使用原有账号和数据。
-
-## 登录
-
-首次安装使用安装器中设置的管理员用户名和密码；用户名留空时默认为 `admin`，密码留空时自动生成并只在首次安装终端显示。配置文件只保存密码哈希，无法反查明文。
-
-## 配置
-
-配置路径：
-
-```text
-/etc/lukepanel/config.json
-```
-
-示例：
-
-```json
-{
-  "listen": "127.0.0.1:6767",
-  "data_dir": "/var/lib/lukepanel",
-  "agent_socket": "/run/lukepanel/agent.sock",
-  "secure_cookie": true,
-  "auto_refresh_seconds": 5,
-  "allowed_roots": ["/"]
-}
-```
-
-`auto_refresh_seconds` 只用于 SSE 不可用时的兼容刷新。实时模式固定为 2 秒，并且只在概览页面可见时运行。
-
-修改配置后：
+## 排查
 
 ```bash
-systemctl restart lukepanel-agent lukepanel
-```
-
-### GitHub 设备登录
-
-GitHub 助手默认提供零配置 Device Flow：点击“使用 GitHub 设备登录”，在 `github.com/login/device` 输入一次性代码并授权，LukePanel 会在后台轮询并自动完成登录。OAuth Token 不返回给浏览器、不显示给用户，只保存在当前 LukePanel 会话内；断开连接、退出面板或服务重启后清除。
-
-默认流程使用 GitHub CLI 的公开 OAuth 应用标识作为设备授权入口。项目维护者如需换成自己的 OAuth App，可通过 Actions Variable `LUKEPANEL_GITHUB_CLIENT_ID`、同名环境变量或构建参数覆盖；自定义 OAuth App 必须开启 Device Flow。
-
-## 服务排查
-
-```bash
-systemctl status lukepanel lukepanel-agent --no-pager
-journalctl -u lukepanel -u lukepanel-agent -n 100 --no-pager
+systemctl status lukepanel.service lukepanel-agent.service --no-pager
+journalctl -u lukepanel.service -u lukepanel-agent.service -n 100 --no-pager
 ss -lntp | grep 6767
 ls -l /run/lukepanel/agent.sock
 ```
 
+提交问题时，请提供 LukePanel 版本、操作系统、架构、相关服务日志和可复现步骤。分享日志前应删除 Token、密码、私钥、Cookie 和公网 IP 等敏感信息。
+
 ## 本地开发
 
-要求 Go 1.23+，前端无需 npm：
+要求：
+
+- Go 1.23 或更高版本
+- 完整系统集成测试需要 Linux
+- 前端不需要 npm
 
 ```bash
+make frontend
 make test
 make build VERSION=dev
 ```
 
-## Beta 边界
+`web/` 目录中的资源会复制到 `internal/server/webdist` 并嵌入 Go 二进制。修改前端后需要先执行 `make frontend`。
 
-- 不提供浏览器任意 WebShell、任意 root Shell 定时任务或 Force Push。固定容器诊断和系统任务使用白名单参数。
-- 后台任务可跨页面和网络断开继续运行，但 Agent 服务重启会结束正在运行的进程。
-- GitHub 助手不处理交互式 Rebase、复杂冲突或历史改写；检测到远端变化会停止推送。
-- Passkey 需要 HTTPS、正确域名和浏览器 WebAuthn 支持。反向代理域名变化后，需要重新添加对应域名的 Passkey。
-- SQLite 只是审计查询索引，`audit.jsonl` 才是可恢复的持久来源。完整备份不会复制 SQLite 文件，恢复后会自动重建。
-- 项目聚焦单台 Debian/Ubuntu VPS，不计划加入 Kubernetes、Swarm、多服务器控制中心、邮件服务器或网站托管套件。
+## 项目状态
+
+LukePanel 目前仍处于 Beta。执行软件升级、防火墙、SSH、Docker 和文件系统操作前，应保留服务器级备份。项目会尽量使用验证、快照和回滚降低风险，但任何具备 root 管理能力的面板都无法消除错误操作和系统差异带来的风险。
+
+## 许可证
+
+参见 [LICENSE](LICENSE)。
