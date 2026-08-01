@@ -46,7 +46,7 @@ func TestReadmeIsPublicProjectDocumentation(t *testing.T) {
 		"## 安装",
 		"## 安全模型",
 		"## 本地开发",
-		"v0.9.9-beta",
+		"v0.9.10-beta",
 	} {
 		if !strings.Contains(readme, required) {
 			t.Fatalf("README is missing public documentation section %q", required)

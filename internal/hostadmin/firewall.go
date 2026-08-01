@@ -302,26 +302,96 @@ func parseUFWRules(output string) []FirewallRule {
 	return rules
 }
 
+func parseSystemdProperties(text string) map[string]string {
+	properties := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if ok && strings.TrimSpace(key) != "" {
+			properties[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		}
+	}
+	return properties
+}
+
+type ntpServiceCandidate struct {
+	Unit  string
+	Label string
+}
+
+func detectNTPService(ctx context.Context) (unit, label string, active, enabled bool) {
+	candidates := []ntpServiceCandidate{
+		{Unit: "systemd-timesyncd.service", Label: "systemd-timesyncd"},
+		{Unit: "chrony.service", Label: "Chrony"},
+		{Unit: "chronyd.service", Label: "Chrony"},
+		{Unit: "ntpsec.service", Label: "NTPsec"},
+		{Unit: "ntp.service", Label: "NTP"},
+		{Unit: "openntpd.service", Label: "OpenNTPD"},
+	}
+	var loaded *ntpServiceCandidate
+	for index := range candidates {
+		candidate := &candidates[index]
+		loadState, _ := commandOutput(ctx, "systemctl", "show", candidate.Unit, "--property=LoadState", "--value")
+		if strings.TrimSpace(loadState) != "loaded" {
+			continue
+		}
+		if loaded == nil {
+			loaded = candidate
+		}
+		isActive := exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", candidate.Unit).Run() == nil
+		isEnabled := exec.CommandContext(ctx, "systemctl", "is-enabled", "--quiet", candidate.Unit).Run() == nil
+		if isActive {
+			return candidate.Unit, candidate.Label, true, isEnabled
+		}
+	}
+	if loaded != nil {
+		isEnabled := exec.CommandContext(ctx, "systemctl", "is-enabled", "--quiet", loaded.Unit).Run() == nil
+		return loaded.Unit, loaded.Label, false, isEnabled
+	}
+	return "", "", false, false
+}
+
 func NTPStatus(ctx context.Context) map[string]any {
-	out := map[string]any{"available": false, "enabled": false, "synchronized": false}
+	out := map[string]any{
+		"available":       false,
+		"enabled":         false,
+		"synchronized":    false,
+		"service":         "未检测到时间同步服务",
+		"service_unit":    "",
+		"service_active":  false,
+		"service_enabled": false,
+	}
 	if _, err := exec.LookPath("timedatectl"); err != nil {
+		out["error"] = "系统未安装 timedatectl"
 		return out
 	}
 	out["available"] = true
-	text, err := commandOutput(ctx, "timedatectl", "show", "--property=NTP", "--property=NTPSynchronized", "--property=Timezone", "--value")
+	text, err := commandOutput(ctx, "timedatectl", "show", "--property=NTP", "--property=NTPSynchronized", "--property=Timezone", "--no-pager")
 	if err != nil {
 		out["error"] = strings.TrimSpace(text)
 		return out
 	}
-	lines := strings.Split(strings.TrimSpace(text), "\n")
-	if len(lines) > 0 {
-		out["enabled"] = strings.EqualFold(strings.TrimSpace(lines[0]), "yes")
+	properties := parseSystemdProperties(text)
+	out["enabled"] = strings.EqualFold(properties["NTP"], "yes")
+	out["synchronized"] = strings.EqualFold(properties["NTPSynchronized"], "yes")
+	out["timezone"] = properties["Timezone"]
+
+	unit, label, serviceActive, serviceEnabled := detectNTPService(ctx)
+	if label != "" {
+		out["service"] = label
+		out["service_unit"] = unit
+		out["service_active"] = serviceActive
+		out["service_enabled"] = serviceEnabled
+	} else if out["synchronized"].(bool) {
+		out["service"] = "宿主机或虚拟化时间源"
+		out["service_active"] = true
 	}
-	if len(lines) > 1 {
-		out["synchronized"] = strings.EqualFold(strings.TrimSpace(lines[1]), "yes")
-	}
-	if len(lines) > 2 {
-		out["timezone"] = strings.TrimSpace(lines[2])
+
+	if detail, detailErr := commandOutput(ctx, "timedatectl", "show-timesync", "--property=ServerName", "--property=ServerAddress", "--property=LastSyncUSec", "--property=PollIntervalUSec", "--no-pager"); detailErr == nil {
+		detailProperties := parseSystemdProperties(detail)
+		out["server_name"] = detailProperties["ServerName"]
+		out["server_address"] = detailProperties["ServerAddress"]
+		out["last_sync"] = detailProperties["LastSyncUSec"]
+		out["poll_interval"] = detailProperties["PollIntervalUSec"]
 	}
 	return out
 }
@@ -335,7 +405,7 @@ func SetNTP(ctx context.Context, enabled bool) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("设置时间同步失败: %s", strings.TrimSpace(out))
 	}
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(700 * time.Millisecond)
 	return NTPStatus(ctx), nil
 }
 

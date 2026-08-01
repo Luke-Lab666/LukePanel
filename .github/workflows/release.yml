@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '版本号，例如 v0.9.9-beta'
+        description: '版本号，例如 v0.9.10-beta'
         required: true
         type: string
 
@@ -41,7 +41,7 @@ jobs:
             VERSION="$REF_NAME"
           fi
           [[ "$VERSION" =~ ^v[0-9][A-Za-z0-9._-]*$ ]] || {
-            echo "版本号必须以小写 v 开头，例如 v0.9.9-beta" >&2
+            echo "版本号必须以小写 v 开头，例如 v0.9.10-beta" >&2
             exit 1
           }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"

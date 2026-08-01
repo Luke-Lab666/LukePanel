@@ -26,13 +26,25 @@ type SwapStatus struct {
 	Managed bool   `json:"managed"`
 }
 
+type SysctlStatus struct {
+	Preset            string `json:"preset"`
+	Label             string `json:"label"`
+	Managed           bool   `json:"managed"`
+	ConfigPath        string `json:"config_path,omitempty"`
+	BBR               bool   `json:"bbr"`
+	CongestionControl string `json:"congestion_control,omitempty"`
+	DefaultQDisc      string `json:"default_qdisc,omitempty"`
+	Swappiness        int    `json:"swappiness"`
+}
+
 type HostSettings struct {
-	Hostname string     `json:"hostname"`
-	Timezone string     `json:"timezone"`
-	DNS      []string   `json:"dns"`
-	Resolved bool       `json:"systemd_resolved"`
-	Swap     SwapStatus `json:"swap"`
-	BBR      bool       `json:"bbr"`
+	Hostname string       `json:"hostname"`
+	Timezone string       `json:"timezone"`
+	DNS      []string     `json:"dns"`
+	Resolved bool         `json:"systemd_resolved"`
+	Swap     SwapStatus   `json:"swap"`
+	BBR      bool         `json:"bbr"`
+	Sysctl   SysctlStatus `json:"sysctl"`
 }
 
 type SwapRequest struct {
@@ -58,7 +70,8 @@ func ReadHostSettings(ctx context.Context) HostSettings {
 		}
 	}
 	dns := readDNS()
-	return HostSettings{Hostname: hostname, Timezone: timezone, DNS: dns, Resolved: serviceActive(ctx, "systemd-resolved.service"), Swap: ReadSwap(), BBR: readSysctl("net.ipv4.tcp_congestion_control") == "bbr"}
+	sysctl := ReadSysctlStatus()
+	return HostSettings{Hostname: hostname, Timezone: timezone, DNS: dns, Resolved: serviceActive(ctx, "systemd-resolved.service"), Swap: ReadSwap(), BBR: sysctl.BBR, Sysctl: sysctl}
 }
 
 func SetHostname(ctx context.Context, hostname string) error {
@@ -241,19 +254,70 @@ func DeleteManagedSwap(ctx context.Context) error {
 	return os.Remove("/swapfile")
 }
 
-func ApplySysctlPreset(ctx context.Context, request SysctlRequest) error {
-	preset := strings.ToLower(strings.TrimSpace(request.Preset))
-	var lines []string
+func sysctlPresetLines(preset string) ([]string, bool) {
 	switch preset {
 	case "balanced":
-		lines = []string{"vm.swappiness = 10", "vm.vfs_cache_pressure = 80", "net.core.somaxconn = 4096", "net.ipv4.tcp_syncookies = 1"}
+		return []string{"vm.swappiness = 10", "vm.vfs_cache_pressure = 80", "net.core.somaxconn = 4096", "net.ipv4.tcp_syncookies = 1"}, true
 	case "network":
-		lines = []string{"net.core.default_qdisc = fq", "net.ipv4.tcp_congestion_control = bbr", "net.core.somaxconn = 8192", "net.ipv4.tcp_fastopen = 3"}
+		return []string{"net.core.default_qdisc = fq", "net.ipv4.tcp_congestion_control = bbr", "net.core.somaxconn = 8192", "net.ipv4.tcp_fastopen = 3"}, true
 	case "low-memory":
-		lines = []string{"vm.swappiness = 20", "vm.vfs_cache_pressure = 120", "vm.dirty_background_ratio = 3", "vm.dirty_ratio = 10"}
+		return []string{"vm.swappiness = 20", "vm.vfs_cache_pressure = 120", "vm.dirty_background_ratio = 3", "vm.dirty_ratio = 10"}, true
 	case "reset":
-		lines = nil
+		return nil, true
 	default:
+		return nil, false
+	}
+}
+
+func sysctlPresetLabel(preset string) string {
+	switch preset {
+	case "balanced":
+		return "均衡"
+	case "network":
+		return "网络吞吐"
+	case "low-memory":
+		return "小内存 VPS"
+	case "custom":
+		return "自定义配置"
+	default:
+		return "系统默认"
+	}
+}
+
+func parseManagedSysctlPreset(data []byte) string {
+	text := strings.TrimSpace(string(data))
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "# Managed by LukePanel:") {
+			preset := strings.TrimSpace(strings.TrimPrefix(line, "# Managed by LukePanel:"))
+			if _, ok := sysctlPresetLines(preset); ok && preset != "reset" {
+				return preset
+			}
+		}
+	}
+	return "custom"
+}
+
+func ReadSysctlStatus() SysctlStatus {
+	const path = "/etc/sysctl.d/99-lukepanel.conf"
+	status := SysctlStatus{Preset: "default", Label: sysctlPresetLabel("default")}
+	if data, err := os.ReadFile(path); err == nil {
+		status.Managed = true
+		status.ConfigPath = path
+		status.Preset = parseManagedSysctlPreset(data)
+		status.Label = sysctlPresetLabel(status.Preset)
+	}
+	status.CongestionControl = readSysctl("net.ipv4.tcp_congestion_control")
+	status.DefaultQDisc = readSysctl("net.core.default_qdisc")
+	status.BBR = status.CongestionControl == "bbr"
+	status.Swappiness, _ = strconv.Atoi(readSysctl("vm.swappiness"))
+	return status
+}
+
+func ApplySysctlPreset(ctx context.Context, request SysctlRequest) error {
+	preset := strings.ToLower(strings.TrimSpace(request.Preset))
+	lines, ok := sysctlPresetLines(preset)
+	if !ok {
 		return errors.New("不支持的 sysctl 预设")
 	}
 	path := "/etc/sysctl.d/99-lukepanel.conf"
