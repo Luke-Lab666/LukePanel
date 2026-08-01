@@ -6,14 +6,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/Luke-Lab666/LukePanel/internal/auth"
 )
+
+type InitOptions struct {
+	AdminUser string
+	Password  string
+	Listen    string
+}
 
 type TrustedDevice struct {
 	ID        string    `json:"id"`
@@ -58,12 +67,16 @@ func Default() Config {
 		AdminUser:          "admin",
 		AgentSocket:        "/run/lukepanel/agent.sock",
 		SecureCookie:       true,
-		AllowedRoots:       []string{"/home", "/root", "/opt", "/srv", "/var/www", "/etc", "/usr/local"},
+		AllowedRoots:       []string{"/"},
 		AutoRefreshSeconds: 5,
 	}
 }
 
 func LoadOrCreate(path string) (Config, string, error) {
+	return LoadOrCreateWithOptions(path, InitOptions{})
+}
+
+func LoadOrCreateWithOptions(path string, options InitOptions) (Config, string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return Config{}, "", fmt.Errorf("create config dir: %w", err)
 	}
@@ -99,10 +112,11 @@ func LoadOrCreate(path string) (Config, string, error) {
 			cfg.AutoRefreshSeconds = Default().AutoRefreshSeconds
 			changed = true
 		}
-		// v0.1/v0.2 used the original default roots. Extend only that known
-		// default set so custom administrator policies are never silently widened.
-		if legacyDefaultRoots(cfg.AllowedRoots) {
-			cfg.AllowedRoots = Default().AllowedRoots
+		// v0.9.6 removes the file-manager root allowlist. Existing installations
+		// are migrated to the real filesystem root while sensitive reads remain
+		// protected by secondary authentication.
+		if len(cfg.AllowedRoots) != 1 || filepath.Clean(cfg.AllowedRoots[0]) != "/" {
+			cfg.AllowedRoots = []string{"/"}
 			changed = true
 		}
 		if err := cfg.Validate(); err != nil {
@@ -118,8 +132,20 @@ func LoadOrCreate(path string) (Config, string, error) {
 		return Config{}, "", fmt.Errorf("read config: %w", err)
 	}
 
-	password, err := randomString(18)
-	if err != nil {
+	if value := strings.TrimSpace(options.AdminUser); value != "" {
+		cfg.AdminUser = value
+	}
+	if value := strings.TrimSpace(options.Listen); value != "" {
+		cfg.Listen = value
+	}
+	password := options.Password
+	if password == "" {
+		password, err = randomString(18)
+		if err != nil {
+			return Config{}, "", err
+		}
+	}
+	if err := auth.ValidatePasswordStrength(password, cfg.AdminUser); err != nil {
 		return Config{}, "", err
 	}
 	cfg.PasswordHash, err = auth.HashPassword(password)
@@ -189,6 +215,13 @@ func (c Config) Validate() error {
 	if !adminUserPattern.MatchString(c.AdminUser) {
 		return errors.New("admin_user must start with a letter and contain 3-32 letters, digits, dots, underscores or hyphens")
 	}
+	host, port, err := net.SplitHostPort(c.Listen)
+	if err != nil || strings.TrimSpace(host) == "" && !strings.HasPrefix(c.Listen, ":") {
+		return errors.New("listen must be a valid host:port address")
+	}
+	if parsed, err := strconv.Atoi(port); err != nil || parsed < 1 || parsed > 65535 {
+		return errors.New("listen port must be between 1 and 65535")
+	}
 	if len(c.AllowedRoots) == 0 {
 		return errors.New("allowed_roots must not be empty")
 	}
@@ -196,19 +229,6 @@ func (c Config) Validate() error {
 		return errors.New("auto_refresh_seconds must be between 2 and 300")
 	}
 	return nil
-}
-
-func legacyDefaultRoots(roots []string) bool {
-	legacy := []string{"/home", "/opt", "/srv", "/var/www", "/etc"}
-	if len(roots) != len(legacy) {
-		return false
-	}
-	for i := range legacy {
-		if filepath.Clean(roots[i]) != legacy[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func randomString(n int) (string, error) {

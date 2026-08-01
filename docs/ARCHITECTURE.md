@@ -37,17 +37,17 @@ Agent 不监听 TCP，不接收通用 Shell 字符串。Compose 命令只从 Doc
 
 ## 文件权限边界
 
-- 文件根目录由 `allowed_roots` 控制。
-- 所有路径经过绝对化、清理、符号链接解析和二次范围检查。
-- 授权根目录本身禁止复制、移动、改权限或删除。
-- 写入型操作由 root Agent 完成并要求 Web 会话二次验证。
+- 文件管理根目录固定为 `/`，不再使用普通目录白名单限制。
+- 所有路径仍经过绝对化、清理和符号链接解析。
+- `/proc`、`/sys`、`/dev`、`/run` 等虚拟文件系统允许浏览，但拒绝普通文件写入、移动、删除、压缩或恢复。
+- 读取系统密码文件、SSH 私钥和 LukePanel 密钥前要求 Web 会话处于二次验证窗口；写入型操作同样要求二次验证。
 - 文本编辑原子替换；修改前自动备份。
 - 删除先移动至 `/var/lib/lukepanel/recycle`，支持跨文件系统复制后删除。
 
 ## GitHub 边界
 
 - 公开仓库信息可无凭据读取；私有仓库和写操作使用用户主动完成的 OAuth Device Flow。
-- OAuth App Client ID 是公开标识，可保存在浏览器本地；不需要向 LukePanel 提供 Client Secret。
+- OAuth App Client ID 是项目级公开标识，由 Release 构建变量或服务环境变量提供，不保存在浏览器，也不要求面板用户填写；LukePanel 不需要 Client Secret。
 - GitHub Access Token 只保存在当前 Web 会话对应的内存中，不写磁盘、不写审计、不写应用日志；退出或服务重启后清除。
 - ZIP 导入先解压到 `/var/lib/lukepanel/github-imports` 临时目录，并限制压缩包、展开体积、单文件大小和文件数量。
 - ZIP 中的 `.git`、macOS 元数据、符号链接和越界路径会被忽略或拒绝。

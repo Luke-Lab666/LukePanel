@@ -41,10 +41,10 @@ func TestLoadOrCreateMigratesAgentSettings(t *testing.T) {
 	}
 }
 
-func TestLegacyDefaultRootsMigration(t *testing.T) {
+func TestExistingRootsMigrateToFullFilesystem(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	cfg := Default()
-	cfg.AllowedRoots = []string{"/home", "/opt", "/srv", "/var/www", "/etc"}
+	cfg.AllowedRoots = []string{"/custom/restricted/path"}
 	cfg.PasswordHash, _ = auth.HashPassword("example-password")
 	cfg.SessionSecret = "session-secret"
 	cfg.AgentSecret = "agent-secret"
@@ -69,5 +69,39 @@ func TestValidateRejectsUnsafeAdminUsername(t *testing.T) {
 	cfg.AgentSecret = "agent-secret"
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected unsafe admin username to be rejected")
+	}
+}
+
+func TestLoadOrCreateWithOptionsInitializesCustomAccountAndPort(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg, password, err := LoadOrCreateWithOptions(path, InitOptions{
+		AdminUser: "LukeAdmin",
+		Password:  "Strong-Install-Password-2026!",
+		Listen:    "127.0.0.1:7788",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AdminUser != "LukeAdmin" || cfg.Listen != "127.0.0.1:7788" {
+		t.Fatalf("unexpected initialized config: %#v", cfg)
+	}
+	if password != "Strong-Install-Password-2026!" {
+		t.Fatalf("returned password = %q", password)
+	}
+	ok, err := auth.VerifyPassword(password, cfg.PasswordHash)
+	if err != nil || !ok {
+		t.Fatalf("custom password was not stored: ok=%v err=%v", ok, err)
+	}
+
+	loaded, returned, err := LoadOrCreateWithOptions(path, InitOptions{
+		AdminUser: "IgnoredUser",
+		Password:  "Another-Strong-Password-2026!",
+		Listen:    "127.0.0.1:9999",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if returned != "" || loaded.AdminUser != "LukeAdmin" || loaded.Listen != "127.0.0.1:7788" {
+		t.Fatalf("existing configuration was unexpectedly replaced: %#v password=%q", loaded, returned)
 	}
 }

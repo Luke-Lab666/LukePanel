@@ -12,6 +12,21 @@ import (
 	"time"
 )
 
+type HTTPError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *HTTPError) Error() string {
+	if e == nil {
+		return "agent request failed"
+	}
+	if e.Message != "" {
+		return e.Message
+	}
+	return fmt.Sprintf("agent returned HTTP %d", e.StatusCode)
+}
+
 type Client struct {
 	http   *http.Client
 	secret string
@@ -70,8 +85,12 @@ func decodeError(resp *http.Response) error {
 	var payload struct {
 		Error string `json:"error"`
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&payload) == nil && payload.Error != "" {
-		return fmt.Errorf("%s", payload.Error)
+	message := ""
+	if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&payload) == nil {
+		message = payload.Error
 	}
-	return fmt.Errorf("agent returned %s", resp.Status)
+	if message == "" {
+		message = fmt.Sprintf("agent returned %s", resp.Status)
+	}
+	return &HTTPError{StatusCode: resp.StatusCode, Message: message}
 }

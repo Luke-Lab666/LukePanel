@@ -29,19 +29,34 @@ type Listing struct {
 type Browser struct{ roots []string }
 
 func NewBrowser(roots []string) (*Browser, error) {
+	if len(roots) == 0 {
+		roots = []string{"/"}
+	}
 	clean := make([]string, 0, len(roots))
+	seen := make(map[string]struct{}, len(roots))
 	for _, root := range roots {
 		abs, err := filepath.Abs(root)
 		if err != nil {
 			return nil, err
 		}
-		clean = append(clean, filepath.Clean(abs))
+		abs = filepath.Clean(abs)
+		if abs == "/" {
+			return &Browser{roots: []string{"/"}}, nil
+		}
+		if _, ok := seen[abs]; ok {
+			continue
+		}
+		seen[abs] = struct{}{}
+		clean = append(clean, abs)
 	}
 	return &Browser{roots: clean}, nil
 }
 
 func (b *Browser) List(requested string) (Listing, error) {
-	if requested == "" || requested == "/" {
+	if requested == "" {
+		requested = "/"
+	}
+	if requested == "/" && !(len(b.roots) == 1 && b.roots[0] == "/") {
 		entries := make([]Entry, 0, len(b.roots))
 		for _, root := range b.roots {
 			info, err := os.Stat(root)
@@ -76,7 +91,9 @@ func (b *Browser) List(requested string) (Listing, error) {
 		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
 	})
 	parent := filepath.Dir(resolved)
-	if !b.allowed(parent) {
+	if resolved == "/" {
+		parent = ""
+	} else if !b.allowed(parent) {
 		parent = "/"
 	}
 	return Listing{Path: resolved, Parent: parent, Entries: entries}, nil
@@ -110,7 +127,7 @@ func (b *Browser) resolve(requested string) (string, error) {
 func (b *Browser) allowed(path string) bool {
 	clean := filepath.Clean(path)
 	for _, root := range b.roots {
-		if clean == root || strings.HasPrefix(clean, root+string(os.PathSeparator)) {
+		if root == "/" || clean == root || strings.HasPrefix(clean, root+string(os.PathSeparator)) {
 			return true
 		}
 	}

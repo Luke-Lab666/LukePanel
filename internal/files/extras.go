@@ -92,13 +92,13 @@ func (m *Manager) Search(root, query string) (SearchResult, error) {
 		if path == resolved {
 			return nil
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
+		if IsVirtualPath(path) {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if sensitivePath(path) {
+		if entry.Type()&os.ModeSymlink != 0 {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}
@@ -130,9 +130,6 @@ func (m *Manager) PreviewInfo(path string) (Preview, error) {
 	resolved, info, err := m.resolveExisting(path, false)
 	if err != nil {
 		return Preview{}, err
-	}
-	if sensitivePath(resolved) {
-		return Preview{}, errors.New("敏感文件禁止预览")
 	}
 	mimeType, err := detectMIME(resolved)
 	if err != nil {
@@ -212,9 +209,6 @@ func (m *Manager) CreateArchive(request ArchiveCreateRequest) (ArchiveCreateResu
 	if err != nil {
 		return ArchiveCreateResult{}, err
 	}
-	if sensitivePath(destination) {
-		return ArchiveCreateResult{}, errors.New("不允许写入敏感路径")
-	}
 	if _, err := os.Stat(destination); err == nil {
 		return ArchiveCreateResult{}, errors.New("目标压缩包已存在")
 	}
@@ -265,6 +259,9 @@ func (m *Manager) writeZIP(writer *zip.Writer, sources []string, result *Archive
 		source, _, err := m.resolveAny(raw)
 		if err != nil {
 			return err
+		}
+		if IsVirtualPath(source) {
+			return errors.New("虚拟系统目录不支持打包")
 		}
 		base := filepath.Base(source)
 		err = filepath.Walk(source, func(path string, info os.FileInfo, walkErr error) error {
@@ -324,6 +321,9 @@ func (m *Manager) writeTar(writer *tar.Writer, sources []string, result *Archive
 		source, _, err := m.resolveAny(raw)
 		if err != nil {
 			return err
+		}
+		if IsVirtualPath(source) {
+			return errors.New("虚拟系统目录不支持打包")
 		}
 		base := filepath.Base(source)
 		err = filepath.Walk(source, func(path string, info os.FileInfo, walkErr error) error {

@@ -39,7 +39,7 @@ func TestManagerWriteCreatesBackup(t *testing.T) {
 	}
 }
 
-func TestManagerBlocksPrivateKey(t *testing.T) {
+func TestManagerAllowsSensitiveFilesForElevatedCaller(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "server.key")
 	if err := os.WriteFile(path, []byte("secret"), 0o600); err != nil {
@@ -49,11 +49,15 @@ func TestManagerBlocksPrivateKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Read(path); err == nil {
-		t.Fatal("expected sensitive file read to fail")
+	content, err := m.Read(path)
+	if err != nil || content.Content != "secret" {
+		t.Fatalf("read sensitive file: content=%q err=%v", content.Content, err)
 	}
-	if err := m.Write(path, "new"); err == nil {
-		t.Fatal("expected sensitive file write to fail")
+	if err := m.Write(path, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "new" {
+		t.Fatalf("write sensitive file: content=%q err=%v", got, err)
 	}
 }
 
@@ -221,5 +225,50 @@ func TestExtractZIPCreatesNestedFiles(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join(root, "folder", "readme.txt"))
 	if err != nil || string(content) != "hello" {
 		t.Fatalf("content=%q err=%v", content, err)
+	}
+}
+
+func TestRootManagerListsRealFilesystem(t *testing.T) {
+	m, err := NewManager([]string{"/"}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	listing, err := m.List("/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listing.Virtual {
+		t.Fatal("root manager must list the real filesystem, not a virtual roots page")
+	}
+	if listing.Path != "/" || listing.Parent != "" || len(listing.Entries) == 0 {
+		t.Fatalf("unexpected root listing: %#v", listing)
+	}
+}
+
+func TestVirtualFilesystemRejectsWrites(t *testing.T) {
+	m, err := NewManager([]string{"/"}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.CreateFile("/proc/lukepanel-test"); err == nil {
+		t.Fatal("expected /proc write to be rejected")
+	}
+	if err := m.Mkdir("/sys/lukepanel-test"); err == nil {
+		t.Fatal("expected /sys write to be rejected")
+	}
+}
+func TestSensitivePathClassification(t *testing.T) {
+	for _, path := range []string{
+		"/etc/shadow",
+		"/etc/lukepanel/config.json",
+		"/root/.ssh/custom-private-key",
+		"/etc/ssl/private/server.key",
+	} {
+		if !IsSensitivePath(path) {
+			t.Fatalf("expected sensitive path: %s", path)
+		}
+	}
+	if IsSensitivePath("/root/.ssh-public/readme.txt") {
+		t.Fatal("unrelated path must not be classified as sensitive")
 	}
 }

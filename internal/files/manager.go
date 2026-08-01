@@ -65,9 +65,6 @@ func (m *Manager) Read(path string) (FileContent, error) {
 	if err != nil {
 		return FileContent{}, err
 	}
-	if sensitivePath(resolved) {
-		return FileContent{}, errors.New("敏感文件禁止在线预览")
-	}
 	if info.Size() > MaxEditableSize {
 		return FileContent{}, errors.New("文件超过 2MB，请下载后编辑")
 	}
@@ -95,8 +92,8 @@ func (m *Manager) Write(path, content string) error {
 	if err != nil {
 		return err
 	}
-	if sensitivePath(resolved) {
-		return errors.New("敏感文件禁止在线编辑")
+	if err := ensureWritablePath(resolved); err != nil {
+		return err
 	}
 	if err := m.backup(resolved, info); err != nil {
 		return fmt.Errorf("创建备份失败: %w", err)
@@ -132,9 +129,6 @@ func (m *Manager) CreateFile(path string) error {
 	resolved, err := m.resolveNew(path)
 	if err != nil {
 		return err
-	}
-	if sensitivePath(resolved) {
-		return errors.New("不允许创建敏感文件")
 	}
 	f, err := os.OpenFile(resolved, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
 	if err != nil {
@@ -187,7 +181,10 @@ func (m *Manager) Move(source, destination string) error {
 		return err
 	}
 	if m.isManagedRoot(src) {
-		return errors.New("不允许移动授权根目录")
+		return errors.New("不允许移动文件系统根目录")
+	}
+	if err := ensureWritablePath(src); err != nil {
+		return err
 	}
 	dst, err := m.resolveNew(destination)
 	if err != nil {
@@ -224,7 +221,10 @@ func (m *Manager) Chmod(path, mode string) error {
 		return err
 	}
 	if m.isManagedRoot(resolved) {
-		return errors.New("不允许修改授权根目录权限")
+		return errors.New("不允许修改文件系统根目录权限")
+	}
+	if err := ensureWritablePath(resolved); err != nil {
+		return err
 	}
 	value, err := parseMode(mode)
 	if err != nil {
@@ -239,7 +239,10 @@ func (m *Manager) Trash(path string) (string, error) {
 		return "", err
 	}
 	if m.isManagedRoot(resolved) {
-		return "", errors.New("不允许删除授权根目录")
+		return "", errors.New("不允许删除文件系统根目录")
+	}
+	if err := ensureWritablePath(resolved); err != nil {
+		return "", err
 	}
 	root := filepath.Join(m.dataDir, "recycle")
 	itemsDir := filepath.Join(root, "items")
@@ -343,9 +346,6 @@ func (m *Manager) OpenDownload(path string) (*os.File, os.FileInfo, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if sensitivePath(resolved) {
-		return nil, nil, errors.New("敏感文件禁止下载")
-	}
 	f, err := os.Open(resolved)
 	return f, info, err
 }
@@ -370,9 +370,6 @@ func (m *Manager) SaveUploadRelative(directory, relativePath string, source io.R
 	destination, err := m.resolveNestedNew(dir, clean)
 	if err != nil {
 		return "", err
-	}
-	if sensitivePath(destination) {
-		return "", errors.New("不允许上传敏感文件")
 	}
 	rel, err := filepath.Rel(dir, destination)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
@@ -489,9 +486,6 @@ func (m *Manager) ExtractZIP(directory string, source io.Reader, overwrite bool)
 		rel, err := filepath.Rel(dir, destination)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 			return result, errors.New("解压路径越界")
-		}
-		if sensitivePath(destination) {
-			return result, errors.New("压缩包试图写入敏感文件")
 		}
 		if item.FileInfo().IsDir() {
 			if err := os.MkdirAll(destination, 0o750); err != nil {
@@ -795,6 +789,9 @@ func (m *Manager) resolveNestedNew(root, relative string) (string, error) {
 		}
 	}
 	destination := filepath.Join(current, parts[len(parts)-1])
+	if err := ensureWritablePath(destination); err != nil {
+		return "", err
+	}
 	if !m.allowed(destination) {
 		return "", errors.New("path is outside allowed roots")
 	}
@@ -811,6 +808,9 @@ func (m *Manager) resolveNew(path string) (string, error) {
 		return "", err
 	}
 	abs = filepath.Clean(abs)
+	if err := ensureWritablePath(abs); err != nil {
+		return "", err
+	}
 	if !m.allowed(abs) {
 		return "", errors.New("path is outside allowed roots")
 	}
@@ -842,7 +842,7 @@ func (m *Manager) isManagedRoot(path string) bool {
 func (m *Manager) allowed(path string) bool {
 	clean := filepath.Clean(path)
 	for _, root := range m.roots {
-		if clean == root || strings.HasPrefix(clean, root+string(os.PathSeparator)) {
+		if root == "/" || clean == root || strings.HasPrefix(clean, root+string(os.PathSeparator)) {
 			return true
 		}
 	}
@@ -914,16 +914,36 @@ func pruneDirectory(dir string, maxBytes int64, maxFiles int) error {
 	return nil
 }
 
-func sensitivePath(path string) bool {
+func IsSensitivePath(path string) bool {
 	clean := filepath.Clean(path)
 	base := strings.ToLower(filepath.Base(clean))
 	if clean == "/etc/shadow" || clean == "/etc/gshadow" {
 		return true
 	}
-	if strings.Contains(clean, string(os.PathSeparator)+".ssh"+string(os.PathSeparator)) && (strings.HasPrefix(base, "id_") || base == "authorized_keys") {
+	if clean == "/etc/lukepanel" || strings.HasPrefix(clean, "/etc/lukepanel/") || clean == "/etc/ssl/private" || strings.HasPrefix(clean, "/etc/ssl/private/") {
+		return true
+	}
+	if strings.Contains(clean, string(os.PathSeparator)+".ssh"+string(os.PathSeparator)) {
 		return true
 	}
 	return strings.HasSuffix(base, ".key") || strings.HasSuffix(base, ".pem") || strings.HasSuffix(base, ".p12") || strings.HasSuffix(base, ".pfx")
+}
+
+func IsVirtualPath(path string) bool {
+	clean := filepath.Clean(path)
+	for _, root := range []string{"/proc", "/sys", "/dev", "/run"} {
+		if clean == root || strings.HasPrefix(clean, root+string(os.PathSeparator)) {
+			return true
+		}
+	}
+	return false
+}
+
+func ensureWritablePath(path string) error {
+	if IsVirtualPath(path) {
+		return errors.New("虚拟系统目录只允许浏览，不能执行普通文件写入")
+	}
+	return nil
 }
 
 func isBinary(data []byte) bool {
@@ -957,15 +977,12 @@ func (m *Manager) ResolveExisting(path string, wantDir bool) (string, os.FileInf
 	return m.resolveExisting(path, wantDir)
 }
 
-// ResolveDirectoryForWrite validates that path is inside an allowed root and
-// returns a normalized absolute directory path. The directory may not exist yet.
+// ResolveDirectoryForWrite validates a destination and returns a normalized
+// absolute path. The directory may not exist yet.
 func (m *Manager) ResolveDirectoryForWrite(path string) (string, error) {
 	resolved, err := m.resolveNew(path)
 	if err != nil {
 		return "", err
-	}
-	if sensitivePath(resolved) {
-		return "", errors.New("不允许写入敏感路径")
 	}
 	return resolved, nil
 }
@@ -1004,7 +1021,10 @@ func (m *Manager) Chown(path, ownerName, groupName string) error {
 		gid = value
 	}
 	if m.isManagedRoot(resolved) {
-		return errors.New("不能修改授权根目录本身的所有者")
+		return errors.New("不能修改文件系统根目录本身的所有者")
+	}
+	if err := ensureWritablePath(resolved); err != nil {
+		return err
 	}
 	return os.Chown(resolved, uid, gid)
 }

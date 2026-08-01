@@ -2,7 +2,7 @@
 
 面向 Debian 12/13 的轻量系统管理面板。移动端优先、桌面端增强；核心由 Go 单二进制构成，不依赖 Node.js 运行时、Redis、外部数据库、Prometheus 或 Grafana。
 
-> 当前版本：`v0.9.5-beta`。核心单机管理功能已经进入功能冻结阶段；Beta 期间重点处理真实环境兼容性、安全审计和交互细节。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
+> 当前版本：`v0.9.6-beta`。核心单机管理功能已经进入功能冻结阶段；Beta 期间重点处理真实环境兼容性、安全审计和交互细节。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
 
 ## 设计目标
 
@@ -55,9 +55,9 @@
 
 ### 文件管理
 
-- 允许目录浏览，默认包含 `/home`、`/root`、`/opt`、`/srv`、`/var/www`、`/etc`、`/usr/local`
+- 从 `/` 浏览和管理完整文件系统；`/proc`、`/sys`、`/dev`、`/run` 等虚拟目录仅允许浏览
 - 可点击面包屑路径与一键复制完整路径
-- 当前目录筛选、授权目录递归搜索、多文件上传、文件夹上传和下载
+- 当前目录筛选、全文件系统递归搜索、多文件上传、文件夹上传和下载
 - 图片/PDF/Markdown 预览、ZIP 内容浏览，ZIP/TAR.GZ 在线压缩
 - ZIP 安全解压，支持 iPhone 大批量文件导入，并阻止路径穿越与符号链接
 - 新建文件/文件夹、在线文本编辑（最大 2MB）
@@ -67,8 +67,8 @@
 - 跨文件系统复制、移动和回收
 - 编辑前自动备份；文件备份总量自动限制为 500MB / 500 份
 - 单文件历史版本列表、差异对比和一键恢复；恢复前再次备份当前版本
-- 授权根目录保护、符号链接越界防护
-- 系统密码文件、SSH 私钥和常见私钥文件禁止在线读取或下载
+- 路径清理、符号链接解析和虚拟文件系统写入保护
+- 系统密码文件、SSH 私钥和面板密钥仅在二次验证窗口内允许读取或修改，并记录审计
 
 ### 工具、日志与审计
 
@@ -82,7 +82,7 @@
 ### GitHub 新手助手（可选）
 
 - 默认关闭且不预设任何用户或仓库；从常用工具按需启用
-- GitHub OAuth Device Flow 网页登录；不需要在面板保存用户名、密码或 Client Secret
+- GitHub OAuth Device Flow 网页登录；普通用户无需填写 Client ID、用户名、密码或 Client Secret
 - 授权 Token 只保存在当前 LukePanel 会话内存，退出或服务重启后清除
 - 检查仓库默认分支、最新提交、Tag、Release 和最近 Actions
 - 上传源码 ZIP，自动去掉外层目录并忽略 `.git`、macOS 元数据
@@ -134,6 +134,24 @@
 curl -fsSL https://raw.githubusercontent.com/Luke-Lab666/LukePanel/main/install.sh | bash
 ```
 
+首次安装会交互询问管理员用户名、管理员密码和本地监听端口；留空时分别使用 `admin`、自动生成的强密码和 `6767`。升级安装自动保留已有账号、密码和端口。
+
+也可以先保存安装脚本后使用参数：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Luke-Lab666/LukePanel/main/install.sh -o /tmp/lukepanel-install.sh
+sudo bash /tmp/lukepanel-install.sh --username LukeAdmin --port 6767
+```
+
+自动化安装应通过权限为 `0600` 的文件传入密码，避免密码进入 Shell 历史：
+
+```bash
+printf '%s\n' '你的强密码' > /root/.lukepanel-password
+chmod 600 /root/.lukepanel-password
+sudo bash /tmp/lukepanel-install.sh --non-interactive --username LukeAdmin --port 6767 --password-file /root/.lukepanel-password
+rm -f /root/.lukepanel-password
+```
+
 安装器会自动识别 AMD64 / ARM64，下载并校验二进制，安装或升级两个 systemd 服务。升级保留现有密码、配置、审计、备份和回收站，并安装 `lukepanel-uninstall` 卸载命令。
 
 默认链路：
@@ -164,13 +182,7 @@ lukepanel-uninstall --purge
 
 ## 登录
 
-默认用户名：
-
-```text
-admin
-```
-
-随机初始密码只在首次安装终端显示，配置文件中只保存密码哈希，无法反查明文。
+首次安装使用安装器中设置的管理员用户名和密码；用户名留空时默认为 `admin`，密码留空时自动生成并只在首次安装终端显示。配置文件只保存密码哈希，无法反查明文。
 
 ## 配置
 
@@ -189,7 +201,7 @@ admin
   "agent_socket": "/run/lukepanel/agent.sock",
   "secure_cookie": true,
   "auto_refresh_seconds": 5,
-  "allowed_roots": ["/home", "/root", "/opt", "/srv", "/var/www", "/etc", "/usr/local"]
+  "allowed_roots": ["/"]
 }
 ```
 
@@ -200,6 +212,10 @@ admin
 ```bash
 systemctl restart lukepanel-agent lukepanel
 ```
+
+### GitHub 设备登录构建配置
+
+面板用户不需要填写 Client ID。项目维护者需要在 GitHub 仓库的 Actions Variables 中设置 `LUKEPANEL_GITHUB_CLIENT_ID`，Release 构建会把公开的 OAuth App Client ID 注入二进制；本地运行也可通过同名环境变量提供。未配置时仅隐藏设备登录按钮，Token 登录仍可使用。OAuth App 必须开启 Device Flow。
 
 ## 服务排查
 

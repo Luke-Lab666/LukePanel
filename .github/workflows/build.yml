@@ -29,9 +29,10 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: '0'
+          GITHUB_OAUTH_CLIENT_ID: ${{ vars.LUKEPANEL_GITHUB_CLIENT_ID }}
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_SHA::7}" \
+          go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_SHA::7} -X main.githubOAuthClientID=${GITHUB_OAUTH_CLIENT_ID}" \
             -o "dist/lukepanel-linux-${GOARCH}" ./cmd/lukepanel
       - uses: actions/upload-artifact@v4
         with:

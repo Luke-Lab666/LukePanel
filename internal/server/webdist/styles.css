@@ -225,3 +225,36 @@ input[type=password]{direction:ltr;text-align:left;font-family:ui-monospace,SFMo
 .live-log-status{display:inline-flex;align-items:center;gap:7px;margin-right:auto;color:var(--muted);font-size:13px}.live-log-status i{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 0 4px color-mix(in srgb,var(--success) 14%,transparent)}
 .scheduled-backup-card{display:grid;gap:16px}.scheduled-backup-card .compact-list>div{align-items:center;gap:12px}.scheduled-backup-card .compact-list span{min-width:0}.scheduled-backup-card .compact-list strong,.scheduled-backup-card .compact-list small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:640px){.scheduled-backup-card .compact-list>div{align-items:flex-start;flex-direction:column}.scheduled-backup-card .resource-actions{width:100%}.scheduled-backup-card .resource-actions button{flex:1}}
+
+/* v0.9.6 iPhone layout and keyboard fixes */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overflow-x:hidden}
+body,#app,.app-shell,.main-content,.page-wrap{max-width:100%;min-width:0;overflow-wrap:anywhere}
+body{overflow-x:hidden}
+input,select,textarea,button{max-width:100%}
+[hidden]{display:none!important}
+.elevation-dialog-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-end;justify-content:center;padding:16px max(16px,env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background:rgba(8,10,14,.54);backdrop-filter:blur(8px);opacity:0;transition:opacity .16s ease}
+.elevation-dialog-backdrop.show{opacity:1}.elevation-dialog-card{width:min(100%,430px);border:1px solid var(--border);border-radius:18px;background:var(--surface);box-shadow:0 24px 70px rgba(0,0,0,.3);overflow:hidden;transform:translateY(14px);transition:transform .16s ease}.elevation-dialog-backdrop.show .elevation-dialog-card{transform:none}
+#elevation-direct-form{display:grid;gap:16px;padding:20px}#elevation-direct-form header{display:flex;align-items:center;gap:12px}#elevation-direct-form header strong{font-size:18px}#elevation-direct-form label{display:grid;gap:8px;font-size:13px;font-weight:700}#elevation-direct-form input{width:100%;min-height:50px;border:1px solid var(--border);border-radius:12px;background:var(--bg);color:var(--text);padding:0 14px;outline:0;font-size:16px}#elevation-direct-form input:focus{border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 13%,transparent)}#elevation-direct-form footer{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.github-token-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end;margin-top:14px}.github-token-form label{display:grid;gap:7px;min-width:0}.github-token-form input{width:100%}.github-auth-card>form{margin-top:14px}.device-flow-box>div{flex-wrap:wrap}
+@media(max-width:767px){
+  input:not([type=checkbox]):not([type=radio]),select,textarea{font-size:16px!important}
+  .main-content{padding-bottom:calc(92px + env(safe-area-inset-bottom))!important}
+  .mobile-nav{height:calc(66px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom)}
+  .page-wrap,.security-page,.files-page,.github-page{width:100%;min-width:0;padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+  .surface,.security-feature,.account-panel,.password-panel,.totp-panel,.settings-list,.account-actions,.uninstall-panel,.security-meta{min-width:0;max-width:100%}
+  .account-grid,.security-grid,.security-check-grid{grid-template-columns:minmax(0,1fr)!important}
+  .security-feature form,.account-panel form,.password-panel form,.github-token-form{grid-template-columns:minmax(0,1fr)!important;width:100%}
+  .security-feature label,.account-panel label,.password-panel label,.login-card label,.github-auth-card label{min-width:0;width:100%}
+  .security-feature input,.security-feature textarea,.account-panel input,.password-panel input,.login-card input,.github-auth-card input{width:100%;min-width:0}
+  .security-feature small,.security-feature p,.setting-row p,.compact-list small,.compact-list code{white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+  .security-feature .checkbox-row{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start}
+  .security-feature>button,.security-feature form>button,.account-panel form>button,.password-panel form>button{width:100%;min-height:48px}
+  .setting-row{grid-template-columns:auto minmax(0,1fr)!important;align-items:start}.setting-row>button,.setting-row>select{grid-column:1/-1;width:100%}
+  .command-row{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}.command-row code{white-space:normal;overflow-wrap:anywhere}.command-row button{width:100%}
+  .file-toolbar{grid-template-columns:auto auto minmax(0,1fr) auto auto}.file-breadcrumb{min-width:0;overflow-x:auto}
+  .file-open{grid-template-columns:auto minmax(0,1fr) auto;padding-left:10px}.file-open>code{display:none}.file-row{grid-template-columns:minmax(0,1fr) 46px}
+  .page-header__actions{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.page-header__actions>*{width:100%;justify-content:center}
+  .github-token-form button{width:100%}
+  .elevation-dialog-backdrop{align-items:flex-end}
+}
+@media(min-width:768px){.elevation-dialog-backdrop{align-items:center}.elevation-dialog-card{border-radius:16px}}

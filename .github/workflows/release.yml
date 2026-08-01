@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '版本号，例如 v0.9.5-beta'
+        description: '版本号，例如 v0.9.6-beta'
         required: true
         type: string
 
@@ -41,7 +41,7 @@ jobs:
             VERSION="$REF_NAME"
           fi
           [[ "$VERSION" =~ ^v[0-9][A-Za-z0-9._-]*$ ]] || {
-            echo "版本号必须以小写 v 开头，例如 v0.9.5-beta" >&2
+            echo "版本号必须以小写 v 开头，例如 v0.9.6-beta" >&2
             exit 1
           }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -71,11 +71,12 @@ jobs:
       - name: Build release binaries
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_OAUTH_CLIENT_ID: ${{ vars.LUKEPANEL_GITHUB_CLIENT_ID }}
         run: |
           mkdir -p dist
           for arch in amd64 arm64; do
             GOOS=linux GOARCH="$arch" CGO_ENABLED=0 \
-              go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
+              go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.githubOAuthClientID=${GITHUB_OAUTH_CLIENT_ID}" \
               -o "dist/lukepanel-linux-${arch}" ./cmd/lukepanel
           done
           cp install.sh uninstall.sh dist/

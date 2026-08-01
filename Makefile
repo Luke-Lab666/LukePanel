@@ -1,6 +1,7 @@
 SHELL := /bin/bash
 VERSION ?= dev
-LDFLAGS := -s -w -X main.version=$(VERSION)
+GITHUB_OAUTH_CLIENT_ID ?=
+LDFLAGS := -s -w -X main.version=$(VERSION) -X main.githubOAuthClientID=$(GITHUB_OAUTH_CLIENT_ID)
 
 .PHONY: build frontend test clean
 frontend:

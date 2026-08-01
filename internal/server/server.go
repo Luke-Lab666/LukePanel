@@ -38,6 +38,7 @@ type Server struct {
 	collector      *system.Collector
 	agent          *agent.Client
 	github         *githubhelper.Client
+	githubClientID string
 	githubImporter *githubhelper.Importer
 	githubMu       sync.Mutex
 	githubTokens   map[string]githubCredential
@@ -55,10 +56,10 @@ type Server struct {
 	passkeyPending map[string]passkeyChallenge
 }
 
-func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*Server, error) {
+func New(cfg config.Config, configPath, version, githubClientID string, logger *slog.Logger) (*Server, error) {
 	githubClient := githubhelper.New()
 	s := &Server{
-		cfg: cfg, configPath: configPath, version: version, collector: system.NewCollector(),
+		cfg: cfg, configPath: configPath, version: version, githubClientID: strings.TrimSpace(githubClientID), collector: system.NewCollector(),
 		agent: agent.NewClient(cfg.AgentSocket, cfg.AgentSecret), github: githubClient, githubImporter: githubhelper.NewImporter(githubClient, cfg.DataDir), sessions: auth.NewStore(cfg.SessionSecret, 24*time.Hour),
 		limiter: auth.NewLoginLimiter(), audit: NewAuditLog(cfg.DataDir), filePrefs: NewFilePreferenceStore(cfg.DataDir), logger: logger, elevated: make(map[string]time.Time),
 		githubTokens: make(map[string]githubCredential), githubFlows: make(map[string]*githubDeviceFlow),
@@ -197,6 +198,8 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/github/auth/status", s.requireAuth(s.githubAuthStatus))
 	mux.HandleFunc("/api/v1/github/auth/device/start", s.requireAuth(s.githubDeviceStart))
 	mux.HandleFunc("/api/v1/github/auth/device/poll", s.requireAuth(s.githubDevicePoll))
+	mux.HandleFunc("/api/v1/github/auth/device/cancel", s.requireAuth(s.githubDeviceCancel))
+	mux.HandleFunc("/api/v1/github/auth/token", s.requireAuth(s.githubTokenConnect))
 	mux.HandleFunc("/api/v1/github/auth/disconnect", s.requireAuth(s.githubDisconnect))
 	mux.HandleFunc("/api/v1/github/import/preview", s.requireAuth(s.githubImportPreview))
 	mux.HandleFunc("/api/v1/github/import/commit", s.requireAuth(s.githubImportCommit))
@@ -809,7 +812,7 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request) {
 func (s *Server) fileContent(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/files/content", url.Values{"path": {r.URL.Query().Get("path")}}), nil, "files.read")
+		s.proxyAgentJSON(w, r, http.MethodGet, s.fileAgentQuery(r, "/v1/files/content", url.Values{"path": {r.URL.Query().Get("path")}}), nil, "files.read")
 	case http.MethodPut:
 		var req map[string]string
 		if decodeJSON(w, r, (2<<20)+(64<<10), &req) != nil {
@@ -900,11 +903,11 @@ func (s *Server) fileRecycle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) fileBackups(w http.ResponseWriter, r *http.Request) {
-	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/files/backups", url.Values{"path": {r.URL.Query().Get("path")}}), nil, "files.backups.list")
+	s.proxyAgentJSON(w, r, http.MethodGet, s.fileAgentQuery(r, "/v1/files/backups", url.Values{"path": {r.URL.Query().Get("path")}}), nil, "files.backups.list")
 }
 
 func (s *Server) fileBackupDiff(w http.ResponseWriter, r *http.Request) {
-	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/files/backups/diff", url.Values{"path": {r.URL.Query().Get("path")}, "id": {r.URL.Query().Get("id")}}), nil, "files.backups.diff")
+	s.proxyAgentJSON(w, r, http.MethodGet, s.fileAgentQuery(r, "/v1/files/backups/diff", url.Values{"path": {r.URL.Query().Get("path")}, "id": {r.URL.Query().Get("id")}}), nil, "files.backups.diff")
 }
 
 func (s *Server) fileBackupRestore(w http.ResponseWriter, r *http.Request) {
@@ -959,7 +962,7 @@ func (s *Server) fileDownload(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	endpoint := agent.Query("/v1/files/download", url.Values{"path": {r.URL.Query().Get("path")}})
+	endpoint := s.fileAgentQuery(r, "/v1/files/download", url.Values{"path": {r.URL.Query().Get("path")}})
 	resp, err := s.agent.Raw(r.Context(), http.MethodGet, endpoint, nil, "")
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
@@ -1533,7 +1536,12 @@ func (s *Server) proxyAgentJSON(w http.ResponseWriter, r *http.Request, method, 
 	}
 	var raw json.RawMessage
 	if err := s.agent.JSON(r.Context(), method, endpoint, body, &raw); err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		status := http.StatusBadGateway
+		var agentErr *agent.HTTPError
+		if errors.As(err, &agentErr) && agentErr.StatusCode >= 400 && agentErr.StatusCode <= 599 {
+			status = agentErr.StatusCode
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	if auditAction != "" {
@@ -1551,6 +1559,16 @@ func (s *Server) copyAgentError(w http.ResponseWriter, resp *http.Response) {
 	}
 	writeError(w, resp.StatusCode, "Agent 请求失败")
 }
+func (s *Server) fileAgentQuery(r *http.Request, endpoint string, values url.Values) string {
+	if values == nil {
+		values = make(url.Values)
+	}
+	if s.elevationActive(r) {
+		values.Set("elevated", "1")
+	}
+	return agent.Query(endpoint, values)
+}
+
 func (s *Server) auditRequest(r *http.Request, action, target, result, detail string) {
 	session, _ := sessionFromContext(r)
 	s.configMu.RLock()
@@ -1559,16 +1577,23 @@ func (s *Server) auditRequest(r *http.Request, action, target, result, detail st
 	s.audit.Write(AuditEvent{IP: clientIP(r, trustedProxy), User: session.Username, Action: action, Target: target, Result: result, Detail: detail})
 }
 
-func (s *Server) requireElevation(w http.ResponseWriter, r *http.Request) bool {
+func (s *Server) elevationActive(r *http.Request) bool {
 	session, _ := sessionFromContext(r)
+	if session.ID == "" {
+		return false
+	}
 	s.elevatedMu.Lock()
+	defer s.elevatedMu.Unlock()
 	expires := s.elevated[session.ID]
 	if !expires.IsZero() && time.Now().After(expires) {
 		delete(s.elevated, session.ID)
-		expires = time.Time{}
+		return false
 	}
-	s.elevatedMu.Unlock()
-	if expires.IsZero() {
+	return !expires.IsZero()
+}
+
+func (s *Server) requireElevation(w http.ResponseWriter, r *http.Request) bool {
+	if !s.elevationActive(r) {
 		writeError(w, http.StatusForbidden, "需要二次验证后执行此操作")
 		return false
 	}
@@ -1943,14 +1968,14 @@ func (s *Server) fileSearch(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/files/search", url.Values{"root": {r.URL.Query().Get("root")}, "q": {r.URL.Query().Get("q")}}), nil, "files.search")
 }
 func (s *Server) filePreview(w http.ResponseWriter, r *http.Request) {
-	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/files/preview", url.Values{"path": {r.URL.Query().Get("path")}}), nil, "files.preview")
+	s.proxyAgentJSON(w, r, http.MethodGet, s.fileAgentQuery(r, "/v1/files/preview", url.Values{"path": {r.URL.Query().Get("path")}}), nil, "files.preview")
 }
 func (s *Server) filePreviewRaw(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return
 	}
-	endpoint := agent.Query("/v1/files/preview/raw", url.Values{"path": {r.URL.Query().Get("path")}})
+	endpoint := s.fileAgentQuery(r, "/v1/files/preview/raw", url.Values{"path": {r.URL.Query().Get("path")}})
 	resp, err := s.agent.Raw(r.Context(), http.MethodGet, endpoint, nil, "")
 	if err != nil {
 		writeError(w, 502, err.Error())
@@ -1971,7 +1996,7 @@ func (s *Server) filePreviewRaw(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 func (s *Server) fileArchiveList(w http.ResponseWriter, r *http.Request) {
-	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/files/archive/list", url.Values{"path": {r.URL.Query().Get("path")}}), nil, "files.archive.list")
+	s.proxyAgentJSON(w, r, http.MethodGet, s.fileAgentQuery(r, "/v1/files/archive/list", url.Values{"path": {r.URL.Query().Get("path")}}), nil, "files.archive.list")
 }
 func (s *Server) fileArchiveCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

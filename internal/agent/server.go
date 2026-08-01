@@ -684,6 +684,19 @@ func (s *Server) updateInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, data)
 }
+func (s *Server) requireSensitiveFileElevation(w http.ResponseWriter, r *http.Request, path string, wantDir bool) bool {
+	resolved, _, err := s.files.ResolveExisting(path, wantDir)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+	if filemanager.IsSensitivePath(resolved) && r.URL.Query().Get("elevated") != "1" {
+		writeError(w, http.StatusForbidden, "需要二次验证后访问敏感文件")
+		return false
+	}
+	return true
+}
+
 func (s *Server) fileList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -699,7 +712,11 @@ func (s *Server) fileList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) fileContent(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		content, err := s.files.Read(r.URL.Query().Get("path"))
+		path := r.URL.Query().Get("path")
+		if !s.requireSensitiveFileElevation(w, r, path, false) {
+			return
+		}
+		content, err := s.files.Read(path)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -866,7 +883,11 @@ func (s *Server) fileBackups(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	versions, err := s.files.ListBackups(r.URL.Query().Get("path"))
+	path := r.URL.Query().Get("path")
+	if !s.requireSensitiveFileElevation(w, r, path, false) {
+		return
+	}
+	versions, err := s.files.ListBackups(path)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -879,7 +900,11 @@ func (s *Server) fileBackupDiff(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	diff, err := s.files.BackupDiff(r.URL.Query().Get("path"), r.URL.Query().Get("id"))
+	path := r.URL.Query().Get("path")
+	if !s.requireSensitiveFileElevation(w, r, path, false) {
+		return
+	}
+	diff, err := s.files.BackupDiff(path, r.URL.Query().Get("id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -911,7 +936,11 @@ func (s *Server) fileDownload(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	f, info, err := s.files.OpenDownload(r.URL.Query().Get("path"))
+	path := r.URL.Query().Get("path")
+	if !s.requireSensitiveFileElevation(w, r, path, false) {
+		return
+	}
+	f, info, err := s.files.OpenDownload(path)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -1605,7 +1634,11 @@ func (s *Server) filePreview(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	result, err := s.files.PreviewInfo(r.URL.Query().Get("path"))
+	path := r.URL.Query().Get("path")
+	if !s.requireSensitiveFileElevation(w, r, path, false) {
+		return
+	}
+	result, err := s.files.PreviewInfo(path)
 	if err != nil {
 		writeError(w, 400, err.Error())
 		return
@@ -1617,7 +1650,11 @@ func (s *Server) filePreviewRaw(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	file, info, mimeType, err := s.files.OpenPreview(r.URL.Query().Get("path"))
+	path := r.URL.Query().Get("path")
+	if !s.requireSensitiveFileElevation(w, r, path, false) {
+		return
+	}
+	file, info, mimeType, err := s.files.OpenPreview(path)
 	if err != nil {
 		writeError(w, 400, err.Error())
 		return
@@ -1633,7 +1670,11 @@ func (s *Server) fileArchiveList(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	result, err := s.files.ListZIP(r.URL.Query().Get("path"))
+	path := r.URL.Query().Get("path")
+	if !s.requireSensitiveFileElevation(w, r, path, false) {
+		return
+	}
+	result, err := s.files.ListZIP(path)
 	if err != nil {
 		writeError(w, 400, err.Error())
 		return

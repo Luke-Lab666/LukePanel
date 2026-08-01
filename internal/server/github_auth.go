@@ -41,12 +41,13 @@ func (s *Server) githubAuthStatus(w http.ResponseWriter, r *http.Request) {
 	credential, ok := s.githubTokens[session.ID]
 	s.githubMu.Unlock()
 	if !ok {
-		writeJSON(w, http.StatusOK, map[string]any{"connected": false})
+		writeJSON(w, http.StatusOK, map[string]any{"connected": false, "device_login_available": s.githubClientID != ""})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"connected": true, "login": credential.Login, "name": credential.Name, "avatar_url": credential.AvatarURL,
 		"html_url": credential.HTMLURL, "scope": credential.Scope, "connected_at": credential.ConnectedAt,
+		"device_login_available": s.githubClientID != "",
 	})
 }
 
@@ -59,14 +60,13 @@ func (s *Server) githubDeviceStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "必须先通过 HTTPS 访问面板才能连接 GitHub")
 		return
 	}
-	var req struct {
-		ClientID string `json:"client_id"`
-	}
-	if decodeJSON(w, r, 16<<10, &req) != nil {
+	clientID := strings.TrimSpace(s.githubClientID)
+	if clientID == "" {
+		writeErrorCode(w, http.StatusServiceUnavailable, "GitHub 设备登录暂不可用", "github_device_unavailable")
 		return
 	}
 	const scope = "repo workflow read:user"
-	device, err := s.github.StartDeviceFlow(r.Context(), req.ClientID, scope)
+	device, err := s.github.StartDeviceFlow(r.Context(), clientID, scope)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -78,7 +78,7 @@ func (s *Server) githubDeviceStart(w http.ResponseWriter, r *http.Request) {
 	}
 	session, _ := sessionFromContext(r)
 	flow := &githubDeviceFlow{
-		Session: session.ID, ClientID: strings.TrimSpace(req.ClientID), DeviceCode: device.DeviceCode,
+		Session: session.ID, ClientID: clientID, DeviceCode: device.DeviceCode,
 		UserCode: device.UserCode, VerificationURI: device.VerificationURI, Scope: scope,
 		ExpiresAt: time.Now().Add(time.Duration(device.ExpiresIn) * time.Second), Interval: time.Duration(device.Interval) * time.Second,
 	}
@@ -167,6 +167,73 @@ func (s *Server) githubDevicePoll(w http.ResponseWriter, r *http.Request) {
 	s.githubMu.Unlock()
 	s.auditRequest(r, "github.auth.connect", user.Login, "success", result.Scope)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "authorized", "connected": true, "login": user.Login, "name": user.Name, "avatar_url": user.AvatarURL, "scope": result.Scope})
+}
+
+func (s *Server) githubDeviceCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		FlowID string `json:"flow_id"`
+	}
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	session, _ := sessionFromContext(r)
+	s.githubMu.Lock()
+	if req.FlowID != "" {
+		if flow := s.githubFlows[req.FlowID]; flow != nil && flow.Session == session.ID {
+			delete(s.githubFlows, req.FlowID)
+		}
+	} else {
+		for id, flow := range s.githubFlows {
+			if flow.Session == session.ID {
+				delete(s.githubFlows, id)
+			}
+		}
+	}
+	s.githubMu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) githubTokenConnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.cfg.SecureCookie {
+		writeError(w, http.StatusBadRequest, "必须先通过 HTTPS 访问面板才能连接 GitHub")
+		return
+	}
+	var req struct {
+		Token string `json:"token"`
+	}
+	if decodeJSON(w, r, 8<<10, &req) != nil {
+		return
+	}
+	token := strings.TrimSpace(req.Token)
+	if len(token) < 20 || len(token) > 512 || strings.ContainsAny(token, " \t\r\n") {
+		writeError(w, http.StatusBadRequest, "GitHub Token 格式不正确")
+		return
+	}
+	user, err := s.github.AuthenticatedUser(r.Context(), token)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "GitHub Token 无效或权限不足")
+		return
+	}
+	session, _ := sessionFromContext(r)
+	credential := githubCredential{Token: token, Login: user.Login, Name: user.Name, AvatarURL: user.AvatarURL, HTMLURL: user.HTMLURL, Scope: "personal-token", ConnectedAt: time.Now()}
+	s.githubMu.Lock()
+	s.githubTokens[session.ID] = credential
+	for id, flow := range s.githubFlows {
+		if flow.Session == session.ID {
+			delete(s.githubFlows, id)
+		}
+	}
+	s.githubMu.Unlock()
+	s.auditRequest(r, "github.auth.token", user.Login, "success", "memory-only")
+	writeJSON(w, http.StatusOK, map[string]any{"connected": true, "login": user.Login, "name": user.Name, "avatar_url": user.AvatarURL, "scope": credential.Scope})
 }
 
 func (s *Server) githubDisconnect(w http.ResponseWriter, r *http.Request) {

@@ -37,9 +37,6 @@ func (m *Manager) ListBackups(path string) ([]BackupVersion, error) {
 	if err != nil {
 		return nil, err
 	}
-	if sensitivePath(resolved) {
-		return nil, errors.New("敏感文件不提供历史版本")
-	}
 	return m.listBackupsForResolved(resolved)
 }
 
@@ -47,9 +44,6 @@ func (m *Manager) BackupDiff(path, id string) (FileDiff, error) {
 	resolved, info, err := m.resolveExisting(path, false)
 	if err != nil {
 		return FileDiff{}, err
-	}
-	if sensitivePath(resolved) {
-		return FileDiff{}, errors.New("敏感文件不提供差异对比")
 	}
 	if info.Size() > MaxEditableSize {
 		return FileDiff{}, errors.New("文件超过 2MB，无法在线对比")
@@ -81,8 +75,8 @@ func (m *Manager) RestoreBackup(path, id string) error {
 	if err != nil {
 		return err
 	}
-	if sensitivePath(resolved) {
-		return errors.New("敏感文件不允许在线恢复")
+	if err := ensureWritablePath(resolved); err != nil {
+		return err
 	}
 	backupPath, backupInfo, err := m.resolveBackup(resolved, id)
 	if err != nil {
