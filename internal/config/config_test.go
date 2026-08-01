@@ -73,11 +73,13 @@ func TestValidateRejectsUnsafeAdminUsername(t *testing.T) {
 }
 
 func TestLoadOrCreateWithOptionsInitializesCustomAccountAndPort(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
 	cfg, password, err := LoadOrCreateWithOptions(path, InitOptions{
 		AdminUser: "LukeAdmin",
 		Password:  "Strong-Install-Password-2026!",
 		Listen:    "127.0.0.1:7788",
+		DataDir:   filepath.Join(dir, "data"),
 	})
 	if err != nil {
 		t.Fatal(err)

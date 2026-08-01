@@ -22,6 +22,7 @@ type InitOptions struct {
 	AdminUser string
 	Password  string
 	Listen    string
+	DataDir   string
 }
 
 type TrustedDevice struct {
@@ -137,6 +138,9 @@ func LoadOrCreateWithOptions(path string, options InitOptions) (Config, string, 
 	}
 	if value := strings.TrimSpace(options.Listen); value != "" {
 		cfg.Listen = value
+	}
+	if value := strings.TrimSpace(options.DataDir); value != "" {
+		cfg.DataDir = value
 	}
 	password := options.Password
 	if password == "" {
