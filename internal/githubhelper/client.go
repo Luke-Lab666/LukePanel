@@ -40,6 +40,7 @@ type RepositorySummary struct {
 	Branches      []Branch      `json:"branches"`
 	LatestRelease *Release      `json:"latest_release,omitempty"`
 	WorkflowRuns  []WorkflowRun `json:"workflow_runs"`
+	PullRequests  []PullRequest `json:"pull_requests"`
 }
 
 type Tag struct {
@@ -59,16 +60,44 @@ type PullRequest struct {
 	State   string `json:"state"`
 	HTMLURL string `json:"html_url"`
 	Head    string `json:"head"`
+	HeadSHA string `json:"head_sha"`
 	Base    string `json:"base"`
+	Draft   bool   `json:"draft"`
+}
+
+type PullRequestMerge struct {
+	SHA     string `json:"sha"`
+	Merged  bool   `json:"merged"`
+	Message string `json:"message"`
 }
 
 type Release struct {
+	ID          int64  `json:"id"`
 	TagName     string `json:"tag_name"`
 	Name        string `json:"name"`
 	PublishedAt string `json:"published_at"`
 	HTMLURL     string `json:"html_url"`
 	Draft       bool   `json:"draft"`
 	Prerelease  bool   `json:"prerelease"`
+}
+
+type WorkflowJob struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Status      string `json:"status"`
+	Conclusion  string `json:"conclusion"`
+	StartedAt   string `json:"started_at"`
+	CompletedAt string `json:"completed_at"`
+	HTMLURL     string `json:"html_url"`
+}
+
+type ReleaseAsset struct {
+	ID                 int64  `json:"id"`
+	Name               string `json:"name"`
+	Size               int64  `json:"size"`
+	DownloadCount      int    `json:"download_count"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+	CreatedAt          string `json:"created_at"`
 }
 
 type WorkflowRun struct {
@@ -147,7 +176,8 @@ func (c *Client) Summary(ctx context.Context, owner, repo, token string) (Reposi
 		WorkflowRuns []WorkflowRun `json:"workflow_runs"`
 	}
 	_ = c.get(ctx, owner, repo, "/actions/runs?per_page=10", token, &runs)
-	return RepositorySummary{Owner: owner, Name: repo, FullName: metadata.FullName, Description: metadata.Description, Visibility: metadata.Visibility, DefaultBranch: metadata.DefaultBranch, UpdatedAt: metadata.UpdatedAt, MainSHA: branch.Commit.SHA, Tags: tags, Branches: branches, LatestRelease: latestPtr, WorkflowRuns: runs.WorkflowRuns}, nil
+	pulls, _ := c.ListPullRequests(ctx, owner, repo, token)
+	return RepositorySummary{Owner: owner, Name: repo, FullName: metadata.FullName, Description: metadata.Description, Visibility: metadata.Visibility, DefaultBranch: metadata.DefaultBranch, UpdatedAt: metadata.UpdatedAt, MainSHA: branch.Commit.SHA, Tags: tags, Branches: branches, LatestRelease: latestPtr, WorkflowRuns: runs.WorkflowRuns, PullRequests: pulls}, nil
 }
 
 func (c *Client) CreateBranch(ctx context.Context, owner, repo, name, source, token string) (Branch, error) {
@@ -217,8 +247,10 @@ func (c *Client) CreatePullRequest(ctx context.Context, owner, repo, title, body
 		Title   string `json:"title"`
 		State   string `json:"state"`
 		HTMLURL string `json:"html_url"`
+		Draft   bool   `json:"draft"`
 		Head    struct {
 			Ref string `json:"ref"`
+			SHA string `json:"sha"`
 		} `json:"head"`
 		Base struct {
 			Ref string `json:"ref"`
@@ -227,7 +259,72 @@ func (c *Client) CreatePullRequest(ctx context.Context, owner, repo, title, body
 	if err := c.requestJSON(ctx, http.MethodPost, owner, repo, "/pulls", token, payload, &raw); err != nil {
 		return PullRequest{}, err
 	}
-	return PullRequest{Number: raw.Number, Title: raw.Title, State: raw.State, HTMLURL: raw.HTMLURL, Head: raw.Head.Ref, Base: raw.Base.Ref}, nil
+	return PullRequest{Number: raw.Number, Title: raw.Title, State: raw.State, HTMLURL: raw.HTMLURL, Head: raw.Head.Ref, HeadSHA: raw.Head.SHA, Base: raw.Base.Ref, Draft: raw.Draft}, nil
+}
+
+func (c *Client) ListPullRequests(ctx context.Context, owner, repo, token string) ([]PullRequest, error) {
+	if err := validateRepo(owner, repo); err != nil {
+		return nil, err
+	}
+	var raw []struct {
+		Number  int    `json:"number"`
+		Title   string `json:"title"`
+		State   string `json:"state"`
+		HTMLURL string `json:"html_url"`
+		Draft   bool   `json:"draft"`
+		Head    struct {
+			Ref string `json:"ref"`
+			SHA string `json:"sha"`
+		} `json:"head"`
+		Base struct {
+			Ref string `json:"ref"`
+		} `json:"base"`
+	}
+	if err := c.get(ctx, owner, repo, "/pulls?state=open&per_page=20&sort=updated&direction=desc", token, &raw); err != nil {
+		return nil, err
+	}
+	items := make([]PullRequest, 0, len(raw))
+	for _, item := range raw {
+		items = append(items, PullRequest{Number: item.Number, Title: item.Title, State: item.State, HTMLURL: item.HTMLURL, Head: item.Head.Ref, HeadSHA: item.Head.SHA, Base: item.Base.Ref, Draft: item.Draft})
+	}
+	return items, nil
+}
+
+func (c *Client) MergePullRequest(ctx context.Context, owner, repo string, number int, expectedSHA, method, token string) (PullRequestMerge, error) {
+	if err := validateRepo(owner, repo); err != nil {
+		return PullRequestMerge{}, err
+	}
+	if number < 1 {
+		return PullRequestMerge{}, errors.New("Pull Request 编号无效")
+	}
+	if strings.TrimSpace(token) == "" {
+		return PullRequestMerge{}, errors.New("请先连接 GitHub")
+	}
+	method = strings.TrimSpace(method)
+	if method == "" {
+		method = "squash"
+	}
+	if method != "squash" && method != "merge" && method != "rebase" {
+		return PullRequestMerge{}, errors.New("不支持的合并方式")
+	}
+	payload := map[string]any{"merge_method": method}
+	if expectedSHA != "" {
+		if len(expectedSHA) < 7 || len(expectedSHA) > 64 {
+			return PullRequestMerge{}, errors.New("PR 提交 SHA 无效")
+		}
+		payload["sha"] = expectedSHA
+	}
+	var result PullRequestMerge
+	if err := c.requestJSON(ctx, http.MethodPut, owner, repo, fmt.Sprintf("/pulls/%d/merge", number), token, payload, &result); err != nil {
+		return PullRequestMerge{}, err
+	}
+	if !result.Merged {
+		if result.Message == "" {
+			result.Message = "GitHub 没有合并这个 Pull Request"
+		}
+		return result, errors.New(result.Message)
+	}
+	return result, nil
 }
 
 func (c *Client) CreateTag(ctx context.Context, owner, repo, tag, targetSHA, token string) error {
@@ -378,4 +475,120 @@ func (c *Client) CreateRelease(ctx context.Context, owner, repo string, request 
 		return Release{}, err
 	}
 	return release, nil
+}
+
+func (c *Client) WorkflowJobs(ctx context.Context, owner, repo string, runID int64, token string) ([]WorkflowJob, error) {
+	if err := validateRepo(owner, repo); err != nil {
+		return nil, err
+	}
+	if runID <= 0 {
+		return nil, errors.New("Actions 运行编号无效")
+	}
+	if strings.TrimSpace(token) == "" {
+		return nil, errors.New("请先连接 GitHub")
+	}
+	var raw struct {
+		Jobs []WorkflowJob `json:"jobs"`
+	}
+	if err := c.get(ctx, owner, repo, fmt.Sprintf("/actions/runs/%d/jobs?per_page=100", runID), token, &raw); err != nil {
+		return nil, err
+	}
+	return raw.Jobs, nil
+}
+
+func (c *Client) WorkflowJobLogs(ctx context.Context, owner, repo string, jobID int64, token string) (string, error) {
+	if err := validateRepo(owner, repo); err != nil {
+		return "", err
+	}
+	if jobID <= 0 {
+		return "", errors.New("Actions Job 编号无效")
+	}
+	if strings.TrimSpace(token) == "" {
+		return "", errors.New("请先连接 GitHub")
+	}
+	endpoint := fmt.Sprintf("%s/repos/%s/%s/actions/jobs/%d/logs", strings.TrimRight(c.apiBase, "/"), url.PathEscape(owner), url.PathEscape(repo), jobID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "LukePanel-GitHub-Helper")
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return "", decodeGitHubError(resp)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func (c *Client) ReleaseByTag(ctx context.Context, owner, repo, tag, token string) (Release, error) {
+	if err := validateRepo(owner, repo); err != nil {
+		return Release{}, err
+	}
+	if !tagPattern.MatchString(strings.TrimSpace(tag)) {
+		return Release{}, errors.New("Release 标签格式不正确")
+	}
+	var release Release
+	err := c.get(ctx, owner, repo, "/releases/tags/"+url.PathEscape(tag), token, &release)
+	return release, err
+}
+func (c *Client) ReleaseAssets(ctx context.Context, owner, repo, tag, token string) ([]ReleaseAsset, error) {
+	release, err := c.ReleaseByTag(ctx, owner, repo, tag, token)
+	if err != nil {
+		return nil, err
+	}
+	var items []ReleaseAsset
+	if err := c.get(ctx, owner, repo, fmt.Sprintf("/releases/%d/assets?per_page=100", release.ID), token, &items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+func (c *Client) UploadReleaseAsset(ctx context.Context, owner, repo, tag, name, contentType, token string, size int64, reader io.Reader) (ReleaseAsset, error) {
+	if size < 1 || size > 256<<20 {
+		return ReleaseAsset{}, errors.New("Release 附件必须在 1B-256MB 之间")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 200 || strings.ContainsAny(name, "/\\\x00\r\n") {
+		return ReleaseAsset{}, errors.New("附件文件名无效")
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	release, err := c.ReleaseByTag(ctx, owner, repo, tag, token)
+	if err != nil {
+		return ReleaseAsset{}, err
+	}
+	endpoint := fmt.Sprintf("https://uploads.github.com/repos/%s/%s/releases/%d/assets?name=%s", url.PathEscape(owner), url.PathEscape(repo), release.ID, url.QueryEscape(name))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, reader)
+	if err != nil {
+		return ReleaseAsset{}, err
+	}
+	req.ContentLength = size
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "LukePanel-GitHub-Helper")
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return ReleaseAsset{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return ReleaseAsset{}, decodeGitHubError(resp)
+	}
+	var asset ReleaseAsset
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&asset); err != nil {
+		return ReleaseAsset{}, err
+	}
+	return asset, nil
 }

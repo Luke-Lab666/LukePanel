@@ -184,6 +184,8 @@ func validateRequest(req *CreateRequest) error {
 		if _, err := exec.LookPath("docker"); err != nil {
 			return errors.New("服务器未安装 docker 命令")
 		}
+	case "panel-backup":
+		req.Target = "scheduled-backups"
 	default:
 		return errors.New("任务类型无效")
 	}
@@ -211,6 +213,9 @@ func renderUnits(task Task) (string, string, error) {
 		}
 		executable = path
 		args = []string{"system", "prune", "-f"}
+	case "panel-backup":
+		executable = "/usr/local/bin/lukepanel"
+		args = []string{"--backup-auto", "--config", "/etc/lukepanel/config.json"}
 	default:
 		return "", "", errors.New("任务类型无效")
 	}

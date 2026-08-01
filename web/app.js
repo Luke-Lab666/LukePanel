@@ -18,6 +18,8 @@ const state = {
   dockerEdit: null,
   dockerStats: {},
   dockerStatsTimer: null,
+  dockerLogTimer: null,
+  dockerLogPaused: false,
   dockerCleanupPreview: null,
   services: null,
   serviceFilter: 'running',
@@ -34,6 +36,7 @@ const state = {
   aptQuery: '',
   hostSettings: null,
   snapshots: null,
+  scheduledBackups: null,
   fileSearchResults: null,
   composeConfig: null,
   processPrimed: false,
@@ -47,7 +50,9 @@ const state = {
   audit: null,
   auditFilter: '',
   logTab: 'audit',
+  logSource: '',
   systemLogs: null,
+  systemLogTimer: null,
   settings: null,
   totpStatus: null,
   totpSetup: null,
@@ -67,6 +72,24 @@ const state = {
   overviewStream: null,
   overviewStreamFailed: false,
   modal: null,
+  firewall: null,
+  fail2ban: null,
+  ntp: null,
+  aptSources: null,
+  dockerHubResults: null,
+  dockerHubQuery: '',
+  dockerVolumeUsage: null,
+  filePreferences: null,
+  passkeys: null,
+  trustedDevices: null,
+  ipAllowlist: null,
+  loginNotifications: null,
+  auditQuery: {q:'',user:'',ip:'',action:'',result:'',from:'',to:'',offset:0,limit:200},
+  githubJobs: null,
+  githubAssets: null,
+  backgroundJobs: null,
+  activeJob: null,
+  jobsLoading: false,
 }
 
 const icons = {
@@ -376,7 +399,7 @@ async function loadTasks(){
   catch(error){state.errors.tasks=error.message}
   finally{state.loading.tasks=false;render()}
 }
-function taskTypeLabel(type){return ({'service-restart':'重启 systemd 服务','docker-restart':'重启 Docker 容器','docker-cleanup-safe':'安全清理 Docker'})[type]||type}
+function taskTypeLabel(type){return ({'service-restart':'重启 systemd 服务','docker-restart':'重启 Docker 容器','docker-cleanup-safe':'安全清理 Docker','panel-backup':'完整面板备份'})[type]||type}
 function taskScheduleLabel(task){if(task.frequency==='hourly')return `每小时 ${String(task.minute).padStart(2,'0')} 分`;if(task.frequency==='weekly')return `每周${'日一二三四五六'[task.weekday]} ${String(task.hour).padStart(2,'0')}:${String(task.minute).padStart(2,'0')}`;return `每天 ${String(task.hour).padStart(2,'0')}:${String(task.minute).padStart(2,'0')}`}
 function tasksPage(){
   if(!state.tasks&&!state.errors.tasks){queueMicrotask(loadTasks);return `<div class="page-wrap">${pageHeader('计划任务','读取安全计划任务')}${surfaceLoading()}</div>`}
@@ -416,15 +439,55 @@ async function aptSearch(query){
 async function aptAction(action,packages=[]){
   const labels={download:'下载更新',upgrade:'升级系统',install:'安装软件包',remove:'删除软件包'}
   const danger=action==='upgrade'||action==='remove'
-  const detail=action==='upgrade'?'升级期间不要关闭页面或重启服务器。LukePanel 会先创建快照，并在 dpkg 出错时尝试修复。':`${labels[action]}：${packages.join(', ')||'全部可升级软件包'}`
-  if(!await askConfirm(detail,{title:labels[action],confirmText:'确认执行',danger}))return
-  setBusy(true)
+  const detail=action==='upgrade'?'升级会在 Agent 后台执行，关闭页面不会中止。开始前会创建快照并先下载软件包。':`${labels[action]}：${packages.join(', ')||'全部可升级软件包'}`
+  if(!await askConfirm(detail,{title:labels[action],confirmText:'启动后台任务',danger}))return
   try{
-    let result
-    if(action==='download'||action==='upgrade')result=await secureApi(`/api/v1/system/apt/${action}`,{method:'POST',body:'{}'})
-    else result=await secureApi('/api/v1/system/apt/package',{method:'POST',body:jsonBody({action,packages})})
-    state.modal={title:`${labels[action]}结果`,kind:'logs',content:result.output||'操作完成'};await loadUpdates();state.modal={title:`${labels[action]}结果`,kind:'logs',content:result.output||'操作完成'};render()
-  }catch(error){await showError(error.message)}finally{setBusy(false)}
+    const job=await startBackgroundJob(`apt.${action}`,{packages})
+    state.modal={title:labels[action],kind:'job-progress',job};render()
+    await monitorBackgroundJob(job.id,labels[action])
+    await loadUpdates()
+  }catch(error){await showError(error.message)}
+}
+
+async function loadBackgroundJobs(renderAfter=true){
+  if(state.jobsLoading)return
+  state.jobsLoading=true
+  try{const out=await api('/api/v1/jobs');state.backgroundJobs=out.jobs||[]}catch(error){state.errors.jobs=error.message}finally{state.jobsLoading=false;if(renderAfter)render()}
+}
+async function startBackgroundJob(action,payload={}){
+  const out=await secureApi('/api/v1/jobs/start',{method:'POST',body:jsonBody({action,...payload})})
+  const job=out.job
+  if(!job?.id)throw new Error('后台任务没有返回任务编号')
+  state.backgroundJobs=[job,...(state.backgroundJobs||[]).filter(item=>item.id!==job.id)]
+  return job
+}
+function jobResultOutput(job){
+  const result=job?.result||{}
+  if(typeof result==='string')return result
+  return result.output||result.message||job?.error||''
+}
+async function monitorBackgroundJob(id,title){
+  for(let count=0;count<1800;count++){
+    const out=await api(`/api/v1/jobs?id=${encodeURIComponent(id)}`),job=out.job
+    state.activeJob=job
+    state.backgroundJobs=[job,...(state.backgroundJobs||[]).filter(item=>item.id!==id)]
+    if(state.modal?.kind==='job-progress'&&state.modal?.job?.id===id){state.modal={...state.modal,job};render()}
+    if(job.status==='success'||job.status==='failed'){
+      const output=jobResultOutput(job)
+      if(state.modal?.kind==='job-progress'&&state.modal?.job?.id===id){state.modal={title:job.status==='success'?`${title}完成`:`${title}失败`,kind:'logs',content:output||job.error||'任务结束'};render()}
+      else showToast(job.status==='success'?`${title}已完成`:`${title}失败`)
+      await loadBackgroundJobs(false)
+      if(job.status==='failed')throw new Error(job.error||'后台任务失败')
+      return job
+    }
+    await new Promise(resolve=>setTimeout(resolve,1500))
+  }
+  throw new Error('后台任务等待超时，可在最近任务中继续查看')
+}
+function backgroundJobPanel(prefix){
+  if(!state.backgroundJobs&&!state.jobsLoading)queueMicrotask(()=>loadBackgroundJobs())
+  const items=(state.backgroundJobs||[]).filter(job=>job.kind.startsWith(prefix)).slice(0,8)
+  return `<section class="surface feature-panel background-jobs-panel"><div class="section-heading"><div><h2>最近后台任务</h2><p>长时间操作由 Agent 执行，离开页面或反向代理断开不会中止。</p></div><button id="refresh-background-jobs" class="secondary-button compact">${icon('refresh',16)}刷新</button></div><div class="compact-list">${items.map(job=>`<button class="job-row" data-background-job="${escapeHTML(job.id)}"><span><strong>${escapeHTML(job.kind)}</strong><small>${escapeHTML(job.target||'')} · ${formatDate(job.created_at)}</small></span><span class="status-badge ${job.status==='success'?'active':job.status==='failed'?'danger':'pending'}">${job.status==='success'?'完成':job.status==='failed'?'失败':job.status==='running'?'运行中':'排队中'}</span></button>`).join('')||'<div class="empty-list">暂无后台任务</div>'}</div></section>`
 }
 async function loadHostSettings(){state.errors.host='';try{state.hostSettings=await api('/api/v1/system/host')}catch(error){state.errors.host=error.message}finally{render()}}
 function hostPage(){
@@ -435,14 +498,40 @@ function hostPage(){
 async function hostMutation(endpoint,body,method='POST'){
   setBusy(true);try{await secureApi(`/api/v1/system/host/${endpoint}`,{method,body:body===null?undefined:jsonBody(body)});showToast('主机设置已更新');await loadHostSettings()}catch(error){await showError(error.message)}finally{setBusy(false)}
 }
-async function loadSnapshots(){state.errors.snapshots='';try{const out=await api('/api/v1/system/snapshots');state.snapshots=out.snapshots||out||[]}catch(error){state.errors.snapshots=error.message}finally{render()}}
+async function loadSnapshots(){state.errors.snapshots='';try{const [out,scheduled]=await Promise.all([api('/api/v1/system/snapshots'),api('/api/v1/backup/scheduled')]);state.snapshots=out.snapshots||out||[];state.scheduledBackups=scheduled}catch(error){state.errors.snapshots=error.message}finally{render()}}
 function snapshotsPage(){
   if(!state.snapshots&&!state.errors.snapshots){queueMicrotask(loadSnapshots);return `<div class="page-wrap">${pageHeader('配置快照','读取快照')}${surfaceLoading()}</div>`}
-  return `<div class="page-wrap snapshots-page">${pageHeader('配置快照','APT、SSH、DNS、Compose 等关键修改会自动留下可恢复快照',`<button id="refresh-snapshots" class="secondary-button compact">${icon('refresh',17)}刷新</button>`)}${errorBox(state.errors.snapshots)}<section class="snapshot-list">${(state.snapshots||[]).map(item=>`<article class="surface snapshot-card"><div><span class="status-badge muted"><i></i>${escapeHTML(item.kind)}</span><h2>${escapeHTML(item.name)}</h2><p>${escapeHTML(item.note||'自动创建的配置快照')}</p><small>${formatDate(item.created_at)} · ${formatBytes(item.size)} · ${item.items?.length||0} 项</small></div><details><summary>查看包含内容</summary><div class="snapshot-paths">${(item.items||[]).map(x=>`<code>${escapeHTML(x.original)}${x.exists?'':'（当时不存在）'}</code>`).join('')}</div></details><div class="resource-actions"><button class="primary-button compact" data-snapshot-action="restore" data-snapshot-id="${escapeHTML(item.id)}">恢复</button><button class="danger-button compact" data-snapshot-action="delete" data-snapshot-id="${escapeHTML(item.id)}">删除</button></div></article>`).join('')||'<div class="empty-list surface">还没有配置快照。执行关键系统修改后会自动出现在这里。</div>'}</section></div>`
+  const backupPanel=`<section class="surface panel-backup-card"><div class="section-heading"><div><h2>面板完整备份</h2><p>导出账号、安全设置、审计索引、文件历史、回收站与配置快照。恢复时保留当前监听地址和 Agent 密钥，避免服务失联。</p></div><button id="panel-backup-export" class="primary-button compact">${icon('download',17)}导出备份</button></div><form id="panel-backup-import" class="backup-import-form"><label><span>恢复 LukePanel 备份</span><input name="file" type="file" accept=".tar.gz,.tgz,application/gzip" required></label><button class="danger-button" type="submit">校验并恢复</button></form><div class="backup-safety-note">${icon('shield',17)}恢复前建议先导出当前状态。上传上限 512MB；危险路径、软链接和超大归档会被拒绝。</div></section>`
+  return `<div class="page-wrap snapshots-page">${pageHeader('配置快照','APT、SSH、DNS、Compose 等关键修改会自动留下可恢复快照',`<button id="refresh-snapshots" class="secondary-button compact">${icon('refresh',17)}刷新</button>`)}${errorBox(state.errors.snapshots)}${backupPanel}<section class="snapshot-list">${(state.snapshots||[]).map(item=>`<article class="surface snapshot-card"><div><span class="status-badge muted"><i></i>${escapeHTML(item.kind)}</span><h2>${escapeHTML(item.name)}</h2><p>${escapeHTML(item.note||'自动创建的配置快照')}</p><small>${formatDate(item.created_at)} · ${formatBytes(item.size)} · ${item.items?.length||0} 项</small></div><details><summary>查看包含内容</summary><div class="snapshot-paths">${(item.items||[]).map(x=>`<code>${escapeHTML(x.original)}${x.exists?'':'（当时不存在）'}</code>`).join('')}</div></details><div class="resource-actions"><button class="primary-button compact" data-snapshot-action="restore" data-snapshot-id="${escapeHTML(item.id)}">恢复</button><button class="danger-button compact" data-snapshot-action="delete" data-snapshot-id="${escapeHTML(item.id)}">删除</button></div></article>`).join('')||'<div class="empty-list surface">还没有配置快照。执行关键系统修改后会自动出现在这里。</div>'}</section></div>`
 }
+
 async function snapshotAction(id,action){
   if(!await askConfirm(action==='restore'?'恢复会覆盖当前配置，但恢复前还会再创建一个回滚点。':'确认永久删除这个快照？',{title:action==='restore'?'恢复配置快照':'删除配置快照',confirmText:action==='restore'?'确认恢复':'确认删除',danger:true}))return
   try{await secureApi('/api/v1/system/snapshots',{method:'POST',body:jsonBody({id,action})});showToast(action==='restore'?'快照已恢复':'快照已删除');await loadSnapshots()}catch(error){await showError(error.message)}
+}
+
+async function exportPanelBackup(){
+  let response=await fetch('/api/v1/backup/export',{credentials:'same-origin'})
+  if(response.status===403){await requestElevation();response=await fetch('/api/v1/backup/export',{credentials:'same-origin'})}
+  if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.error||`导出失败（${response.status}）`)}
+  const disposition=response.headers.get('content-disposition')||''
+  const match=disposition.match(/filename="?([^";]+)"?/i)
+  const filename=match?.[1]||`lukepanel-backup-${new Date().toISOString().slice(0,10)}.tar.gz`
+  const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a')
+  link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),2000)
+  showToast('完整备份已导出')
+}
+async function importPanelBackup(file){
+  if(!file)throw new Error('请选择备份文件')
+  if(!await askConfirm('恢复会替换账号、安全设置和面板数据，但保留当前监听地址与 Agent 通信参数。建议先导出当前备份。',{title:'恢复 LukePanel 完整备份',confirmText:'校验并恢复',danger:true}))return
+  const body=new FormData();body.append('file',file)
+  setBusy(true)
+  try{
+    const out=await secureApi('/api/v1/backup/import',{method:'POST',body})
+    showToast(out.message||'备份已恢复')
+    const reload=await askConfirm('恢复已完成。重新载入后使用备份中的账号与安全设置。',{title:'恢复完成',confirmText:'立即重新载入',cancelText:'稍后'})
+    if(reload)location.reload()
+  }finally{setBusy(false)}
 }
 
 async function loadDocker(){
@@ -504,7 +593,7 @@ async function dockerAction(id,action){
   if(['stop','restart','kill','remove'].includes(action)&&!await askConfirm(`确认${labels[action]}这个容器？`,{title:`${labels[action]}容器`,confirmText:labels[action],danger:['kill','remove'].includes(action)}))return
   setBusy(true);try{await secureApi('/api/v1/docker/action',{method:'POST',body:jsonBody({id,action})});await loadDocker();showToast(`容器已${labels[action]}`)}catch(e){await showError(e.message)}finally{setBusy(false)}
 }
-async function showDockerLogs(id,title){state.modal={title,kind:'logs',content:'正在读取日志…'};render();try{const data=await api(`/api/v1/docker/logs?id=${encodeURIComponent(id)}&tail=500`);state.modal={title:`${title} 日志`,kind:'logs',content:data.logs||'暂无日志'};render()}catch(e){state.modal={title,kind:'error',content:e.message};render()}}
+async function showDockerLogs(id,title){stopDockerLogPolling();state.dockerLogPaused=false;state.modal={title:`${title} 实时日志`,kind:'logs',content:'正在读取日志…',dockerLogID:id,dockerLogTitle:title};render();await refreshDockerLogs(id);state.dockerLogTimer=setInterval(()=>refreshDockerLogs(id),2000)}
 function lines(value){return String(value||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean)}
 function dockerEnvRow(value=''){
   const index=String(value).indexOf('='),key=index>=0?String(value).slice(0,index):String(value),val=index>=0?String(value).slice(index+1):''
@@ -642,6 +731,9 @@ async function fileMutation(action,item){
     }else if(action==='chmod'){
       const current=String(item.mode||'').match(/[0-7]{3,4}$/)?.[0]||'644',mode=await askText('',{title:'修改八进制权限',value:current,placeholder:'文件常用 644，目录常用 755'});if(!mode)return
       await secureApi('/api/v1/files/chmod',{method:'POST',body:jsonBody({path:source,mode})})
+    }else if(action==='chown'){
+      const value=await askText('格式：用户:用户组，可只填写其中一项，例如 root:root 或 :www-data',{title:'修改文件所有者',placeholder:'root:root'});if(!value)return
+      const [owner='',group='']=String(value).split(':',2);await secureApi('/api/v1/files/chown',{method:'POST',body:jsonBody({path:source,owner:owner.trim(),group:group.trim()})})
     }else if(action==='delete'){
       if(!await askConfirm(source,{title:'移入回收站',confirmText:'确认删除',danger:true}))return
       await secureApi('/api/v1/files/delete',{method:'POST',body:jsonBody({path:source})})
@@ -757,19 +849,20 @@ function githubImportHTML(data){
   return `<section class="surface github-import-panel"><div><h2>上传 ZIP 并推送</h2><p>适合我给你的更新包：上传后先比较文件，再写入目标分支。默认只新增或覆盖，不会删除仓库里 ZIP 缺少的文件，也不会强制推送。</p></div><form id="github-import-form"><label>所有者<input name="owner" value="${escapeHTML(data?.owner||defaults.owner)}" required></label><label>仓库<input name="repo" value="${escapeHTML(data?.name||defaults.repo)}" required></label><label>分支<input name="branch" value="${escapeHTML(defaults.branch||data?.default_branch)}" required></label><label class="wide-field">源码 ZIP<input name="file" type="file" accept=".zip,application/zip" required></label><button class="primary-button" type="submit">上传并预览差异</button></form>${plan?`<div class="import-preview"><div class="import-counts"><span><b>${plan.added}</b>新增</span><span><b>${plan.modified}</b>修改</span><span><b>${plan.unchanged}</b>未变化</span><span><b>${plan.skipped}</b>已忽略</span></div><div class="import-file-list">${(plan.changes||[]).slice(0,120).map(c=>`<div><b class="change-${escapeHTML(c.status)}">${c.status==='added'?'新增':c.status==='modified'?'修改':'不变'}</b><code>${escapeHTML(c.path)}</code><span>${formatBytes(c.size)}</span></div>`).join('')}</div><form id="github-import-commit-form"><label>提交说明<input name="message" value="update LukePanel from uploaded ZIP" maxlength="200" required></label><button class="primary-button" type="submit">Commit 并 Push 到 ${escapeHTML(plan.branch)}</button></form><p class="release-warning">${icon('shield',17)}提交前会再次确认远端分支没有变化；若别人刚推送过，LukePanel 会拒绝覆盖。</p></div>`:''}</section>`
 }
 function githubBranchHTML(data){
-  const branches=data.branches||[],defaults=githubDefaults()
-  return `<section class="surface github-workflow-panel"><div><h2>分支与 Pull Request</h2><p>建议先从 main 新建分支，把 ZIP 推送到新分支，确认无误后再创建 PR 合并。这样出错更容易撤回。</p></div><div class="branch-chips">${branches.slice(0,20).map(branch=>`<span>${escapeHTML(branch.name)}${branch.protected?' · 受保护':''}</span>`).join('')||'<span>暂无分支数据</span>'}</div><div class="github-workflow-forms"><form id="github-branch-form"><h3>1. 新建分支</h3><label>新分支名称<input name="name" value="agent/update-${new Date().toISOString().slice(0,10)}" placeholder="agent/update-panel" required></label><label>基于分支<select name="source">${branches.map(branch=>`<option value="${escapeHTML(branch.name)}" ${branch.name===(data.default_branch||defaults.branch)?'selected':''}>${escapeHTML(branch.name)}</option>`).join('')}</select></label><button class="primary-button" type="submit" ${state.githubAuth?.connected?'':'disabled'}>创建分支</button></form><form id="github-pr-form"><h3>2. 创建 Pull Request</h3><label>提交分支<select name="head">${branches.filter(branch=>branch.name!==data.default_branch).map(branch=>`<option value="${escapeHTML(branch.name)}">${escapeHTML(branch.name)}</option>`).join('')}</select></label><label>目标分支<input name="base" value="${escapeHTML(data.default_branch)}" readonly></label><label>标题<input name="title" value="更新 LukePanel" maxlength="200" required></label><label>说明<textarea name="body" rows="4" placeholder="这次更新做了什么、为什么要更新"></textarea></label><button class="primary-button" type="submit" ${state.githubAuth?.connected&&branches.some(branch=>branch.name!==data.default_branch)?'':'disabled'}>创建 Pull Request</button></form></div></section>`
+  const branches=data.branches||[],pulls=data.pull_requests||[],defaults=githubDefaults()
+  return `<section class="surface github-workflow-panel"><div><h2>分支与 Pull Request</h2><p>建议先从 main 新建分支，把 ZIP 推送到新分支，确认 Build 通过后再合并。LukePanel 不会强制推送或绕过分支保护。</p></div><div class="branch-chips">${branches.slice(0,20).map(branch=>`<span>${escapeHTML(branch.name)}${branch.protected?' · 受保护':''}</span>`).join('')||'<span>暂无分支数据</span>'}</div><div class="github-workflow-forms"><form id="github-branch-form"><h3>1. 新建分支</h3><label>新分支名称<input name="name" value="agent/update-${new Date().toISOString().slice(0,10)}" placeholder="agent/update-panel" required></label><label>基于分支<select name="source">${branches.map(branch=>`<option value="${escapeHTML(branch.name)}" ${branch.name===(data.default_branch||defaults.branch)?'selected':''}>${escapeHTML(branch.name)}</option>`).join('')}</select></label><button class="primary-button" type="submit" ${state.githubAuth?.connected?'':'disabled'}>创建分支</button></form><form id="github-pr-form"><h3>2. 创建 Pull Request</h3><label>提交分支<select name="head">${branches.filter(branch=>branch.name!==data.default_branch).map(branch=>`<option value="${escapeHTML(branch.name)}">${escapeHTML(branch.name)}</option>`).join('')}</select></label><label>目标分支<input name="base" value="${escapeHTML(data.default_branch)}" readonly></label><label>标题<input name="title" value="更新 LukePanel" maxlength="200" required></label><label>说明<textarea name="body" rows="4" placeholder="这次更新做了什么、为什么要更新"></textarea></label><button class="primary-button" type="submit" ${state.githubAuth?.connected&&branches.some(branch=>branch.name!==data.default_branch)?'':'disabled'}>创建 Pull Request</button></form></div><div class="open-pr-section"><div class="section-heading"><div><h3>待合并 Pull Request</h3><p>合并时会校验当前 Head SHA；如果 PR 刚被别人更新，会停止而不是覆盖。</p></div></div><div class="source-list">${pulls.map(pr=>`<article><div><strong>#${pr.number} ${escapeHTML(pr.title)}</strong><p>${escapeHTML(pr.head)} → ${escapeHTML(pr.base)}${pr.draft?' · 草稿':''}</p></div><div class="resource-actions"><a class="secondary-button compact" href="${escapeHTML(pr.html_url)}" target="_blank" rel="noopener">查看</a>${pr.draft?'':`<button class="primary-button compact" data-github-pr-merge="${pr.number}" data-head-sha="${escapeHTML(pr.head_sha||'')}">检查并合并</button>`}</div></article>`).join('')||'<div class="empty-list">没有待合并的 Pull Request</div>'}</div></div></section>`
 }
+
 function githubPage(){
   if(!githubHelperEnabled())return `<div class="page-wrap github-page">${pageHeader('GitHub 助手','可选功能，不使用时不会发起任何 GitHub 请求')}<section class="surface optional-feature-empty"><div class="feature-illustration">${icon('github',34)}</div><h2>GitHub 助手尚未启用</h2><p>启用后可以网页登录、上传更新 ZIP、预览差异、Commit、Push、创建分支和 Pull Request。</p><button id="github-helper-install" class="primary-button">启用 GitHub 助手</button><a data-nav href="/tools" class="secondary-button">返回常用工具</a></section></div>`
   const defaults=githubDefaults(),data=state.github
   if(!state.githubAuth&&!state.loading.githubAuth){state.loading.githubAuth=true;queueMicrotask(async()=>{await loadGitHubAuth(true);state.loading.githubAuth=false;render()})}
-  const latest=data?.latest_release,tagSuggestion=latest?.tag_name?nextVersionSuggestion(latest.tag_name):'v0.8.0-alpha'
+  const latest=data?.latest_release,tagSuggestion=latest?.tag_name?nextVersionSuggestion(latest.tag_name):'v0.9.0-beta'
   const actions=`<button id="github-helper-remove" class="secondary-button compact">停用助手</button>${data?`<a class="secondary-button compact" href="https://github.com/${escapeHTML(data.full_name)}/actions" target="_blank" rel="noopener">${icon('external',16)}<span>打开 Actions</span></a>`:''}`
   const repoEmpty=!data&&!state.loading.github&&!state.errors.github
   return `<div class="page-wrap github-page">${pageHeader('GitHub 助手','可选启用；仓库信息由你填写，不预设任何个人仓库',actions)}${githubAuthCard()}<form id="github-repo-form" class="surface github-repo-form"><div class="form-intro"><strong>选择要管理的仓库</strong><span>只会操作你明确填写并授权的仓库</span></div><label>所有者<input name="owner" value="${escapeHTML(data?.owner||defaults.owner)}" placeholder="例如 Luke-Lab666" autocomplete="off" required></label><label>仓库<input name="repo" value="${escapeHTML(data?.name||defaults.repo)}" placeholder="例如 LukePanel" autocomplete="off" required></label><button class="primary-button" type="submit">读取仓库</button></form>${errorBox(state.errors.github)}${state.loading.github?surfaceLoading('读取 GitHub 仓库'):repoEmpty?`<section class="surface github-repo-empty"><div>${icon('github',28)}</div><h2>还没有选择仓库</h2><p>填写所有者和仓库名后再读取。LukePanel 不会默认绑定开发者或你的任何仓库。</p></section>`:data?`<section class="github-summary-grid"><article class="surface status-card"><div class="card-heading">${icon('github',20)}<strong>${escapeHTML(data.full_name)}</strong></div><dl class="info-list"><div><dt>默认分支</dt><dd>${escapeHTML(data.default_branch)}</dd></div><div><dt>最新提交</dt><dd><code>${escapeHTML((data.main_sha||'').slice(0,12)||'-')}</code></dd></div><div><dt>分支</dt><dd>${data.branches?.length||0}</dd></div><div><dt>最新标签</dt><dd>${escapeHTML(data.tags?.[0]?.name||'暂无')}</dd></div><div><dt>最新 Release</dt><dd>${escapeHTML(latest?.tag_name||'暂无')}</dd></div></dl><div class="quick-copy-grid"><button class="secondary-button compact" data-copy-text="curl -fsSL https://raw.githubusercontent.com/${escapeHTML(data.full_name)}/main/install.sh | bash">复制安装命令</button><button class="secondary-button compact" data-copy-text="https://github.com/${escapeHTML(data.full_name)}">复制仓库地址</button></div></article><article class="surface status-card"><div class="card-heading">${icon('activity',20)}<strong>最近 Actions</strong></div><div class="workflow-list">${(data.workflow_runs||[]).slice(0,8).map(run=>`<div><span class="workflow-dot ${run.conclusion==='success'?'ok':run.status!=='completed'?'running':'bad'}"></span><div><strong>${escapeHTML(run.name)}</strong><small>${escapeHTML(run.head_branch||run.event)} · ${formatDate(run.created_at)}</small></div><div class="workflow-actions"><b>${workflowStatus(run)}</b><a href="${escapeHTML(run.html_url)}" target="_blank" rel="noopener">${icon('external',14)}</a>${['failure','cancelled','timed_out'].includes(run.conclusion)&&state.githubAuth?.connected?`<button data-github-rerun="${run.id}">重试</button>`:''}</div></div>`).join('')||'<div class="empty-list">暂无 Actions 记录</div>'}</div></article></section>${githubBranchHTML(data)}${githubImportHTML(data)}<section class="surface github-release-create"><div><h2>创建 GitHub Release</h2><p>适合已有 Tag 的版本，可生成发布说明；二进制附件仍建议由 Actions 自动上传。</p></div><form id="github-release-form" class="dialog-form"><label>Tag<input name="tag" value="${escapeHTML(data.tags?.[0]?.name||tagSuggestion)}" required></label><label>标题<input name="name" placeholder="留空则使用 Tag"></label><label>发布说明<textarea name="body" rows="5" placeholder="留空会让 GitHub 自动生成 Release Notes"></textarea></label><div class="option-row"><label class="checkbox-row"><input name="prerelease" type="checkbox" checked><span>预发布版本</span></label><label class="checkbox-row"><input name="draft" type="checkbox"><span>先保存为草稿</span></label></div><button class="primary-button" type="submit" ${state.githubAuth?.connected?'':'disabled'}>创建 Release</button></form></section><section class="surface release-helper"><div><h2>创建版本标签并触发 Release</h2><p>确认默认分支已经是要发布的版本后再创建 Tag。</p></div><form id="github-tag-form"><label>版本号<input name="tag" value="${escapeHTML(tagSuggestion)}" pattern="v[0-9][A-Za-z0-9._-]*" required></label><label>目标提交<input name="sha" value="${escapeHTML(data.main_sha||'')}" readonly></label><div class="release-warning">${icon('shield',17)}不会 Force Push，创建标签前需要二次验证。</div><button class="primary-button" type="submit" ${state.githubAuth?.connected?'':'disabled'}>${state.githubAuth?.connected?'创建 Tag 并触发发布':'请先连接 GitHub'}</button></form></section>`:''}</div>`
 }
-function nextVersionSuggestion(current){const match=String(current).match(/^v(\d+)\.(\d+)\.(\d+)(.*)$/);if(!match)return 'v0.8.0-alpha';return `v${match[1]}.${Number(match[2])+1}.0-alpha`}
+function nextVersionSuggestion(current){const match=String(current).match(/^v(\d+)\.(\d+)\.(\d+)(.*)$/);if(!match)return 'v0.9.0-beta';const major=Number(match[1]),minor=Number(match[2]);if(major===0&&minor<9)return 'v0.9.0-beta';if(major===0&&minor===9)return 'v1.0.0';return `v${major}.${minor+1}.0`}
 
 async function startGitHubDeviceFlow(form){const f=new FormData(form),clientID=String(f.get('client_id')||'').trim(),button=form.querySelector('button');if(!/^[A-Za-z0-9]{12,80}$/.test(clientID)){await showError('Client ID 格式不正确，请从 GitHub OAuth App 页面完整复制');return}localStorage.setItem('github-client-id',clientID);button.disabled=true;button.textContent='正在创建登录…';try{state.githubFlow=await api('/api/v1/github/auth/device/start',{method:'POST',body:jsonBody({client_id:clientID})});render();window.open(state.githubFlow.verification_uri,'_blank','noopener');scheduleGitHubPoll()}catch(error){await showError(error.message)}finally{button.disabled=false;button.textContent='连接 GitHub'}}
 function scheduleGitHubPoll(){if(state.githubFlowTimer)clearTimeout(state.githubFlowTimer);if(!state.githubFlow?.flow_id)return;const delay=Math.max(2,Number(state.githubFlow.interval||5))*1000;state.githubFlowTimer=setTimeout(pollGitHubDeviceFlow,delay)}
@@ -825,9 +918,35 @@ async function regenerateRecoveryCodes(){const code=await askText('输入当前 
 
 async function openComposeConfig(project){state.modal={title:`${project} · Compose`,kind:'loading'};render();try{const config=await api(`/api/v1/docker/compose/config?project=${encodeURIComponent(project)}`);state.composeConfig=config;state.modal={title:`${project} · Compose 配置`,kind:'compose-config',config};render()}catch(error){state.modal={title:'读取 Compose 失败',kind:'error',content:error.message};render()}}
 async function saveComposeConfig(form){const files={};form.querySelectorAll('[data-compose-path]').forEach(area=>files[area.dataset.composePath]=area.value);const button=form.querySelector('button[type=submit]');button.disabled=true;button.textContent='正在验证…';try{const out=await secureApi('/api/v1/docker/compose/config',{method:'PUT',body:jsonBody({project:state.composeConfig.project,files,deploy:new FormData(form).get('deploy')==='on'})});state.modal={title:'Compose 保存结果',kind:'logs',content:out.output||'配置已保存并通过校验'};await loadDocker();state.modal={title:'Compose 保存结果',kind:'logs',content:out.output||'配置已保存并通过校验'};render()}catch(error){await showError(error.message)}finally{button.disabled=false;button.textContent='保存并验证'}}
-async function buildDockerImage(form){const f=new FormData(form),button=form.querySelector('button[type=submit]');button.disabled=true;button.textContent='正在构建…';try{const out=await secureApi('/api/v1/docker/images/build',{method:'POST',body:jsonBody({context_dir:f.get('context_dir'),dockerfile:f.get('dockerfile'),tag:f.get('tag'),pull:f.get('pull')==='on',no_cache:f.get('no_cache')==='on'})});state.modal={title:`镜像 ${out.tag} 构建完成`,kind:'logs',content:out.output||'构建成功'};await loadDocker();state.modal={title:`镜像 ${out.tag} 构建完成`,kind:'logs',content:out.output||'构建成功'};render()}catch(error){await showError(error.message)}finally{button.disabled=false;button.textContent='开始构建'}}
+async function buildDockerImage(form){
+  const f=new FormData(form),button=form.querySelector('button[type=submit]')
+  button.disabled=true
+  try{
+    const job=await startBackgroundJob('docker.image.build',{build:{context_dir:f.get('context_dir'),dockerfile:f.get('dockerfile'),tag:f.get('tag'),pull:f.get('pull')==='on',no_cache:f.get('no_cache')==='on'}})
+    state.modal={title:`构建镜像 ${f.get('tag')}`,kind:'job-progress',job};render()
+    await monitorBackgroundJob(job.id,`构建镜像 ${f.get('tag')}`)
+    await loadDocker()
+  }catch(error){await showError(error.message)}finally{button.disabled=false}
+}
+
 async function confirmSSHPort(keepNew){if(!await askConfirm(keepNew?'确认你已经从另一个终端通过新端口成功登录？确认后旧端口将关闭。':'将删除新端口并恢复旧端口。',{title:keepNew?'确认新 SSH 端口':'恢复旧 SSH 端口',confirmText:'确认',danger:!keepNew}))return;try{await secureApi('/api/v1/ssh/port/confirm',{method:'POST',body:jsonBody({keep_new:keepNew})});showToast(keepNew?'已关闭旧端口':'已恢复旧端口');await loadSSH(state.sshUser)}catch(error){await showError(error.message)}}
 async function createGitHubRelease(form){const f=new FormData(form),defaults=githubDefaults(),data=state.github;if(!data)return;try{const out=await secureApi('/api/v1/github/release',{method:'POST',body:jsonBody({owner:data.owner||defaults.owner,repo:data.name||defaults.repo,tag:f.get('tag'),name:f.get('name'),body:f.get('body'),draft:f.get('draft')==='on',prerelease:f.get('prerelease')==='on'})});showToast(`Release ${out.tag_name||f.get('tag')} 已创建`);await loadGitHub(data.owner,data.name)}catch(error){await showError(error.message)}}
+
+async function mergeGitHubPullRequest(button){
+  const choice=await chooseAction(`PR #${button.dataset.githubPrMerge} 合并方式`,[
+    {label:'Squash 合并（推荐）',description:'把更新整理成一个提交，历史最清晰'},
+    {label:'普通 Merge',description:'保留分支中的全部提交'},
+    {label:'Rebase 合并',description:'线性历史，适合熟悉 Git 的用户'}
+  ])
+  if(choice===false||choice===null)return
+  const method=['squash','merge','rebase'][choice]
+  if(!await askConfirm('GitHub 分支保护和 Actions 检查仍然生效；检查不通过时不会强行合并。',{title:`合并 PR #${button.dataset.githubPrMerge}`,confirmText:'确认合并',danger:false}))return
+  try{
+    const out=await secureApi('/api/v1/github/pull/merge',{method:'POST',body:jsonBody({owner:state.github.owner,repo:state.github.name,number:Number(button.dataset.githubPrMerge),expected_sha:button.dataset.headSha||'',method})})
+    showToast(out.message||'Pull Request 已合并')
+    await loadGitHub(state.github.owner,state.github.name)
+  }catch(error){await showError(error.message)}
+}
 
 function modalHTML(){
   if(!state.modal)return''
@@ -837,10 +956,10 @@ function modalHTML(){
   else if(m.kind==='error')body=`<div class="alert error modal-error">${icon('alert',18)}${escapeHTML(m.content)}</div>`
   else if(m.kind==='editor'){
     body=`<textarea id="file-editor" spellcheck="false">${escapeHTML(m.content)}</textarea>`
-    footer=`<footer><div class="editor-secondary-actions"><button id="copy-file-path" class="secondary-button compact">${icon('copy',16)}路径</button><button id="copy-file-content" class="secondary-button compact">${icon('copy',16)}内容</button><button id="download-file" class="secondary-button compact">${icon('download',16)}下载</button><button id="file-history" class="secondary-button compact">${icon('restore',16)}历史</button><button id="rename-file" class="secondary-button compact">重命名</button><button id="delete-file" class="danger-button compact">${icon('trash',16)}删除</button></div><button id="save-file" class="primary-button compact">${icon('save',16)}保存</button></footer>`
+    footer=`<footer><div class="editor-secondary-actions"><button id="copy-file-path" class="secondary-button compact">${icon('copy',16)}路径</button><button id="copy-file-content" class="secondary-button compact">${icon('copy',16)}内容</button>${m.preview_kind==='markdown'?`<button id="preview-markdown" class="secondary-button compact">${icon('file',16)}预览</button>`:''}<button id="download-file" class="secondary-button compact">${icon('download',16)}下载</button><button id="file-history" class="secondary-button compact">${icon('restore',16)}历史</button><button id="rename-file" class="secondary-button compact">重命名</button><button id="delete-file" class="danger-button compact">${icon('trash',16)}删除</button></div><button id="save-file" class="primary-button compact">${icon('save',16)}保存</button></footer>`
   }else if(m.kind==='file-actions'){
     const item=m.item
-    body=`<div class="action-sheet"><button data-file-action="copy-path">${icon('copy',19)}<span>复制完整路径</span></button>${item.is_dir?'':`<button data-file-action="download">${icon('download',19)}<span>下载文件</span></button><button data-file-action="history">${icon('restore',19)}<span>历史版本</span></button>`}<button data-file-action="rename">${icon('edit',19)}<span>重命名</span></button><button data-file-action="copy">${icon('copy',19)}<span>复制到…</span></button><button data-file-action="move">${icon('move',19)}<span>移动到…</span></button><button data-file-action="archive">${icon('package',19)}<span>压缩为…</span></button><button data-file-action="chmod">${icon('shield',19)}<span>修改权限</span><small>${escapeHTML(item.mode||'')}</small></button><button class="danger" data-file-action="delete">${icon('trash',19)}<span>移入回收站</span></button></div>`
+    body=`<div class="action-sheet"><button data-file-action="copy-path">${icon('copy',19)}<span>复制完整路径</span></button>${item.is_dir?'':`<button data-file-action="download">${icon('download',19)}<span>下载文件</span></button><button data-file-action="history">${icon('restore',19)}<span>历史版本</span></button>`}<button data-file-action="rename">${icon('edit',19)}<span>重命名</span></button><button data-file-action="copy">${icon('copy',19)}<span>复制到…</span></button><button data-file-action="move">${icon('move',19)}<span>移动到…</span></button><button data-file-action="archive">${icon('package',19)}<span>压缩为…</span></button><button data-file-action="chmod">${icon('shield',19)}<span>修改权限</span><small>${escapeHTML(item.mode||'')}</small></button><button data-file-action="chown">${icon('user',19)}<span>修改所有者</span></button><button class="danger" data-file-action="delete">${icon('trash',19)}<span>移入回收站</span></button></div>`
   }else if(m.kind==='upload-menu'){
     body=`<div class="action-sheet"><button id="choose-files-upload">${icon('file',19)}<span>上传文件</span><small>可多选</small></button><button id="choose-folder-upload">${icon('folder',19)}<span>上传整个文件夹</span><small>保留目录结构</small></button><button id="choose-zip-extract">${icon('package',19)}<span>上传 ZIP 并解压</span><small>适合 iPhone 和大量文件</small></button></div>`
   }else if(m.kind==='docker-cleanup'){
@@ -848,7 +967,7 @@ function modalHTML(){
     body=`<form id="docker-cleanup-form" class="dialog-form"><div class="cleanup-summary"><span><b>${x.stopped_containers||0}</b>停止容器</span><span><b>${(x.dangling_images||0)+(x.unused_images||0)}</b>未用镜像</span><span><b>${x.unused_networks||0}</b>未用网络</span><span><b>${x.unused_volumes||0}</b>未用卷</span><span><b>${formatBytes(x.reclaimable_bytes||0)}</b>预计可释放</span></div><label>清理模式<select name="mode"><option value="safe">安全清理（推荐）</option><option value="deep">深度清理未使用镜像</option></select></label><label class="checkbox-row"><input type="checkbox" name="volumes"><span>同时清理未使用的存储卷</span></label><div class="release-warning">${icon('shield',17)}正在运行或被引用的资源不会删除；存储卷可能包含重要数据，默认不勾选。</div><button class="danger-button" type="submit">检查后执行清理</button></form>`
   }else if(m.kind==='docker-network')body=`<form id="docker-network-form" class="dialog-form"><label>网络名称<input name="name" placeholder="例如 app-network" required></label><label>驱动<select name="driver"><option value="bridge">bridge（推荐）</option><option value="macvlan">macvlan</option><option value="ipvlan">ipvlan</option></select></label><label>子网（可选）<input name="subnet" placeholder="172.30.0.0/16"></label><label>网关（可选）<input name="gateway" placeholder="172.30.0.1"></label><label class="checkbox-row"><input type="checkbox" name="internal"><span>仅内部网络，不访问外网</span></label><button class="primary-button" type="submit">创建网络</button></form>`
   else if(m.kind==='docker-volume')body=`<form id="docker-volume-form" class="dialog-form"><label>存储卷名称<input name="name" placeholder="例如 app-data" required></label><label>驱动<input name="driver" value="local" required></label><button class="primary-button" type="submit">创建存储卷</button></form>`
-  else if(m.kind==='task-create')body=`<form id="task-create-form" class="dialog-form"><label>任务名称<input name="name" placeholder="例如每天重启 mosdns" required></label><label>安全任务类型<select name="type" id="task-type"><option value="service-restart">重启 systemd 服务</option><option value="docker-restart">重启 Docker 容器</option><option value="docker-cleanup-safe">安全清理 Docker</option></select></label><label id="task-target-label">目标名称<input name="target" placeholder="例如 mosdns.service" required></label><label>执行频率<select name="frequency" id="task-frequency"><option value="daily">每天</option><option value="weekly">每周</option><option value="hourly">每小时</option></select></label><div class="time-fields"><label>小时<input name="hour" type="number" min="0" max="23" value="4"></label><label>分钟<input name="minute" type="number" min="0" max="59" value="0"></label><label id="task-weekday-label">星期<select name="weekday"><option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="0">周日</option></select></label></div><div class="release-warning">${icon('shield',17)}不支持自定义 Shell，避免计划任务变成远程 WebShell。</div><button class="primary-button" type="submit">创建计划任务</button></form>`
+  else if(m.kind==='task-create')body=`<form id="task-create-form" class="dialog-form"><label>任务名称<input name="name" placeholder="例如每天重启 mosdns" required></label><label>安全任务类型<select name="type" id="task-type"><option value="service-restart">重启 systemd 服务</option><option value="docker-restart">重启 Docker 容器</option><option value="docker-cleanup-safe">安全清理 Docker</option><option value="panel-backup">完整面板备份</option></select></label><label id="task-target-label">目标名称<input name="target" placeholder="例如 mosdns.service" required></label><label>执行频率<select name="frequency" id="task-frequency"><option value="daily">每天</option><option value="weekly">每周</option><option value="hourly">每小时</option></select></label><div class="time-fields"><label>小时<input name="hour" type="number" min="0" max="23" value="4"></label><label>分钟<input name="minute" type="number" min="0" max="59" value="0"></label><label id="task-weekday-label">星期<select name="weekday"><option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="0">周日</option></select></label></div><div class="release-warning">${icon('shield',17)}不支持自定义 Shell，避免计划任务变成远程 WebShell。</div><button class="primary-button" type="submit">创建计划任务</button></form>`
   else if(m.kind==='file-backups')body=`<div class="backup-list">${(m.backups||[]).map(version=>`<article><div><strong>${formatDate(version.created_at)}</strong><small>${formatBytes(version.size)} · ${escapeHTML(version.id)}</small></div><div><button class="secondary-button compact" data-backup-diff="${escapeHTML(version.id)}">对比</button><button class="primary-button compact" data-backup-restore="${escapeHTML(version.id)}">恢复</button></div></article>`).join('')||'<div class="empty-list">还没有历史版本。文件每次在线保存前会自动备份。</div>'}</div>`
   else if(m.kind==='file-diff'){body=`<div class="diff-note">备份时间：${formatDate(m.diff?.backup_time)}${m.diff?.truncated?' · 内容较长，已截断':''}</div><pre class="file-diff">${escapeHTML(m.diff?.diff||'没有差异')}</pre>`;footer=`<footer><button class="secondary-button" id="back-to-backups">返回版本列表</button><button class="primary-button" data-backup-restore="${escapeHTML(m.id)}">恢复此版本</button></footer>`}
   else if(m.kind==='totp-setup')body=`<form id="totp-setup-form" class="totp-setup"><p>在身份验证器中添加下面的密钥，或点击按钮尝试直接打开 App。</p><div class="secret-box"><code>${escapeHTML(m.setup.secret)}</code><button type="button" data-copy-text="${escapeHTML(m.setup.secret)}">复制密钥</button></div><a href="${escapeHTML(m.setup.otpauth_uri)}" class="secondary-button">打开身份验证器</a><label>输入身份验证器显示的 6 位验证码<input name="code" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" required></label><button class="primary-button" type="submit">验证并开启</button></form>`
@@ -918,6 +1037,8 @@ function bindShell(){
   document.querySelector('#host-swap-delete')?.addEventListener('click',async()=>{if(await askConfirm('确认删除 LukePanel 管理的 Swap 文件？',{title:'删除 Swap',confirmText:'确认删除',danger:true}))hostMutation('swap',null,'DELETE')})
   document.querySelectorAll('[data-sysctl-preset]').forEach(button=>button.onclick=()=>hostMutation('sysctl',{preset:button.dataset.sysctlPreset}))
   document.querySelector('#refresh-snapshots')?.addEventListener('click',loadSnapshots)
+  document.querySelector('#panel-backup-export')?.addEventListener('click',()=>exportPanelBackup().catch(error=>showError(error.message)))
+  document.querySelector('#panel-backup-import')?.addEventListener('submit',event=>{event.preventDefault();importPanelBackup(new FormData(event.currentTarget).get('file')).catch(error=>showError(error.message))})
   document.querySelectorAll('[data-snapshot-action]').forEach(button=>button.onclick=()=>snapshotAction(button.dataset.snapshotId,button.dataset.snapshotAction))
 
   document.querySelector('#refresh-docker')?.addEventListener('click',loadDocker)
@@ -1022,7 +1143,7 @@ function bindShell(){
   document.querySelector('#docker-cleanup-form')?.addEventListener('submit',event=>{event.preventDefault();submitDockerCleanup(event.currentTarget)})
   document.querySelector('#docker-network-form')?.addEventListener('submit',event=>{event.preventDefault();createDockerNetwork(event.currentTarget)})
   document.querySelector('#docker-volume-form')?.addEventListener('submit',event=>{event.preventDefault();createDockerVolume(event.currentTarget)})
-  const taskForm=document.querySelector('#task-create-form');if(taskForm){taskForm.onsubmit=event=>{event.preventDefault();createTask(taskForm)};const type=taskForm.querySelector('#task-type'),frequency=taskForm.querySelector('#task-frequency'),syncTaskForm=()=>{const target=taskForm.querySelector('#task-target-label'),weekday=taskForm.querySelector('#task-weekday-label'),hour=taskForm.querySelector('[name=hour]');target.hidden=type.value==='docker-cleanup-safe';target.querySelector('input').required=!target.hidden;weekday.hidden=frequency.value!=='weekly';hour.closest('label').hidden=frequency.value==='hourly'};type.onchange=syncTaskForm;frequency.onchange=syncTaskForm;syncTaskForm()}
+  const taskForm=document.querySelector('#task-create-form');if(taskForm){taskForm.onsubmit=event=>{event.preventDefault();createTask(taskForm)};const type=taskForm.querySelector('#task-type'),frequency=taskForm.querySelector('#task-frequency'),syncTaskForm=()=>{const target=taskForm.querySelector('#task-target-label'),weekday=taskForm.querySelector('#task-weekday-label'),hour=taskForm.querySelector('[name=hour]');target.hidden=['docker-cleanup-safe','panel-backup'].includes(type.value);target.querySelector('input').required=!target.hidden;weekday.hidden=frequency.value!=='weekly';hour.closest('label').hidden=frequency.value==='hourly'};type.onchange=syncTaskForm;frequency.onchange=syncTaskForm;syncTaskForm()}
   const totpSetupForm=document.querySelector('#totp-setup-form');if(totpSetupForm)totpSetupForm.onsubmit=event=>{event.preventDefault();confirmTOTPSetup(totpSetupForm)}
   document.querySelectorAll('[data-open-compose-file]').forEach(button=>button.onclick=()=>{state.modal=null;navigate('/files');setTimeout(()=>openFile(button.dataset.openComposeFile),50)})
   document.querySelector('#process-term')?.addEventListener('click',()=>signalProcess(state.modal.pid,'term'))
@@ -1075,7 +1196,264 @@ function render(){
   const routes={'/':dashboard,'/system':systemPage,'/services':servicesPage,'/processes':processesPage,'/network':networkPage,'/storage':storagePage,'/tasks':tasksPage,'/updates':updatesPage,'/host':hostPage,'/snapshots':snapshotsPage,'/files':filesPage,'/docker':dockerPage,'/tools':toolsPage,'/github':githubPage,'/ssh':sshPage,'/audit':auditPage,'/security':securityPage}
   if(!routes[location.pathname])history.replaceState({},'','/')
   rememberRoute(location.pathname)
-  app.innerHTML=shell((routes[location.pathname]||routes['/'])());bindShell();syncOverviewUpdates();syncDockerStats()
+  app.innerHTML=shell((routes[location.pathname]||routes['/'])());bindShell();syncOverviewUpdates();syncDockerStats();syncSystemLogPolling()
 }
+
+// v0.9 feature-complete integration layer.
+function v09InsertBeforePageEnd(html, section){const index=html.lastIndexOf('</div>');return index>=0?html.slice(0,index)+section+html.slice(index):html+section}
+function b64urlToBytes(value){const text=String(value||'').replace(/-/g,'+').replace(/_/g,'/');const padded=text+'='.repeat((4-text.length%4)%4);const binary=atob(padded);return Uint8Array.from(binary,c=>c.charCodeAt(0))}
+function bytesToB64url(value){const bytes=value instanceof ArrayBuffer?new Uint8Array(value):new Uint8Array(value||[]);let binary='';bytes.forEach(byte=>binary+=String.fromCharCode(byte));return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function passkeyAvailable(){return !!(window.PublicKeyCredential&&navigator.credentials)}
+function serializeAssertion(credential){return {id:credential.id,raw_id:bytesToB64url(credential.rawId),response:{client_data_json:bytesToB64url(credential.response.clientDataJSON),authenticator_data:bytesToB64url(credential.response.authenticatorData),signature:bytesToB64url(credential.response.signature),user_handle:credential.response.userHandle?bytesToB64url(credential.response.userHandle):''}}}
+function serializeCreation(credential){return {id:credential.id,raw_id:bytesToB64url(credential.rawId),response:{client_data_json:bytesToB64url(credential.response.clientDataJSON),attestation_object:bytesToB64url(credential.response.attestationObject)}}}
+
+renderLogin=function(){
+  stopOverviewUpdates();const rememberedUser=localStorage.getItem('lukepanel-login-user')||'admin'
+  app.innerHTML=`<main class="login-page"><section class="login-card surface"><div class="login-brand"><div class="login-logo">L</div><div><strong>LukePanel</strong><span>服务器管理面板</span></div></div><h1>欢迎回来</h1><p>登录后管理系统、Docker、文件与安全设置</p><form id="login-form"><label>用户名<input name="username" value="${escapeHTML(rememberedUser)}" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"></label><label>密码<div class="password-field"><input name="password" type="password" autocomplete="current-password" ${passwordInputAttributes()} autofocus><button type="button" id="show-password">显示</button></div></label><div id="login-error" class="form-error" hidden></div><button class="primary-button" type="submit">登录</button></form>${passkeyAvailable()?`<div class="login-divider"><span>或</span></div><button id="passkey-login" class="secondary-button wide-button">${icon('key',18)}使用 Passkey 登录</button>`:''}<div class="security-note">${icon('shield',17)}验证码只会在已开启 TOTP 且密码验证通过后出现</div></section></main>`
+  document.querySelector('#show-password').onclick=e=>{const input=document.querySelector('[name=password]');input.type=input.type==='password'?'text':'password';e.currentTarget.textContent=input.type==='password'?'显示':'隐藏'}
+  document.querySelector('#passkey-login')?.addEventListener('click',async()=>{const error=document.querySelector('#login-error'),button=document.querySelector('#passkey-login'),username=String(document.querySelector('[name=username]')?.value||'').trim();error.hidden=true;button.disabled=true;button.textContent='正在调用 Passkey…';try{const begin=await api('/api/v1/auth/passkey/login/begin',{method:'POST',body:jsonBody({username})});const credential=await navigator.credentials.get({publicKey:{challenge:b64urlToBytes(begin.challenge),rpId:begin.rp_id,timeout:begin.timeout,userVerification:begin.user_verification,allowCredentials:(begin.allow_credentials||[]).map(item=>({...item,id:b64urlToBytes(item.id)}))}});const result=await api('/api/v1/auth/passkey/login/finish',{method:'POST',body:jsonBody({flow_id:begin.flow_id,credential:serializeAssertion(credential)})});localStorage.setItem('lukepanel-login-user',username);state.authenticated=true;state.username=result.username;state.csrf=result.csrf_token;state.settings=await api('/api/v1/settings');navigate(rememberedRoute('/'),{replace:true})}catch(err){error.textContent=err.name==='NotAllowedError'?'Passkey 操作已取消或超时':err.message;error.hidden=false}finally{button.disabled=false;button.innerHTML=`${icon('key',18)}使用 Passkey 登录`}})
+  document.querySelector('#login-form').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form),button=form.querySelector('button[type=submit]'),error=document.querySelector('#login-error');button.disabled=true;button.textContent='正在登录…';error.hidden=true;try{const r=await api('/api/v1/auth/login',{method:'POST',body:jsonBody({username:f.get('username'),password:f.get('password'),otp:f.get('otp'),trust_device:f.get('trust_device')==='on',device_name:f.get('device_name')})});localStorage.setItem('lukepanel-login-user',String(f.get('username')||''));state.authenticated=true;state.username=r.username;state.csrf=r.csrf_token;state.settings=await api('/api/v1/settings');navigate(rememberedRoute('/'),{replace:true})}catch(err){if(err.code==='totp_required'&&!form.querySelector('[name=otp]')){const block=document.createElement('div');block.id='otp-field';block.innerHTML=`<label>身份验证器验证码或恢复码<input name="otp" autocomplete="one-time-code" inputmode="text" lang="en" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="6 位验证码或 XXXX-XXXX-XXXX" required></label><label class="checkbox-row"><input name="trust_device" type="checkbox"><span>信任这台设备 30 天</span></label><label class="trusted-device-name" hidden>设备名称<input name="device_name" maxlength="64" value="${escapeHTML(navigator.platform||'当前设备')}"></label>`;form.insertBefore(block,error);block.querySelector('[name=trust_device]').onchange=event=>block.querySelector('.trusted-device-name').hidden=!event.target.checked;block.querySelector('input').focus();error.textContent='密码已验证，请输入第二步验证码';error.hidden=false}else{error.textContent=err.message;error.hidden=false}}finally{button.disabled=false;button.textContent='登录'}}
+}
+
+const v09LoadDocker=loadDocker
+loadDocker=async function(){await v09LoadDocker();if(!state.dockerStatus?.available)return;try{const [usage]=await Promise.all([api('/api/v1/docker/volumes/usage')]);state.dockerVolumeUsage=usage}catch{}if(location.pathname==='/docker')render()}
+const v09DockerPage=dockerPage
+dockerPage=function(){let html=v09DockerPage();if(!state.dockerStatus?.available)return html;let extra='';if(state.dockerTab==='images'){extra=`<section class="surface feature-panel"><div class="section-heading"><div><h2>Docker Hub 镜像搜索</h2><p>搜索公开镜像并一键填入拉取操作</p></div></div><form id="docker-hub-search-form" class="inline-form"><input name="query" value="${escapeHTML(state.dockerHubQuery)}" placeholder="例如 nginx、adguardhome" required><button class="primary-button" type="submit">搜索</button></form>${state.dockerHubResults?`<div class="hub-results">${(state.dockerHubResults.repositories||[]).map(item=>`<article><div><strong>${item.official?'✓ 官方 · ':''}${escapeHTML(item.namespace?item.namespace+'/'+item.name:item.name)}</strong><p>${escapeHTML(item.description||'暂无说明')}</p><small>★ ${item.stars||0} · 拉取 ${Number(item.pulls||0).toLocaleString()}</small></div><button class="secondary-button compact" data-hub-pull="${escapeHTML(item.namespace?item.namespace+'/'+item.name:item.name)}">拉取</button></article>`).join('')||'<div class="empty-list">没有匹配镜像</div>'}</div>`:''}</section>`}else if(state.dockerTab==='volumes'){const usage=new Map((state.dockerVolumeUsage?.volumes||[]).map(item=>[item.name,item]));extra=`<section class="surface feature-panel"><div class="section-heading"><div><h2>存储卷占用</h2><p>按 Docker Engine 实际统计，引用为 0 的卷才适合清理</p></div><button id="refresh-volume-usage" class="secondary-button compact">重新扫描</button></div><div class="compact-list">${(state.dockerVolumes?.volumes||[]).map(v=>{const item=usage.get(v.name)||{};return `<div><strong>${escapeHTML(v.name)}</strong><span>${formatBytes(item.size||0)} · ${item.ref_count??'未知'} 个引用</span></div>`}).join('')||'<div class="empty-list">暂无存储卷</div>'}</div></section>`}else if(state.dockerTab==='compose'){extra=`<section class="surface feature-panel"><div class="section-heading"><div><h2>Compose 新建向导</h2><p>无需手写完整 YAML，先创建一个可运行项目，再进入编辑器细化</p></div></div><form id="compose-wizard-form" class="dialog-form"><div class="form-grid"><label>项目名称<input name="project" placeholder="例如 my-app" required></label><label>项目目录<input name="directory" placeholder="例如 /opt/my-app" required></label><label>服务名称<input name="service_name" value="app" required></label><label>镜像<input name="image" placeholder="例如 nginx:alpine" required></label><label>容器名称<input name="container_name" placeholder="可选"></label><label>重启策略<select name="restart"><option value="unless-stopped">除非手动停止</option><option value="always">始终重启</option><option value="no">不自动重启</option></select></label></div><label>端口映射（每行一个）<textarea name="ports" rows="3" placeholder="8080:80"></textarea></label><label>环境变量（每行一个）<textarea name="environment" rows="3" placeholder="TZ=Asia/Shanghai"></textarea></label><label>挂载（每行一个）<textarea name="volumes" rows="3" placeholder="./data:/data"></textarea></label><label class="checkbox-row"><input name="start" type="checkbox" checked><span>创建后立即启动</span></label><button class="primary-button" type="submit">创建 Compose 项目</button></form></section>`}return v09InsertBeforePageEnd(html,extra)}
+
+const v09LoadFiles=loadFiles
+loadFiles=async function(path='/'){await v09LoadFiles(path);try{state.filePreferences=await api('/api/v1/files/preferences')}catch{}if(location.pathname==='/files')render()}
+const v09FilesPage=filesPage
+filesPage=function(){let html=v09FilesPage();if(state.fileView!=='files')return html;const prefs=state.filePreferences||{favorites:[],recent:[]},current=state.files?.path||'/';const favorite=(prefs.favorites||[]).some(item=>item.path===current);const section=`<section class="surface file-shortcuts"><div class="section-heading"><div><h2>快捷访问</h2><p>收藏目录与最近操作只保存在本机面板</p></div><button class="secondary-button compact" id="toggle-current-favorite" data-enabled="${favorite}">${favorite?'取消收藏':'收藏当前目录'}</button></div><div class="shortcut-columns"><div><h3>收藏</h3>${(prefs.favorites||[]).map(item=>`<button class="shortcut-item" data-file-shortcut="${escapeHTML(item.path)}" data-dir="${item.is_dir}">${icon(item.is_dir?'folder':'file',17)}<span>${escapeHTML(item.name||item.path)}</span></button>`).join('')||'<p class="muted-text">暂无收藏</p>'}</div><div><h3>最近访问</h3>${(prefs.recent||[]).slice(0,8).map(item=>`<button class="shortcut-item" data-file-shortcut="${escapeHTML(item.path)}" data-dir="${item.is_dir}">${icon(item.is_dir?'folder':'file',17)}<span>${escapeHTML(item.name||item.path)}</span><small>${formatDate(item.last_access)}</small></button>`).join('')||'<p class="muted-text">暂无记录</p>'}</div></div></section>`;return v09InsertBeforePageEnd(html,section)}
+
+const v09LoadUpdates=loadUpdates
+loadUpdates=async function(){await v09LoadUpdates();try{state.aptSources=await api('/api/v1/system/apt/sources')}catch{}if(location.pathname==='/updates')render()}
+const v09UpdatesPage=updatesPage
+updatesPage=function(){let html=v09UpdatesPage();const section=`<section class="surface feature-panel"><div class="section-heading"><div><h2>软件源管理</h2><p>修改前自动快照；不熟悉源格式时不要随意添加</p></div><button id="add-apt-source" class="primary-button compact">添加软件源</button></div><div class="source-list">${(state.aptSources?.sources||[]).map(source=>`<article><div><strong>${escapeHTML(source.name)}</strong><p>${escapeHTML(source.path)} · ${escapeHTML(source.format)}</p><small>${escapeHTML(String(source.content||'').split('\n').find(line=>line.trim()&&!line.trim().startsWith('#'))||'空配置')}</small></div><div class="resource-actions"><button class="secondary-button compact" data-source-toggle="${escapeHTML(source.path)}" data-enabled="${source.enabled}">${source.enabled?'停用':'启用'}</button>${source.path!='/etc/apt/sources.list'?`<button class="danger-button compact" data-source-delete="${escapeHTML(source.path)}">删除</button>`:''}</div></article>`).join('')||'<div class="empty-list">没有读取到软件源</div>'}</div></section>`;return v09InsertBeforePageEnd(html,section)}
+
+const v09LoadHost=loadHostSettings
+loadHostSettings=async function(){await v09LoadHost();try{state.ntp=await api('/api/v1/system/host/ntp')}catch{}if(location.pathname==='/host')render()}
+const v09HostPage=hostPage
+hostPage=function(){let html=v09HostPage();const n=state.ntp||{};const section=`<section class="surface settings-card ntp-card"><div><h2>时间同步</h2><p>${n.synchronized?'系统时间已同步':'系统时间尚未同步'} · 服务 ${escapeHTML(n.service||'未知')}</p></div><button id="toggle-ntp" data-enabled="${!!n.enabled}" class="${n.enabled?'danger-button':'primary-button'}">${n.enabled?'关闭 NTP':'开启 NTP'}</button></section>`;return v09InsertBeforePageEnd(html,section)}
+
+loadAudit=async function(){state.loading.audit=true;state.errors.audit='';try{const q=state.auditQuery,params=new URLSearchParams();Object.entries(q).forEach(([key,value])=>{if(value!==''&&value!==null&&value!==undefined)params.set(key,String(value))});const logParams=new URLSearchParams({lines:'600'});if(state.logSource)logParams.set('unit',state.logSource);const [audit,logs]=await Promise.all([api('/api/v1/audit?'+params.toString()),api('/api/v1/logs/system?'+logParams.toString())]);state.audit=audit;state.systemLogs=logs}catch(e){state.errors.audit=e.message}finally{state.loading.audit=false;render()}}
+auditPage=function(){if(!state.audit&&!state.errors.audit){queueMicrotask(loadAudit);return `<div class="page-wrap">${pageHeader('日志审计','读取日志')}${surfaceLoading()}</div>`}const events=state.audit?.events||[],auditText=events.map(auditEventText).join('\n'),systemText=state.systemLogs?.logs||'',q=state.auditQuery,total=state.audit?.total||events.length;return `<div class="page-wrap">${pageHeader('日志审计',`SQLite 索引：${state.audit?.indexed?'已启用':'兼容模式'} · 共 ${total} 条`,`<button id="copy-current-log" class="secondary-button compact">${icon('copy',16)}复制当前</button><button id="export-audit" class="secondary-button compact">${icon('download',16)}导出</button><button id="refresh-audit" class="secondary-button compact">${icon('refresh',17)}刷新</button>`)}${errorBox(state.errors.audit)}<div class="tab-bar surface"><button class="${state.logTab==='audit'?'active':''}" data-log-tab="audit">操作审计</button><button class="${state.logTab==='system'?'active':''}" data-log-tab="system">系统日志</button></div>${state.logTab==='audit'?`<form id="audit-filter-form" class="surface audit-filter-grid"><label>关键词<input name="q" value="${escapeHTML(q.q)}" placeholder="操作、目标或详情"></label><label>用户<input name="user" value="${escapeHTML(q.user)}"></label><label>IP<input name="ip" value="${escapeHTML(q.ip)}"></label><label>模块/操作<input name="action" value="${escapeHTML(q.action)}" placeholder="例如 docker"></label><label>结果<select name="result"><option value="">全部</option><option value="success" ${q.result==='success'?'selected':''}>成功</option><option value="failed" ${q.result==='failed'?'selected':''}>失败</option></select></label><label>开始日期<input name="from" type="date" value="${escapeHTML(q.from)}"></label><label>结束日期<input name="to" type="date" value="${escapeHTML(q.to)}"></label><button class="primary-button" type="submit">筛选</button></form><section class="audit-list">${events.map((item,index)=>`<article class="surface audit-card"><div><time>${formatDate(item.time)}</time><strong>${escapeHTML(item.action)}</strong>${statusBadge(item.result)}</div><p>${escapeHTML(item.target||'-')}</p><small>${escapeHTML(item.user||'-')} · ${escapeHTML(item.ip||'-')} · ${escapeHTML(item.detail||'')}</small><button class="secondary-button compact" data-copy-audit="${index}">${icon('copy',15)}复制</button></article>`).join('')||'<div class="empty-list surface">没有符合条件的审计记录</div>'}</section><div class="pagination surface"><button id="audit-prev" class="secondary-button" ${q.offset<=0?'disabled':''}>上一页</button><span>${q.offset+1}-${Math.min(q.offset+q.limit,total)} / ${total}</span><button id="audit-next" class="secondary-button" ${q.offset+q.limit>=total?'disabled':''}>下一页</button></div>`:`<div class="tab-bar surface log-source-tabs">${[['','系统'],['lukepanel.service','面板'],['lukepanel-agent.service','Agent'],['docker.service','Docker'],['ssh.service','SSH'],['sshd.service','sshd'],['apt-daily.service','APT']].map(([value,label])=>`<button data-log-source="${value}" class="${state.logSource===value?'active':''}">${label}</button>`).join('')}</div><section class="surface log-view"><pre>${escapeHTML(systemText||'暂无系统日志')}</pre></section>`}</div>`}
+
+const v09LoadGitHub=loadGitHub
+loadGitHub=async function(owner,repo){await v09LoadGitHub(owner,repo);state.githubJobs=null;state.githubAssets=null}
+const v09GithubPage=githubPage
+githubPage=function(){let html=v09GithubPage();if(!githubHelperEnabled()||!state.githubAuth?.connected||!state.github)return html;const data=state.github;const section=`<section class="surface feature-panel"><div class="section-heading"><div><h2>Actions 运行详情</h2><p>点击一次运行查看 Job，再读取失败日志</p></div></div><div class="compact-list">${(data.workflow_runs||[]).slice(0,8).map(run=>`<button class="github-run-row" data-github-run="${run.id}"><span><strong>${escapeHTML(run.name)}</strong><small>${escapeHTML(run.head_branch||'')} · ${formatDate(run.created_at)}</small></span>${statusBadge(run.conclusion||run.status)}</button>`).join('')||'<div class="empty-list">暂无 Actions 运行</div>'}</div>${state.githubJobs?`<div class="github-jobs"><h3>Jobs</h3>${(state.githubJobs.jobs||[]).map(job=>`<article><div><strong>${escapeHTML(job.name)}</strong>${statusBadge(job.conclusion||job.status)}</div><button class="secondary-button compact" data-github-job="${job.id}">查看日志</button></article>`).join('')}</div>`:''}</section><section class="surface feature-panel"><div class="section-heading"><div><h2>Release 附件</h2><p>选择标签后查看或上传二进制、ZIP 和校验文件</p></div></div><form id="github-assets-form" class="inline-form"><input name="tag" placeholder="例如 v0.9.0-beta" required><button class="secondary-button" type="submit">查看附件</button><input name="file" type="file"><button class="primary-button" type="button" id="github-asset-upload">上传附件</button></form>${state.githubAssets?`<div class="compact-list">${(state.githubAssets.assets||[]).map(asset=>`<a href="${escapeHTML(asset.browser_download_url)}" target="_blank" rel="noopener"><strong>${escapeHTML(asset.name)}</strong><span>${formatBytes(asset.size)} · 下载 ${asset.download_count||0}</span></a>`).join('')||'<div class="empty-list">这个 Release 暂无附件</div>'}</div>`:''}</section>`;return v09InsertBeforePageEnd(html,section)}
+
+loadSecurity=async function(){if(state.loading.security)return;state.loading.security=true;state.errors.security='';try{const [settings,sessions,totp,report,passkeys,devices,allowlist,notifications,firewall,fail2ban]=await Promise.all([api('/api/v1/settings'),api('/api/v1/auth/sessions'),api('/api/v1/auth/totp/status'),api('/api/v1/security/status'),api('/api/v1/auth/passkeys'),api('/api/v1/auth/trusted-devices'),api('/api/v1/security/ip-allowlist'),api('/api/v1/security/login-notifications'),api('/api/v1/security/firewall'),api('/api/v1/security/fail2ban')]);Object.assign(state,{settings,sessions,totpStatus:totp,securityReport:report,passkeys,trustedDevices:devices,ipAllowlist:allowlist,loginNotifications:notifications,firewall,fail2ban});state.username=settings.admin_user||state.username}catch(e){state.errors.security=e.message}finally{state.loading.security=false;render()}}
+const v09SecurityPage=securityPage
+securityPage=function(){let html=v09SecurityPage();const passkeys=state.passkeys?.passkeys||[],devices=state.trustedDevices?.devices||[],allow=state.ipAllowlist||{},notify=state.loginNotifications||{},fw=state.firewall||{};const section=`<section class="security-grid"><article class="surface security-feature"><div class="section-heading"><div><h2>Passkey</h2><p>使用 Face ID、Touch ID 或安全密钥登录</p></div>${passkeyAvailable()?'<button id="register-passkey" class="primary-button compact">添加 Passkey</button>':'<span class="status-badge muted">浏览器不支持</span>'}</div><div class="compact-list">${passkeys.map(item=>`<div><span><strong>${escapeHTML(item.name||'Passkey')}</strong><small>最近使用 ${item.last_used?formatDate(item.last_used):'从未'}</small></span><button class="danger-button compact" data-passkey-delete="${escapeHTML(item.id)}">移除</button></div>`).join('')||'<div class="empty-list">尚未添加 Passkey</div>'}</div></article><article class="surface security-feature"><div class="section-heading"><div><h2>可信设备</h2><p>TOTP 开启时可让常用设备 30 天免验证码</p></div>${devices.length?'<button id="revoke-all-trusted" class="secondary-button compact">全部撤销</button>':''}</div><div class="compact-list">${devices.map(item=>`<div><span><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.ip)} · ${formatDate(item.last_used)}</small></span><button class="danger-button compact" data-trusted-delete="${escapeHTML(item.id)}">撤销</button></div>`).join('')||'<div class="empty-list">暂无可信设备</div>'}</div></article></section><section class="security-grid"><form id="ip-allowlist-form" class="surface security-feature"><h2>面板 IP 允许列表</h2><p>启用时自动保留当前 IP，并生成 15 分钟恢复链接，避免把自己关在外面。</p><label class="checkbox-row"><input name="enabled" type="checkbox" ${allow.enabled?'checked':''}><span>只允许下面的 IP / CIDR</span></label><label>允许地址（每行一个）<textarea name="entries" rows="5" placeholder="203.0.113.5\n192.168.0.0/16">${escapeHTML((allow.entries||[]).join('\n'))}</textarea></label><small>当前 IP：${escapeHTML(allow.current_ip||'未知')}</small><button class="primary-button" type="submit">保存并生成恢复入口</button></form><form id="login-notify-form" class="surface security-feature"><h2>登录通知</h2><p>登录成功后通过 Telegram 通知。Token 不显示在页面和审计中。</p><label class="checkbox-row"><input name="enabled" type="checkbox" ${notify.enabled?'checked':''}><span>启用 Telegram 登录通知</span></label><label>Bot Token<input name="bot_token" type="password" ${passwordInputAttributes()} placeholder="留空则保留现有 Token"></label><label>Chat ID<input name="chat_id" value="${escapeHTML(notify.chat_id||'')}"></label><label class="checkbox-row"><input name="test" type="checkbox"><span>保存后发送测试消息</span></label><button class="primary-button" type="submit">保存通知设置</button></form></section><section class="surface security-feature"><div class="section-heading"><div><h2>UFW 防火墙</h2><p>${fw.installed?(fw.enabled?'已启用':'已安装但未启用'):'尚未安装'}。首次启用有 5 分钟自动恢复保护。</p></div><div class="resource-actions">${!fw.installed?'<button id="install-ufw" class="primary-button compact">安装 UFW</button>':fw.enabled?'<button id="disable-ufw" class="danger-button compact">关闭防火墙</button>':'<button id="enable-ufw" class="primary-button compact">安全启用</button>'}${fw.recovery_pending?'<button id="confirm-ufw" class="primary-button compact">确认连接正常</button>':''}</div></div>${fw.installed?`<form id="ufw-rule-form" class="inline-form"><select name="action"><option value="allow">允许</option><option value="deny">拒绝</option><option value="limit">限速</option></select><select name="protocol"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="any">全部协议</option></select><input name="port" placeholder="端口，例如 443" required><input name="source" placeholder="来源 IP/CIDR，留空=任意"><input name="comment" placeholder="备注"><button class="primary-button" type="submit">添加规则</button></form><div class="source-list">${(fw.rules||[]).map(rule=>`<article><div><strong>#${rule.number} ${escapeHTML(rule.action)} → ${escapeHTML(rule.to)}</strong><p>来源 ${escapeHTML(rule.from)}</p></div><button class="danger-button compact" data-ufw-delete="${rule.number}">删除</button></article>`).join('')||'<div class="empty-list">暂无自定义规则</div>'}</div>`:''}</section>`;return v09InsertBeforePageEnd(html,section)}
+
+async function registerPasskey(){if(!passkeyAvailable()){await showError('当前浏览器不支持 Passkey');return}const name=await askText('给这个 Passkey 起一个容易识别的名称',{title:'添加 Passkey',value:navigator.platform||'我的设备',placeholder:'例如 iPhone 16 Pro Max'});if(!name)return;try{const begin=await secureApi('/api/v1/auth/passkey/register/begin',{method:'POST',body:jsonBody({name})});const credential=await navigator.credentials.create({publicKey:{challenge:b64urlToBytes(begin.challenge),rp:{name:begin.rp.name,id:begin.rp.id},user:{id:b64urlToBytes(begin.user.id),name:begin.user.name,displayName:begin.user.display_name},pubKeyCredParams:begin.pub_key_cred_params,timeout:begin.timeout,attestation:begin.attestation,authenticatorSelection:{residentKey:begin.authenticator_selection?.resident_key,userVerification:begin.authenticator_selection?.user_verification},excludeCredentials:(begin.exclude_credentials||[]).map(item=>({...item,id:b64urlToBytes(item.id)}))}});await secureApi('/api/v1/auth/passkey/register/finish',{method:'POST',body:jsonBody({flow_id:begin.flow_id,name,credential:serializeCreation(credential)})});showToast('Passkey 已添加');await loadSecurity()}catch(error){await showError(error.name==='NotAllowedError'?'Passkey 操作已取消或超时':error.message)}}
+
+// v0.9 delegated interactions keep dynamically rendered pages easy to maintain.
+document.addEventListener('submit',async event=>{
+  const form=event.target
+  if(form.id==='docker-hub-search-form'){event.preventDefault();const query=String(new FormData(form).get('query')||'').trim();state.dockerHubQuery=query;try{state.dockerHubResults=await api(`/api/v1/docker/hub/search?q=${encodeURIComponent(query)}`);render()}catch(e){await showError(e.message)}}
+  if(form.id==='compose-wizard-form'){event.preventDefault();const f=new FormData(form);try{await secureApi('/api/v1/docker/compose/create',{method:'POST',body:jsonBody({project:f.get('project'),directory:f.get('directory'),start:f.get('start')==='on',services:[{name:f.get('service_name'),image:f.get('image'),container_name:f.get('container_name'),restart:f.get('restart'),ports:lines(f.get('ports')),environment:lines(f.get('environment')),volumes:lines(f.get('volumes'))}]})});showToast('Compose 项目已创建');await loadDocker()}catch(e){await showError(e.message)}}
+  if(form.id==='audit-filter-form'){event.preventDefault();const f=new FormData(form);for(const key of ['q','user','ip','action','result','from','to'])state.auditQuery[key]=String(f.get(key)||'');state.auditQuery.offset=0;await loadAudit()}
+  if(form.id==='github-assets-form'){event.preventDefault();const f=new FormData(form),data=state.github;try{state.githubAssets=await api(`/api/v1/github/release/assets?owner=${encodeURIComponent(data.owner)}&repo=${encodeURIComponent(data.name)}&tag=${encodeURIComponent(f.get('tag'))}`);render()}catch(e){await showError(e.message)}}
+  if(form.id==='ip-allowlist-form'){event.preventDefault();const f=new FormData(form);try{const out=await secureApi('/api/v1/security/ip-allowlist',{method:'POST',body:jsonBody({enabled:f.get('enabled')==='on',entries:lines(f.get('entries'))})});if(out.recovery_url){state.modal={title:'紧急恢复链接',kind:'logs',content:`请立即保存。15 分钟内访问可关闭允许列表：\n${location.origin}${out.recovery_url}`};render()}else{showToast('IP 允许列表已保存');await loadSecurity()}}catch(e){await showError(e.message)}}
+  if(form.id==='login-notify-form'){event.preventDefault();const f=new FormData(form);try{await secureApi('/api/v1/security/login-notifications',{method:'POST',body:jsonBody({enabled:f.get('enabled')==='on',bot_token:f.get('bot_token'),chat_id:f.get('chat_id'),test:f.get('test')==='on'})});showToast('登录通知已保存');await loadSecurity()}catch(e){await showError(e.message)}}
+  if(form.id==='ufw-rule-form'){event.preventDefault();const f=new FormData(form);try{await secureApi('/api/v1/security/firewall/rule',{method:'POST',body:jsonBody({action:'add',direction:'in',protocol:f.get('protocol'),port:f.get('port'),source:f.get('source'),comment:f.get('comment')})});showToast('防火墙规则已添加');await loadSecurity()}catch(e){await showError(e.message)}}
+})
+document.addEventListener('click',async event=>{const button=event.target.closest('button,[data-file-shortcut]');if(!button)return
+  if(button.dataset.hubPull){const image=button.dataset.hubPull;const tag=await askText('填写镜像标签',{title:'拉取 Docker 镜像',value:image+':latest'});if(tag){try{await secureApi('/api/v1/docker/images/pull',{method:'POST',body:jsonBody({image:tag})});showToast('镜像已拉取');await loadDocker()}catch(e){await showError(e.message)}}}
+  if(button.id==='refresh-volume-usage'){try{state.dockerVolumeUsage=await api('/api/v1/docker/volumes/usage');render()}catch(e){await showError(e.message)}}
+  if(button.dataset.fileShortcut){const path=button.dataset.fileShortcut;if(button.dataset.dir==='true')loadFiles(path);else openFile(path)}
+  if(button.id==='toggle-current-favorite'){try{state.filePreferences=await api('/api/v1/files/preferences',{method:'POST',body:jsonBody({action:button.dataset.enabled==='true'?'unfavorite':'favorite',path:state.files?.path||'/',is_dir:true})});render();showToast(button.dataset.enabled==='true'?'已取消收藏':'已收藏目录')}catch(e){await showError(e.message)}}
+  if(button.id==='add-apt-source'){const name=await askText('文件名会保存在 /etc/apt/sources.list.d/ 下',{title:'添加软件源',placeholder:'例如 custom.list'});if(!name)return;const content=await askText('输入完整 deb 行或 deb822 内容',{title:'软件源内容',placeholder:'deb https://example.com/debian stable main'});if(!content)return;try{await secureApi('/api/v1/system/apt/sources',{method:'POST',body:jsonBody({action:'add',name,content})});showToast('软件源已添加');await loadUpdates()}catch(e){await showError(e.message)}}
+  if(button.dataset.sourceToggle){try{await secureApi('/api/v1/system/apt/sources',{method:'POST',body:jsonBody({action:button.dataset.enabled==='true'?'disable':'enable',path:button.dataset.sourceToggle})});showToast('软件源状态已更新');await loadUpdates()}catch(e){await showError(e.message)}}
+  if(button.dataset.sourceDelete){if(await askConfirm('删除前会自动创建快照。',{title:'删除软件源',confirmText:'删除',danger:true}))try{await secureApi('/api/v1/system/apt/sources',{method:'POST',body:jsonBody({action:'delete',path:button.dataset.sourceDelete})});showToast('软件源已删除');await loadUpdates()}catch(e){await showError(e.message)}}
+  if(button.id==='toggle-ntp'){try{await secureApi('/api/v1/system/host/ntp',{method:'POST',body:jsonBody({enabled:button.dataset.enabled!=='true'})});showToast('时间同步设置已更新');await loadHostSettings()}catch(e){await showError(e.message)}}
+  if(button.id==='audit-prev'){state.auditQuery.offset=Math.max(0,state.auditQuery.offset-state.auditQuery.limit);await loadAudit()}
+  if(button.id==='audit-next'){state.auditQuery.offset+=state.auditQuery.limit;await loadAudit()}
+  if(button.dataset.githubRun){const data=state.github;try{state.githubJobs=await api(`/api/v1/github/actions/jobs?owner=${encodeURIComponent(data.owner)}&repo=${encodeURIComponent(data.name)}&run_id=${button.dataset.githubRun}`);render()}catch(e){await showError(e.message)}}
+  if(button.dataset.githubJob){const data=state.github;try{const out=await api(`/api/v1/github/actions/job-logs?owner=${encodeURIComponent(data.owner)}&repo=${encodeURIComponent(data.name)}&job_id=${button.dataset.githubJob}`);state.modal={title:'GitHub Actions Job 日志',kind:'logs',content:out.logs||'暂无日志'};render()}catch(e){await showError(e.message)}}
+  if(button.id==='github-asset-upload'){const form=document.querySelector('#github-assets-form'),f=new FormData(form),file=form.querySelector('[name=file]').files?.[0],data=state.github;if(!file){await showError('请选择要上传的附件');return}const body=new FormData();body.append('owner',data.owner);body.append('repo',data.name);body.append('tag',f.get('tag'));body.append('file',file);try{await secureApi('/api/v1/github/release/assets/upload',{method:'POST',body});showToast('Release 附件已上传');state.githubAssets=await api(`/api/v1/github/release/assets?owner=${encodeURIComponent(data.owner)}&repo=${encodeURIComponent(data.name)}&tag=${encodeURIComponent(f.get('tag'))}`);render()}catch(e){await showError(e.message)}}
+  if(button.id==='register-passkey')registerPasskey()
+  if(button.dataset.passkeyDelete&&await askConfirm('删除后这把 Passkey 不能再登录。',{title:'移除 Passkey',confirmText:'移除',danger:true}))try{await secureApi('/api/v1/auth/passkeys',{method:'DELETE',body:jsonBody({id:button.dataset.passkeyDelete})});showToast('Passkey 已移除');await loadSecurity()}catch(e){await showError(e.message)}
+  if(button.dataset.trustedDelete)try{await secureApi('/api/v1/auth/trusted-devices',{method:'DELETE',body:jsonBody({id:button.dataset.trustedDelete})});showToast('可信设备已撤销');await loadSecurity()}catch(e){await showError(e.message)}
+  if(button.id==='revoke-all-trusted'&&await askConfirm('所有设备下次登录都需要验证码。',{title:'撤销全部可信设备',confirmText:'全部撤销',danger:true}))try{await secureApi('/api/v1/auth/trusted-devices',{method:'DELETE',body:jsonBody({all:true})});showToast('全部可信设备已撤销');await loadSecurity()}catch(e){await showError(e.message)}
+  if(button.id==='install-ufw')try{await secureApi('/api/v1/security/firewall/install',{method:'POST',body:'{}'});showToast('UFW 已安装');await loadSecurity()}catch(e){await showError(e.message)}
+  if(button.id==='enable-ufw'&&await askConfirm('面板会保留 SSH/current IP，并设置 5 分钟自动关闭保护。启用后请立即确认当前连接正常。',{title:'安全启用 UFW',confirmText:'启用'}))try{await secureApi('/api/v1/security/firewall/enable',{method:'POST',body:'{}'});showToast('UFW 已启用，请在 5 分钟内确认');await loadSecurity()}catch(e){await showError(e.message)}
+  if(button.id==='confirm-ufw')try{await secureApi('/api/v1/security/firewall/confirm',{method:'POST',body:'{}'});showToast('连接已确认，自动恢复任务已取消');await loadSecurity()}catch(e){await showError(e.message)}
+  if(button.id==='disable-ufw'&&await askConfirm('关闭后所有端口将不再由 UFW 过滤。',{title:'关闭 UFW',confirmText:'关闭',danger:true}))try{await secureApi('/api/v1/security/firewall/disable',{method:'POST',body:'{}'});showToast('UFW 已关闭');await loadSecurity()}catch(e){await showError(e.message)}
+  if(button.dataset.ufwDelete&&await askConfirm(`删除防火墙规则 #${button.dataset.ufwDelete}？`,{title:'删除 UFW 规则',confirmText:'删除',danger:true}))try{await secureApi('/api/v1/security/firewall/rule',{method:'POST',body:jsonBody({action:'delete',number:Number(button.dataset.ufwDelete)})});showToast('规则已删除');await loadSecurity()}catch(e){await showError(e.message)}
+})
+
+const v09DockerPageWithFeatures=dockerPage
+dockerPage=function(){let html=v09DockerPageWithFeatures();if(state.dockerTab==='containers'){html=html.replace(/<button class="secondary-button compact" data-docker-edit="([^"]+)" data-title="([^"]+)">编辑<\/button>/g,(match,id,title)=>match+`<button class="secondary-button compact" data-docker-diagnostic="${id}" data-title="${title}">诊断</button>`)}if(state.dockerTab==='volumes'){html=html.replace(/<button class="danger-button compact" data-volume-delete="([^"]+)">删除<\/button>/g,(match,name)=>`<button class="secondary-button compact" data-volume-backup="${name}">备份</button><button class="secondary-button compact" data-volume-restore="${name}">恢复</button>${match}`)}return html}
+document.addEventListener('click',async event=>{const button=event.target.closest('button');if(!button)return
+  if(button.dataset.dockerDiagnostic){const options=[['identity','身份与权限'],['working-directory','当前工作目录'],['environment','环境变量'],['disk','容器磁盘'],['processes','进程列表'],['network','网络统计'],['os-release','系统版本'],['list-root','根目录列表']],choice=await chooseAction(`${button.dataset.title} · 安全诊断`,options.map(([,label])=>({label,description:'执行固定命令，不支持任意 Shell'})));if(choice===false||choice===null)return;try{const out=await secureApi('/api/v1/docker/exec',{method:'POST',body:jsonBody({id:button.dataset.dockerDiagnostic,command:options[choice][0]})});state.modal={title:`${button.dataset.title} · ${options[choice][1]}`,kind:'logs',content:out.output||'命令完成但没有输出'};render()}catch(e){await showError(e.message)}}
+  if(button.dataset.volumeBackup){const path=await askText('备份会保存为 tar.gz，路径必须位于文件管理授权目录中。',{title:`备份卷 ${button.dataset.volumeBackup}`,value:`/opt/${button.dataset.volumeBackup}-${new Date().toISOString().slice(0,10)}.tar.gz`});if(!path)return;try{const out=await secureApi('/api/v1/docker/volumes/archive',{method:'POST',body:jsonBody({action:'backup',name:button.dataset.volumeBackup,path})});showToast(`备份已保存：${out.path}`)}catch(e){await showError(e.message)}}
+  if(button.dataset.volumeRestore){const path=await askText('恢复是覆盖/追加模式，不会删除备份中不存在的旧文件。建议先备份当前卷。',{title:`恢复卷 ${button.dataset.volumeRestore}`,placeholder:'/opt/volume-backup.tar.gz'});if(!path)return;if(!await askConfirm('恢复会覆盖卷内同名文件。容器运行中时可能产生不一致，建议先停止相关容器。',{title:'确认恢复存储卷',confirmText:'开始恢复',danger:true}))return;try{await secureApi('/api/v1/docker/volumes/archive',{method:'POST',body:jsonBody({action:'restore',name:button.dataset.volumeRestore,path})});showToast('存储卷已恢复')}catch(e){await showError(e.message)}}
+})
+
+
+function renderMarkdownSafe(source=''){
+  let html=escapeHTML(source)
+  html=html.replace(/^######\s+(.+)$/gm,'<h6>$1</h6>').replace(/^#####\s+(.+)$/gm,'<h5>$1</h5>').replace(/^####\s+(.+)$/gm,'<h4>$1</h4>').replace(/^###\s+(.+)$/gm,'<h3>$1</h3>').replace(/^##\s+(.+)$/gm,'<h2>$1</h2>').replace(/^#\s+(.+)$/gm,'<h1>$1</h1>')
+  html=html.replace(/```([\s\S]*?)```/g,'<pre><code>$1</code></pre>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>')
+  html=html.replace(/^>\s?(.+)$/gm,'<blockquote>$1</blockquote>').replace(/^[-*]\s+(.+)$/gm,'<li>$1</li>').replace(/(?:<li>.*<\/li>\n?)+/g,match=>`<ul>${match}</ul>`)
+  html=html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')
+  return html.split(/\n{2,}/).map(block=>/^<(h\d|pre|ul|blockquote)/.test(block)?block:`<p>${block.replace(/\n/g,'<br>')}</p>`).join('')
+}
+document.addEventListener('click',event=>{const button=event.target.closest('#preview-markdown');if(!button)return;const content=document.querySelector('#file-editor')?.value||'';state.modal={title:`${state.modal?.title||'Markdown'} · 预览`,kind:'markdown-preview',content,path:state.modal?.path,originalTitle:state.modal?.title};render()})
+const v09ModalHTML=modalHTML
+modalHTML=function(){if(state.modal?.kind==='markdown-preview'){const m=state.modal;return `<div class="modal-backdrop" id="modal-backdrop"><section class="modal-card markdown-modal"><header><h2>${escapeHTML(m.title)}</h2><button id="modal-close" aria-label="关闭">${icon('close',20)}</button></header><div class="modal-body markdown-preview">${renderMarkdownSafe(m.content)}</div><footer><button id="markdown-back-edit" class="secondary-button">返回编辑</button><button id="modal-done" class="primary-button">完成</button></footer></section></div>`}return v09ModalHTML()}
+document.addEventListener('click',event=>{if(!event.target.closest('#markdown-back-edit'))return;const m=state.modal;state.modal={title:m.originalTitle||'Markdown',kind:'editor',content:m.content,path:m.path,dirty:false,preview_kind:'markdown'};render()})
+
+const v09SSHPage=sshPage
+sshPage=function(){let html=v09SSHPage();const users=state.sshUsers?.users||[];const section=`<section class="surface feature-panel linux-users-panel"><div class="section-heading"><div><h2>Linux 用户</h2><p>新用户默认锁定密码，只能先通过 SSH 公钥登录；系统服务用户不会显示。</p></div><button id="create-linux-user" class="primary-button compact">新建用户</button></div><div class="source-list">${users.map(user=>`<article><div><strong>${escapeHTML(user.name)} ${user.uid===0?'· root':''}</strong><p>UID ${user.uid} · ${escapeHTML(user.home)} · ${escapeHTML(user.shell)}</p><small>${user.key_count||0} 把公钥 · ${user.sudo?'拥有 sudo 权限':'普通用户'}</small></div><div class="resource-actions">${user.name!=='root'?`<button class="secondary-button compact" data-user-sudo="${escapeHTML(user.name)}" data-enabled="${!!user.sudo}">${user.sudo?'移除 sudo':'授予 sudo'}</button><button class="danger-button compact" data-user-delete="${escapeHTML(user.name)}">删除</button>`:''}</div></article>`).join('')||'<div class="empty-list">没有可管理的登录用户</div>'}</div></section>`;return v09InsertBeforePageEnd(html,section)}
+document.addEventListener('click',async event=>{const button=event.target.closest('button');if(!button)return
+ if(button.id==='create-linux-user'){const name=await askText('新用户会创建 Home 目录，并锁定密码。创建后请为它生成或添加 SSH 公钥。',{title:'新建 Linux 用户',placeholder:'例如 deploy'});if(!name)return;const sudo=await askConfirm('是否同时授予 sudo 管理权限？',{title:'用户权限',confirmText:'授予 sudo',cancelText:'普通用户'});try{await secureApi('/api/v1/ssh/users/manage',{method:'POST',body:jsonBody({action:'create',name,sudo:!!sudo})});showToast('Linux 用户已创建');await loadSSH(name)}catch(e){await showError(e.message)}}
+ if(button.dataset.userSudo){const enabled=button.dataset.enabled!=='true';if(!await askConfirm(enabled?'授予后这个用户可以通过 sudo 获得 root 权限。':'移除后该用户将不能再使用 sudo。',{title:enabled?'授予 sudo':'移除 sudo',confirmText:'确认'}))return;try{await secureApi('/api/v1/ssh/users/manage',{method:'POST',body:jsonBody({action:'sudo',name:button.dataset.userSudo,sudo:enabled})});showToast('用户权限已更新');await loadSSH(state.sshUser)}catch(e){await showError(e.message)}}
+ if(button.dataset.userDelete){if(!await askConfirm('系统会拒绝删除 root、服务用户和仍有运行进程的用户。是否同时删除 Home 目录？',{title:`删除用户 ${button.dataset.userDelete}`,confirmText:'删除用户和 Home',danger:true}))return;try{await secureApi('/api/v1/ssh/users/manage',{method:'POST',body:jsonBody({action:'delete',name:button.dataset.userDelete,remove_home:true})});showToast('Linux 用户已删除');state.sshUser='';await loadSSH()}catch(e){await showError(e.message)}}
+})
+
+document.addEventListener('click',async event=>{const button=event.target.closest('[data-log-source]');if(!button)return;state.logSource=button.dataset.logSource||'';await loadAudit()})
+
+const v09UpdatesPageWithJobs=updatesPage
+updatesPage=function(){return v09InsertBeforePageEnd(v09UpdatesPageWithJobs(),backgroundJobPanel('apt.'))}
+const v09DockerPageWithJobs=dockerPage
+dockerPage=function(){return v09InsertBeforePageEnd(v09DockerPageWithJobs(),backgroundJobPanel('docker.'))}
+const v09ModalWithJobs=modalHTML
+modalHTML=function(){
+  if(state.modal?.kind==='job-progress'){
+    const job=state.modal.job||{},output=jobResultOutput(job)
+    return `<div class="modal-backdrop" id="modal-backdrop"><section class="modal-card wide"><header><div><strong>${escapeHTML(state.modal.title)}</strong><small>任务 ${escapeHTML(job.id||'正在创建')}</small></div><button id="modal-close">${icon('close',20)}</button></header><div class="modal-body"><div class="job-progress-card"><div class="spinner"></div><div><h3>${job.status==='queued'?'等待执行':job.status==='running'?'正在后台执行':'正在读取状态'}</h3><p>可以关闭弹窗或切换页面，任务不会停止。</p></div></div>${output?`<pre class="modal-log live-job-log">${escapeHTML(output)}</pre>`:''}</div><footer><button id="modal-done" class="secondary-button">后台继续</button></footer></section></div>`
+  }
+  return v09ModalWithJobs()
+}
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('button')
+  if(!button)return
+  if(button.id==='refresh-background-jobs')await loadBackgroundJobs()
+  if(button.dataset.backgroundJob){
+    try{const out=await api(`/api/v1/jobs?id=${encodeURIComponent(button.dataset.backgroundJob)}`),job=out.job;state.modal=job.status==='running'||job.status==='queued'?{title:job.kind,kind:'job-progress',job}:{title:job.kind,kind:'logs',content:jobResultOutput(job)||job.error||'任务没有输出'};render()}catch(error){await showError(error.message)}
+  }
+})
+
+document.addEventListener('click',event=>{const button=event.target.closest('[data-github-pr-merge]');if(button)mergeGitHubPullRequest(button)})
+
+
+
+
+
+const v09SnapshotsPageWithScheduled=snapshotsPage
+snapshotsPage=function(){
+  let html=v09SnapshotsPageWithScheduled()
+  const scheduled=state.scheduledBackups||{backups:[],retention:7}
+  const panel=`<section class="surface scheduled-backup-card"><div class="section-heading"><div><h2>定时完整备份</h2><p>通过安全计划任务生成，默认保留最近 ${scheduled.retention||7} 份。备份含账号和安全配置，请当作敏感文件保存。</p></div><button id="create-scheduled-backup-now" class="primary-button compact">立即生成</button></div><div class="compact-list">${(scheduled.backups||[]).map(item=>`<div><span><strong>${escapeHTML(item.name)}</strong><small>${formatDate(item.modified_at)} · ${formatBytes(item.size)}</small></span><div class="resource-actions"><button class="secondary-button compact" data-scheduled-backup-download="${escapeHTML(item.name)}">下载</button><button class="danger-button compact" data-scheduled-backup-delete="${escapeHTML(item.name)}">删除</button></div></div>`).join('')||'<div class="empty-list">尚无定时备份。可以立即生成，或在计划任务中创建“完整面板备份”。</div>'}</div></section>`
+  return v09InsertBeforePageEnd(html,panel)
+}
+
+async function downloadScheduledBackup(name){
+  let response=await fetch(`/api/v1/backup/scheduled?download=${encodeURIComponent(name)}`,{credentials:'same-origin'})
+  if(response.status===403){await requestElevation();response=await fetch(`/api/v1/backup/scheduled?download=${encodeURIComponent(name)}`,{credentials:'same-origin'})}
+  if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.error||`下载失败（${response.status}）`)}
+  const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a')
+  link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),2000)
+}
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('button')
+  if(!button)return
+  if(button.id==='create-scheduled-backup-now'){
+    try{const out=await secureApi('/api/v1/backup/scheduled',{method:'POST',body:jsonBody({action:'create'})});state.scheduledBackups=out;showToast('完整备份已生成');render()}catch(e){await showError(e.message)}
+  }
+  if(button.dataset.scheduledBackupDownload){try{await downloadScheduledBackup(button.dataset.scheduledBackupDownload)}catch(e){await showError(e.message)}}
+  if(button.dataset.scheduledBackupDelete){
+    if(!await askConfirm('删除后无法恢复。',{title:'删除定时备份',confirmText:'删除',danger:true}))return
+    try{const out=await secureApi('/api/v1/backup/scheduled',{method:'POST',body:jsonBody({action:'delete',name:button.dataset.scheduledBackupDelete})});state.scheduledBackups=out;showToast('定时备份已删除');render()}catch(e){await showError(e.message)}
+  }
+})
+
+function stopSystemLogPolling(){if(state.systemLogTimer){clearInterval(state.systemLogTimer);state.systemLogTimer=null}}
+function syncSystemLogPolling(){
+  const should=state.authenticated&&!document.hidden&&location.pathname==='/audit'&&state.logTab==='system'
+  if(!should){stopSystemLogPolling();return}
+  if(state.systemLogTimer)return
+  refreshSystemLogsOnly()
+  state.systemLogTimer=setInterval(refreshSystemLogsOnly,3000)
+}
+async function refreshSystemLogsOnly(){
+  if(document.hidden||location.pathname!=='/audit'||state.logTab!=='system'){stopSystemLogPolling();return}
+  const params=new URLSearchParams({lines:'600'});if(state.logSource)params.set('unit',state.logSource)
+  try{
+    state.systemLogs=await api('/api/v1/logs/system?'+params.toString())
+    const pre=document.querySelector('.log-view pre'),nearBottom=pre?pre.scrollHeight-pre.scrollTop-pre.clientHeight<80:true
+    if(pre){pre.textContent=state.systemLogs?.logs||'暂无系统日志';if(nearBottom)pre.scrollTop=pre.scrollHeight}
+  }catch{}
+}
+document.addEventListener('visibilitychange',syncSystemLogPolling)
+
+function stopDockerLogPolling(){if(state.dockerLogTimer){clearInterval(state.dockerLogTimer);state.dockerLogTimer=null}}
+async function refreshDockerLogs(id){
+  if(!state.modal||state.modal.dockerLogID!==id){stopDockerLogPolling();return}
+  if(state.dockerLogPaused||document.hidden)return
+  try{
+    const data=await api(`/api/v1/docker/logs?id=${encodeURIComponent(id)}&tail=500`)
+    if(!state.modal||state.modal.dockerLogID!==id)return
+    state.modal.content=data.logs||'暂无日志'
+    const pre=document.querySelector('.modal-log'),nearBottom=pre?pre.scrollHeight-pre.scrollTop-pre.clientHeight<80:true
+    if(pre){pre.textContent=state.modal.content;if(nearBottom)pre.scrollTop=pre.scrollHeight}else render()
+  }catch(e){if(state.modal?.dockerLogID===id){state.modal.content=`日志读取失败：${e.message}`;const pre=document.querySelector('.modal-log');if(pre)pre.textContent=state.modal.content}}
+}
+const v09ModalWithLiveDockerLogs=modalHTML
+modalHTML=function(){
+  let html=v09ModalWithLiveDockerLogs()
+  if(state.modal?.dockerLogID){
+    html=html.replace('<button class="secondary-button compact" id="copy-modal-log">',`<span class="live-log-status"><i></i>${state.dockerLogPaused?'已暂停':'每 2 秒更新'}</span><button class="secondary-button compact" id="toggle-docker-log">${state.dockerLogPaused?'继续':'暂停'}</button><button class="secondary-button compact" id="copy-modal-log">`)
+  }
+  return html
+}
+document.addEventListener('click',event=>{
+  const button=event.target.closest('button')
+  if(!button)return
+  if(button.id==='toggle-docker-log'){
+    state.dockerLogPaused=!state.dockerLogPaused
+    if(!state.dockerLogPaused&&state.modal?.dockerLogID)refreshDockerLogs(state.modal.dockerLogID)
+    render()
+  }
+  if((button.id==='modal-close'||button.id==='modal-done')&&state.modal?.dockerLogID)stopDockerLogPolling()
+})
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!state.dockerLogPaused&&state.modal?.dockerLogID)refreshDockerLogs(state.modal.dockerLogID)})
+
+const v09SecurityPageWithFail2Ban=securityPage
+securityPage=function(){
+  let html=v09SecurityPageWithFail2Ban()
+  const f2b=state.fail2ban||{}
+  const panel=`<section class="surface security-feature"><div class="section-heading"><div><h2>Fail2ban SSH 防护</h2><p>${!f2b.installed?'尚未安装':f2b.active?'正在保护 SSH 登录':'已安装但服务未运行'}。白名单修改会校验配置并自动回滚。</p></div>${!f2b.installed?'<button id="install-fail2ban-v09" class="primary-button compact">安全安装</button>':statusBadge(f2b.active?'active':'inactive')}</div>${f2b.installed?`<div class="metric-grid compact-metrics"><article><span>当前失败</span><strong>${f2b.currently_failed||0}</strong></article><article><span>累计失败</span><strong>${f2b.total_failed||0}</strong></article><article><span>当前封禁</span><strong>${f2b.currently_banned||0}</strong></article><article><span>累计封禁</span><strong>${f2b.total_banned||0}</strong></article></div>${f2b.error?`<div class="notice warning">${escapeHTML(f2b.error)}</div>`:''}<div class="security-grid"><article><h3>当前封禁</h3><div class="compact-list">${(f2b.banned_ips||[]).map(ip=>`<div><code>${escapeHTML(ip)}</code><button class="secondary-button compact" data-fail2ban-unban="${escapeHTML(ip)}">解封</button></div>`).join('')||'<div class="empty-list">暂无被封禁地址</div>'}</div></article><article><h3>SSH 白名单</h3><form id="fail2ban-ignore-form" class="inline-form"><input name="entry" placeholder="IP 或 CIDR，例如 203.0.113.5" required><button class="primary-button" type="submit">添加</button></form><div class="compact-list">${(f2b.ignore_ips||[]).map(ip=>`<div><code>${escapeHTML(ip)}</code><button class="danger-button compact" data-fail2ban-ignore-remove="${escapeHTML(ip)}">移除</button></div>`).join('')||'<div class="empty-list">暂无白名单</div>'}</div></article></div>`:''}</section>`
+  return v09InsertBeforePageEnd(html,panel)
+}
+
+document.addEventListener('submit',async event=>{
+  const form=event.target
+  if(form.id!=='fail2ban-ignore-form')return
+  event.preventDefault()
+  const entry=new FormData(form).get('entry')
+  try{await secureApi('/api/v1/security/fail2ban/ignore',{method:'POST',body:jsonBody({entry,action:'add'})});form.reset();showToast('Fail2ban 白名单已更新');await loadSecurity()}catch(e){await showError(e.message)}
+})
+
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('button')
+  if(!button)return
+  if(button.id==='install-fail2ban-v09'){
+    if(!await askConfirm('会安装 Fail2ban、保护 SSH，并自动加入当前 IP、内网和现有 SSH 会话来源地址。',{title:'安全安装 Fail2ban',confirmText:'安装'}))return
+    try{await secureApi('/api/v1/security/fail2ban/install',{method:'POST',body:'{}'});showToast('Fail2ban 已安装并启用');await loadSecurity()}catch(e){await showError(e.message)}
+  }
+  if(button.dataset.fail2banUnban){
+    if(!await askConfirm(`解除 ${button.dataset.fail2banUnban} 的 SSH 封禁？`,{title:'解除封禁',confirmText:'解封'}))return
+    try{await secureApi('/api/v1/security/fail2ban/unban',{method:'POST',body:jsonBody({ip:button.dataset.fail2banUnban})});showToast('地址已解封');await loadSecurity()}catch(e){await showError(e.message)}
+  }
+  if(button.dataset.fail2banIgnoreRemove){
+    if(!await askConfirm(`从 SSH 白名单移除 ${button.dataset.fail2banIgnoreRemove}？当前访问 IP 不允许移除。`,{title:'移除白名单',confirmText:'移除',danger:true}))return
+    try{await secureApi('/api/v1/security/fail2ban/ignore',{method:'POST',body:jsonBody({entry:button.dataset.fail2banIgnoreRemove,action:'remove'})});showToast('白名单已更新');await loadSecurity()}catch(e){await showError(e.message)}
+  }
+})
 
 restore()

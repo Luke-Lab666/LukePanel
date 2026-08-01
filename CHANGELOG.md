@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.9.0-beta - 2026-08-01
+
+- 核心单机管理功能进入 Beta 冻结阶段，后续 v0.9.x 主要修复真实环境兼容性。
+- Docker 新增 Docker Hub 搜索、Compose 新项目向导、固定诊断命令、Volume 占用扫描及备份恢复；容器日志按需实时刷新并支持暂停。
+- APT 下载、升级、软件安装/删除与 Docker 镜像构建改为 Agent 后台任务，页面断线后可继续查询状态。
+- 新增 UFW 可恢复规则管理、NTP 开关和完整软件源管理。
+- 新增 Fail2ban 状态、失败/封禁统计、单 IP 解封和 SSH 白名单维护；当前访问 IP 不允许被误移除。
+- 新增 Passkey / WebAuthn、可信设备、可恢复 IP 允许列表和 Telegram 登录通知。
+- 审计新增可选 SQLite 索引、组合筛选、分页和长期检索，JSONL 继续作为持久来源。
+- 新增完整面板备份与恢复，覆盖账号、安全配置、审计、快照、文件备份和回收站，并保留本机运行 Secret；支持固定 systemd 计划任务和最近 7 份保留策略。
+- GitHub 助手新增 Actions Job 日志、Release Assets、PR 安全合并与最新 Head SHA 检查。
+- 新增 Linux 用户与 sudo 管理、Markdown 安全预览、文件收藏/最近访问和文件所有者修改。
+- 完成 v0.9 移动端表单、任务进度、备份恢复和安全中心适配。
+
 ## v0.8.0-alpha - 2026-08-01
 
 - 新增通用配置快照中心，支持查看内容、恢复和删除；SSH、DNS、主机、Compose 与 APT 等关键操作前自动创建快照。

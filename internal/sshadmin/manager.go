@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,6 +42,7 @@ type User struct {
 	Home     string `json:"home"`
 	Shell    string `json:"shell"`
 	KeyCount int    `json:"key_count"`
+	Sudo     bool   `json:"sudo"`
 }
 
 type Key struct {
@@ -133,7 +136,7 @@ func (m *Manager) Users() ([]User, error) {
 			continue
 		}
 		keys, _ := readKeys(filepath.Join(home, ".ssh", "authorized_keys"))
-		users = append(users, User{Name: fields[0], UID: uid, GID: gid, Home: home, Shell: shell, KeyCount: len(keys)})
+		users = append(users, User{Name: fields[0], UID: uid, GID: gid, Home: home, Shell: shell, KeyCount: len(keys), Sudo: userInAdminGroup(fields[0])})
 	}
 	sort.Slice(users, func(i, j int) bool {
 		if users[i].UID == 0 {
@@ -754,4 +757,115 @@ func listeningPort(ctx context.Context, port string) bool {
 		}
 	}
 	return false
+}
+
+func userInAdminGroup(name string) bool {
+	if out, err := exec.Command("id", "-nG", name).Output(); err == nil {
+		for _, item := range strings.Fields(string(out)) {
+			if item == "sudo" || item == "wheel" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+var managedUserPattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+
+func (m *Manager) CreateUser(ctx context.Context, name string, sudo bool) (User, error) {
+	name = strings.TrimSpace(name)
+	if !managedUserPattern.MatchString(name) || name == "root" || name == "lukepanel" {
+		return User{}, errors.New("用户名只能使用小写字母、数字、下划线和短横线")
+	}
+	if _, err := user.Lookup(name); err == nil {
+		return User{}, errors.New("系统用户已经存在")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "useradd", "--create-home", "--shell", "/bin/bash", name).CombinedOutput()
+	if err != nil {
+		return User{}, fmt.Errorf("创建用户失败：%s", strings.TrimSpace(string(out)))
+	}
+	rollback := true
+	defer func() {
+		if rollback {
+			_ = exec.Command("userdel", "--remove", name).Run()
+		}
+	}()
+	_ = exec.CommandContext(ctx, "passwd", "--lock", name).Run()
+	if sudo {
+		if err := setUserSudo(ctx, name, true); err != nil {
+			return User{}, err
+		}
+	}
+	users, err := m.Users()
+	if err != nil {
+		return User{}, err
+	}
+	for _, item := range users {
+		if item.Name == name {
+			rollback = false
+			return item, nil
+		}
+	}
+	return User{}, errors.New("用户已创建但无法重新读取")
+}
+
+func (m *Manager) DeleteUser(ctx context.Context, name string, removeHome bool) error {
+	name = strings.TrimSpace(name)
+	if !managedUserPattern.MatchString(name) || name == "root" || name == "lukepanel" {
+		return errors.New("不能删除受保护用户")
+	}
+	u, err := user.Lookup(name)
+	if err != nil {
+		return errors.New("系统用户不存在")
+	}
+	uid, _ := strconv.Atoi(u.Uid)
+	if uid < 1000 {
+		return errors.New("不能通过面板删除系统服务用户")
+	}
+	if out, _ := exec.CommandContext(ctx, "pgrep", "-u", name).Output(); len(bytes.TrimSpace(out)) > 0 {
+		return errors.New("这个用户仍有运行中的进程，请先退出会话并停止进程")
+	}
+	args := []string{}
+	if removeHome {
+		args = append(args, "--remove")
+	}
+	args = append(args, name)
+	out, err := exec.CommandContext(ctx, "userdel", args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("删除用户失败：%s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func (m *Manager) SetSudo(ctx context.Context, name string, enabled bool) error {
+	name = strings.TrimSpace(name)
+	if !managedUserPattern.MatchString(name) || name == "root" || name == "lukepanel" {
+		return errors.New("用户名称无效")
+	}
+	if _, err := user.Lookup(name); err != nil {
+		return errors.New("系统用户不存在")
+	}
+	return setUserSudo(ctx, name, enabled)
+}
+func setUserSudo(ctx context.Context, name string, enabled bool) error {
+	group := "sudo"
+	if _, err := user.LookupGroup(group); err != nil {
+		group = "wheel"
+		if _, err = user.LookupGroup(group); err != nil {
+			return errors.New("系统没有 sudo 或 wheel 用户组")
+		}
+	}
+	var cmd *exec.Cmd
+	if enabled {
+		cmd = exec.CommandContext(ctx, "usermod", "-aG", group, name)
+	} else {
+		cmd = exec.CommandContext(ctx, "gpasswd", "-d", name, group)
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("修改 sudo 权限失败：%s", strings.TrimSpace(string(out)))
+	}
+	return nil
 }

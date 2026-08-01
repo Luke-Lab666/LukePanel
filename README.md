@@ -2,7 +2,7 @@
 
 面向 Debian 12/13 的轻量系统管理面板。移动端优先、桌面端增强；核心由 Go 单二进制构成，不依赖 Node.js 运行时、Redis、外部数据库、Prometheus 或 Grafana。
 
-> 当前版本：`v0.8.0-alpha`。已经覆盖单机 VPS 的高频日常管理，但仍处于 Alpha 阶段。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
+> 当前版本：`v0.9.0-beta`。核心单机管理功能已经进入功能冻结阶段；Beta 期间重点处理真实环境兼容性、安全审计和交互细节。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
 
 ## 设计目标
 
@@ -29,7 +29,7 @@
 - 存储分区与空间占用；默认隐藏 overlay、netns、BPF、重复绑定挂载等虚拟项目
 - 安全计划任务：重启 systemd 服务、重启 Docker 容器、安全清理 Docker；不接受任意 Shell
 - 原生 systemd timer 查看
-- APT 升级预检、下载、执行、软件包搜索/安装/删除；升级前自动创建快照并尝试修复 dpkg 中断
+- APT 升级预检、下载、执行、软件包搜索/安装/删除；长任务交给 Agent 后台运行，页面或反向代理断开后仍可继续查看结果
 - 主机名、时区、系统 DNS、Swap 和固定 sysctl 优化预设
 - 自动配置快照列表、内容查看、恢复和删除
 - SSH Server 状态、可登录用户与 `authorized_keys` 公钥管理
@@ -42,15 +42,15 @@
 - Docker Engine 状态和版本；未安装时可使用 Debian/Ubuntu 软件源快捷安装
 - 概览页每 10 秒低频同步容器数量
 - 运行容器 CPU、内存、网络和块设备 I/O 按需实时统计
-- 容器列表、状态、镜像、端口、启停、重启、删除和日志
+- 容器列表、状态、镜像、端口、启停、重启和删除；日志每 2 秒按需刷新并支持暂停/复制
 - 非 Compose 容器全可视化编辑：镜像、环境变量、命令、端口、挂载、网络、特权模式和重启策略
 - 编辑采用安全重建事务；新容器失败时自动恢复旧容器
 - Compose YAML 多文件在线编辑、语法校验、保存前快照、失败回滚和可选立即部署
 - Compose 容器引导编辑对应 YAML，避免面板配置与 Compose 漂移
-- 镜像列表、拉取、可视化构建和删除
-- 网络与存储卷查看、创建和删除
+- 镜像列表、Docker Hub 搜索、拉取、可视化构建和删除
+- 网络与存储卷查看、创建、删除、占用扫描、备份和恢复
 - 安全/深度清理预览，按需清理停止容器、未使用镜像、网络和存储卷
-- 自动识别 Docker Compose 项目
+- 自动识别 Docker Compose 项目，并支持新项目可视化向导
 - Compose 拉取、启动、停止、重启和下线
 
 ### 文件管理
@@ -58,7 +58,7 @@
 - 允许目录浏览，默认包含 `/home`、`/root`、`/opt`、`/srv`、`/var/www`、`/etc`、`/usr/local`
 - 可点击面包屑路径与一键复制完整路径
 - 当前目录筛选、授权目录递归搜索、多文件上传、文件夹上传和下载
-- 图片/PDF 预览、ZIP 内容浏览，ZIP/TAR.GZ 在线压缩
+- 图片/PDF/Markdown 预览、ZIP 内容浏览，ZIP/TAR.GZ 在线压缩
 - ZIP 安全解压，支持 iPhone 大批量文件导入，并阻止路径穿越与符号链接
 - 新建文件/文件夹、在线文本编辑（最大 2MB）
 - 重命名、复制、移动、八进制权限修改
@@ -74,8 +74,8 @@
 
 - Ping、DNS、TCP 端口、HTTP 检查
 - 固定模板一键系统诊断：负载、内存、Swap、磁盘、异常服务和监听端口；不接受任意命令
-- systemd 系统日志
-- 操作审计搜索、单条复制、当前结果一键复制、JSON/文本导出
+- systemd 系统日志按页面可见状态每 3 秒刷新，支持服务来源筛选、暂停页面后自动停采
+- JSONL 持久审计 + 可选 SQLite 索引；按用户、IP、模块、结果和时间检索，支持分页、复制与 JSON/文本导出
 - 审计文件 20MB 自动轮转，最多保留 3 个历史文件
 - 审计不记录密码、GitHub Token 或 Cookie
 
@@ -90,8 +90,8 @@
 - 使用 Git Trees / Commit / Ref API 直接 Commit + Push，不依赖服务器安装 Git
 - 默认增量覆盖，不删除 ZIP 中缺失的仓库文件，不 Force Push
 - 预览后远端分支发生变化时拒绝提交，避免覆盖新提交
-- 创建分支和 Pull Request，支持“新建分支 → ZIP 推送 → PR 合并”的小白流程
-- 创建版本 Tag、触发 Release、重试失败 Actions
+- 创建分支、Pull Request，并在检查最新 Head SHA 后选择 squash/merge/rebase 合并，支持“新建分支 → ZIP 推送 → PR → 合并”的小白流程
+- 创建版本 Tag、Release、上传 Release Assets、查看 Actions Jobs/失败日志并重试失败任务
 - 修改 `.github/workflows` 需要 GitHub 授权包含 workflow 权限
 
 ### 导航与账户体验
@@ -107,15 +107,24 @@
 - PBKDF2-HMAC-SHA256 密码哈希（600,000 次迭代）
 - HttpOnly、SameSite=Strict、Secure Cookie
 - CSRF 防护与登录失败限速
-- 会话查看和退出其他设备
+- 会话查看、可信设备与退出其他设备
 - TOTP 身份验证器与一次性恢复码；未开启时登录页完全不渲染验证码框，密码验证通过且已开启时才出现
 - 恢复码只保存哈希并在使用后立即作废
 - 用户名修改、两次新密码一致性校验与服务端弱密码拒绝
-- 主机安全体检、安全分、Fail2ban 防暴力破解和自动安全更新快捷启用
-- Fail2ban 自动忽略当前网页访问 IP、内网网段和现有 SSH 连接 IP，降低误封自己的风险
-- 高风险操作二次验证，授权窗口 5 分钟
+- 主机安全体检、安全分、Fail2ban 防暴力破解、封禁解锁、白名单管理和自动安全更新
+- Fail2ban 自动忽略当前网页访问 IP、内网网段和现有 SSH 连接 IP；白名单移除会保护当前访问 IP并在失败时自动回滚
+- Passkey / WebAuthn、TOTP 与恢复码并存；高风险操作二次验证，授权窗口 5 分钟
 - Web 普通用户与 root Agent 通过本地 Unix Socket 隔离
 - Agent Secret 固定时序比较，Agent 不监听 TCP
+
+## v0.9 Beta 新增闭环
+
+- **完整面板备份/恢复**：导出配置、审计、快照、文件备份和回收站；恢复时保留本机监听地址、Agent Secret 和会话 Secret，并用临时目录完成原子切换。支持立即生成和 systemd 定时完整备份，默认保留最近 7 份。
+- **后台任务中心**：APT 下载/升级、软件安装删除和 Docker 镜像构建由 Agent 运行；关闭弹窗或断开网页不会取消任务。Agent 服务重启会终止仍在运行的任务，因此系统升级期间不要重启 Agent。
+- **UFW 与 Fail2ban**：防火墙启用具备 5 分钟自动恢复窗口；Fail2ban 可查看统计、解除封禁和维护 SSH 白名单。
+- **Passkey、可信设备、IP 允许列表与登录通知**：允许列表保存时自动保留当前 IP，并生成限时恢复入口；GitHub 和 Telegram Token 不进入审计。
+- **GitHub 日常闭环**：ZIP 差异预览、Commit/Push、分支、PR 创建与安全合并、Tag、Release、附件和 Actions 日志。
+- **审计索引**：安装器优先安装轻量 `sqlite3` CLI；不可用时自动退回 JSONL 兼容检索，不影响面板启动。
 
 ## 安装或升级
 
@@ -210,11 +219,11 @@ make test
 make build VERSION=dev
 ```
 
-## 当前限制
+## Beta 边界
 
-- Docker 镜像构建和交互式容器终端仍未开放；浏览器任意 WebShell 不在项目范围内。
-- GitHub ZIP 推送支持分支和 PR，但不执行自动 Rebase、复杂冲突解决或历史改写；检测到远端变化会停止推送。
-- GitHub 网页登录首次需要用户自己创建 OAuth App 并启用 Device Flow；Client ID 可保存在浏览器本地。
-- 计划任务只提供经过参数校验的固定模板，不允许用户输入任意 Shell。
-- APT 支持模拟检查，并可启用 unattended-upgrades 自动安全更新；手动全量升级仍会先实现下载、快照提示和可恢复流程。
-- Passkey、IP 白名单、安全通知与 SQLite 大规模审计检索仍在后续阶段。
+- 不提供浏览器任意 WebShell、任意 root Shell 定时任务或 Force Push。固定容器诊断和系统任务使用白名单参数。
+- 后台任务可跨页面和网络断开继续运行，但 Agent 服务重启会结束正在运行的进程。
+- GitHub 助手不处理交互式 Rebase、复杂冲突或历史改写；检测到远端变化会停止推送。
+- Passkey 需要 HTTPS、正确域名和浏览器 WebAuthn 支持。反向代理域名变化后，需要重新添加对应域名的 Passkey。
+- SQLite 只是审计查询索引，`audit.jsonl` 才是可恢复的持久来源。完整备份不会复制 SQLite 文件，恢复后会自动重建。
+- 项目聚焦单台 Debian/Ubuntu VPS，不计划加入 Kubernetes、Swarm、多服务器控制中心、邮件服务器或网站托管套件。

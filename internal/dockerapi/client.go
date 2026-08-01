@@ -25,8 +25,9 @@ import (
 )
 
 type Client struct {
-	http       *http.Client
-	socketPath string
+	http         *http.Client
+	registryHTTP *http.Client
+	socketPath   string
 }
 
 type Port struct {
@@ -80,6 +81,46 @@ type Volume struct {
 	Mountpoint string            `json:"mountpoint"`
 	Scope      string            `json:"scope"`
 	Labels     map[string]string `json:"labels"`
+}
+
+type HubRepository struct {
+	Name        string `json:"name"`
+	Namespace   string `json:"namespace"`
+	Description string `json:"description"`
+	Stars       int    `json:"stars"`
+	Pulls       int64  `json:"pulls"`
+	Official    bool   `json:"official"`
+	Automated   bool   `json:"automated"`
+}
+
+type VolumeUsage struct {
+	Name     string `json:"name"`
+	Size     int64  `json:"size"`
+	RefCount int64  `json:"ref_count"`
+}
+
+type ComposeWizardService struct {
+	Name          string   `json:"name"`
+	Image         string   `json:"image"`
+	ContainerName string   `json:"container_name,omitempty"`
+	Restart       string   `json:"restart,omitempty"`
+	Environment   []string `json:"environment,omitempty"`
+	Ports         []string `json:"ports,omitempty"`
+	Volumes       []string `json:"volumes,omitempty"`
+	Command       []string `json:"command,omitempty"`
+}
+
+type ComposeWizardRequest struct {
+	Project   string                 `json:"project"`
+	Directory string                 `json:"directory"`
+	Services  []ComposeWizardService `json:"services"`
+	Start     bool                   `json:"start"`
+}
+
+type ComposeWizardResult struct {
+	Project string `json:"project"`
+	Path    string `json:"path"`
+	Output  string `json:"output,omitempty"`
 }
 
 type ContainerStats struct {
@@ -140,7 +181,7 @@ func New(socketPath string) *Client {
 		},
 		DisableCompression: true,
 	}
-	return &Client{http: &http.Client{Transport: transport, Timeout: 10 * time.Minute}, socketPath: socketPath}
+	return &Client{http: &http.Client{Transport: transport, Timeout: 10 * time.Minute}, registryHTTP: &http.Client{Timeout: 15 * time.Second}, socketPath: socketPath}
 }
 
 func (c *Client) Status(ctx context.Context) Status {
@@ -1657,4 +1698,251 @@ func (c *Client) BuildImage(ctx context.Context, request ImageBuildRequest) (Ima
 		return ImageBuildResult{Tag: tag, Output: output}, fmt.Errorf("镜像构建失败: %w", err)
 	}
 	return ImageBuildResult{Tag: tag, Output: output}, nil
+}
+
+func (c *Client) SearchDockerHub(ctx context.Context, query string, limit int) ([]HubRepository, error) {
+	query = strings.TrimSpace(query)
+	if len(query) < 2 || len(query) > 100 || strings.ContainsAny(query, "\x00\r\n") {
+		return nil, errors.New("镜像搜索词必须是 2-100 个字符")
+	}
+	if limit < 1 || limit > 50 {
+		limit = 20
+	}
+	endpoint := "https://hub.docker.com/v2/search/repositories/?page_size=" + strconv.Itoa(limit) + "&query=" + url.QueryEscape(query)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "LukePanel-Docker-Hub")
+	resp, err := c.registryHTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("无法连接 Docker Hub: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("Docker Hub 返回 HTTP %d", resp.StatusCode)
+	}
+	var raw struct {
+		Results []struct {
+			RepoName         string `json:"repo_name"`
+			Name             string `json:"name"`
+			Namespace        string `json:"namespace"`
+			ShortDescription string `json:"short_description"`
+			StarCount        int    `json:"star_count"`
+			PullCount        int64  `json:"pull_count"`
+			IsOfficial       bool   `json:"is_official"`
+			IsAutomated      bool   `json:"is_automated"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&raw); err != nil {
+		return nil, err
+	}
+	out := make([]HubRepository, 0, len(raw.Results))
+	for _, item := range raw.Results {
+		name := strings.TrimSpace(item.RepoName)
+		if name == "" {
+			name = strings.Trim(strings.TrimSpace(item.Namespace)+"/"+strings.TrimSpace(item.Name), "/")
+		}
+		if name == "" {
+			continue
+		}
+		out = append(out, HubRepository{Name: name, Namespace: item.Namespace, Description: item.ShortDescription, Stars: item.StarCount, Pulls: item.PullCount, Official: item.IsOfficial, Automated: item.IsAutomated})
+	}
+	return out, nil
+}
+
+func (c *Client) VolumeUsage(ctx context.Context) ([]VolumeUsage, error) {
+	var raw struct {
+		Volumes []struct {
+			Name      string `json:"Name"`
+			UsageData struct {
+				Size     int64 `json:"Size"`
+				RefCount int64 `json:"RefCount"`
+			} `json:"UsageData"`
+		} `json:"Volumes"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/system/df?type=volume", nil, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]VolumeUsage, 0, len(raw.Volumes))
+	for _, item := range raw.Volumes {
+		out = append(out, VolumeUsage{Name: item.Name, Size: item.UsageData.Size, RefCount: item.UsageData.RefCount})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Size > out[j].Size })
+	return out, nil
+}
+
+func (c *Client) CreateComposeProject(ctx context.Context, request ComposeWizardRequest) (ComposeWizardResult, error) {
+	request.Project = strings.TrimSpace(request.Project)
+	request.Directory = filepath.Clean(strings.TrimSpace(request.Directory))
+	if !composeProjectPattern.MatchString(request.Project) {
+		return ComposeWizardResult{}, errors.New("Compose 项目名称无效")
+	}
+	if !filepath.IsAbs(request.Directory) || strings.ContainsAny(request.Directory, "\x00\r\n") {
+		return ComposeWizardResult{}, errors.New("Compose 目录必须是绝对路径")
+	}
+	if len(request.Services) < 1 || len(request.Services) > 32 {
+		return ComposeWizardResult{}, errors.New("Compose 项目需要 1-32 个服务")
+	}
+	var b strings.Builder
+	b.WriteString("# Generated by LukePanel v0.9\nservices:\n")
+	seen := map[string]bool{}
+	for _, service := range request.Services {
+		service.Name = strings.TrimSpace(service.Name)
+		service.Image = strings.TrimSpace(service.Image)
+		if !composeProjectPattern.MatchString(service.Name) || seen[service.Name] {
+			return ComposeWizardResult{}, errors.New("服务名称无效或重复: " + service.Name)
+		}
+		seen[service.Name] = true
+		if service.Image == "" || len(service.Image) > 300 || strings.ContainsAny(service.Image, "\x00\r\n\t ") {
+			return ComposeWizardResult{}, errors.New("镜像名称无效: " + service.Name)
+		}
+		restart := strings.TrimSpace(service.Restart)
+		if restart == "" {
+			restart = "unless-stopped"
+		}
+		if !map[string]bool{"no": true, "always": true, "on-failure": true, "unless-stopped": true}[restart] {
+			return ComposeWizardResult{}, errors.New("重启策略无效: " + service.Name)
+		}
+		b.WriteString("  " + service.Name + ":\n")
+		b.WriteString("    image: " + yamlQuote(service.Image) + "\n")
+		if value := strings.TrimSpace(service.ContainerName); value != "" {
+			if !validID(value) {
+				return ComposeWizardResult{}, errors.New("容器名称无效: " + value)
+			}
+			b.WriteString("    container_name: " + yamlQuote(value) + "\n")
+		}
+		b.WriteString("    restart: " + yamlQuote(restart) + "\n")
+		writeComposeList := func(name string, values []string) error {
+			clean := make([]string, 0, len(values))
+			for _, value := range values {
+				value = strings.TrimSpace(value)
+				if value == "" {
+					continue
+				}
+				if len(value) > 1024 || strings.ContainsAny(value, "\x00\r\n") {
+					return errors.New(name + " 参数无效")
+				}
+				clean = append(clean, value)
+			}
+			if len(clean) > 0 {
+				b.WriteString("    " + name + ":\n")
+				for _, value := range clean {
+					b.WriteString("      - " + yamlQuote(value) + "\n")
+				}
+			}
+			return nil
+		}
+		if err := writeComposeList("environment", service.Environment); err != nil {
+			return ComposeWizardResult{}, err
+		}
+		if err := writeComposeList("ports", service.Ports); err != nil {
+			return ComposeWizardResult{}, err
+		}
+		if err := writeComposeList("volumes", service.Volumes); err != nil {
+			return ComposeWizardResult{}, err
+		}
+		if len(service.Command) > 0 {
+			b.WriteString("    command:\n")
+			for _, value := range service.Command {
+				if len(value) > 1024 || strings.ContainsAny(value, "\x00\r\n") {
+					return ComposeWizardResult{}, errors.New("command 参数无效")
+				}
+				b.WriteString("      - " + yamlQuote(value) + "\n")
+			}
+		}
+	}
+	if err := os.MkdirAll(request.Directory, 0o750); err != nil {
+		return ComposeWizardResult{}, err
+	}
+	configPath := filepath.Join(request.Directory, "compose.yaml")
+	if _, err := os.Stat(configPath); err == nil {
+		return ComposeWizardResult{}, errors.New("目标目录已经存在 compose.yaml，请使用编辑功能")
+	}
+	tmp, err := os.CreateTemp(request.Directory, ".compose-*.tmp")
+	if err != nil {
+		return ComposeWizardResult{}, err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o640); err != nil {
+		tmp.Close()
+		return ComposeWizardResult{}, err
+	}
+	if _, err := tmp.WriteString(b.String()); err != nil {
+		tmp.Close()
+		return ComposeWizardResult{}, err
+	}
+	if err := tmp.Close(); err != nil {
+		return ComposeWizardResult{}, err
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(checkCtx, "docker", "compose", "--project-directory", request.Directory, "-p", request.Project, "-f", tmpName, "config", "-q")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return ComposeWizardResult{}, fmt.Errorf("Compose 配置校验失败: %s", strings.TrimSpace(string(output)))
+	}
+	if err := os.Rename(tmpName, configPath); err != nil {
+		return ComposeWizardResult{}, err
+	}
+	result := ComposeWizardResult{Project: request.Project, Path: configPath}
+	if request.Start {
+		runCtx, runCancel := context.WithTimeout(ctx, 10*time.Minute)
+		defer runCancel()
+		cmd := exec.CommandContext(runCtx, "docker", "compose", "--project-directory", request.Directory, "-p", request.Project, "-f", configPath, "up", "-d")
+		output, err := cmd.CombinedOutput()
+		result.Output = strings.TrimSpace(string(output))
+		if err != nil {
+			_ = os.Remove(configPath)
+			return ComposeWizardResult{}, fmt.Errorf("项目启动失败，已移除新配置: %s", result.Output)
+		}
+	}
+	return result, nil
+}
+
+func yamlQuote(value string) string {
+	return strconv.Quote(value)
+}
+
+// ExecDiagnostic executes a fixed, non-shell diagnostic command inside a container.
+// The caller selects a published key; arbitrary commands and arguments are never accepted.
+func (c *Client) ExecDiagnostic(ctx context.Context, id, key string) (string, error) {
+	if !validID(id) {
+		return "", errors.New("容器 ID 无效")
+	}
+	commands := map[string][]string{
+		"identity":          {"id"},
+		"working-directory": {"pwd"},
+		"environment":       {"env"},
+		"disk":              {"df", "-h"},
+		"processes":         {"ps", "aux"},
+		"network":           {"cat", "/proc/net/dev"},
+		"os-release":        {"cat", "/etc/os-release"},
+		"list-root":         {"ls", "-la", "/"},
+	}
+	command, ok := commands[strings.TrimSpace(key)]
+	if !ok {
+		return "", errors.New("不支持的容器诊断命令")
+	}
+	var created struct {
+		ID string `json:"Id"`
+	}
+	payload := map[string]any{"AttachStdout": true, "AttachStderr": true, "Tty": false, "Cmd": command}
+	if err := c.doJSON(ctx, http.MethodPost, "/containers/"+url.PathEscape(id)+"/exec", payload, &created); err != nil {
+		return "", err
+	}
+	resp, err := c.request(ctx, http.MethodPost, "/exec/"+url.PathEscape(created.ID)+"/start", bytes.NewReader([]byte(`{"Detach":false,"Tty":false}`)))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return "", dockerError(resp)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return "", err
+	}
+	return decodeStream(data), nil
 }

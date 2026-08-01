@@ -113,3 +113,36 @@ func TestDeviceFlow(t *testing.T) {
 		t.Fatalf("second=%#v err=%v", second, err)
 	}
 }
+
+func TestListAndMergePullRequests(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/Luke-Lab666/LukePanel/pulls":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"number": 7, "title": "Update", "state": "open", "html_url": "https://example/pr/7", "draft": false,
+				"head": map[string]any{"ref": "agent/update", "sha": "0123456789abcdef"}, "base": map[string]any{"ref": "main"},
+			}})
+		case r.Method == http.MethodPut && r.URL.Path == "/repos/Luke-Lab666/LukePanel/pulls/7/merge":
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			if payload["merge_method"] != "squash" || payload["sha"] != "0123456789abcdef" {
+				t.Fatalf("payload = %#v", payload)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"sha": "mergedsha", "merged": true, "message": "Pull Request successfully merged"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := New()
+	client.apiBase = server.URL
+	pulls, err := client.ListPullRequests(context.Background(), "Luke-Lab666", "LukePanel", "token")
+	if err != nil || len(pulls) != 1 || pulls[0].HeadSHA != "0123456789abcdef" {
+		t.Fatalf("pulls=%#v err=%v", pulls, err)
+	}
+	merged, err := client.MergePullRequest(context.Background(), "Luke-Lab666", "LukePanel", 7, pulls[0].HeadSHA, "squash", "token")
+	if err != nil || !merged.Merged {
+		t.Fatalf("merge=%#v err=%v", merged, err)
+	}
+}

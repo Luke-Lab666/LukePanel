@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -38,6 +40,7 @@ type Server struct {
 	tasks     *tasks.Manager
 	snapshots *snapshots.Manager
 	apt       *aptadmin.Manager
+	jobs      *JobManager
 	http      *http.Server
 }
 
@@ -47,9 +50,11 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		return nil, err
 	}
 	snapshotManager := snapshots.New(cfg.DataDir)
-	s := &Server{cfg: cfg, logger: logger, docker: dockerapi.New("/var/run/docker.sock"), services: services.New(), files: fm, processes: systemadmin.NewProcessManager(), ssh: sshadmin.New(cfg.DataDir), tasks: tasks.New(cfg.DataDir), snapshots: snapshotManager, apt: aptadmin.New(cfg.DataDir, snapshotManager)}
+	s := &Server{cfg: cfg, logger: logger, docker: dockerapi.New("/var/run/docker.sock"), services: services.New(), files: fm, processes: systemadmin.NewProcessManager(), ssh: sshadmin.New(cfg.DataDir), tasks: tasks.New(cfg.DataDir), snapshots: snapshotManager, apt: aptadmin.New(cfg.DataDir, snapshotManager), jobs: NewJobManager()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", s.health)
+	mux.HandleFunc("/v1/jobs", s.jobList)
+	mux.HandleFunc("/v1/jobs/start", s.jobStart)
 	mux.HandleFunc("/v1/docker/status", s.dockerStatus)
 	mux.HandleFunc("/v1/docker/install", s.dockerInstall)
 	mux.HandleFunc("/v1/docker/containers", s.dockerContainers)
@@ -96,12 +101,14 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.HandleFunc("/v1/files/copy", s.fileCopy)
 	mux.HandleFunc("/v1/files/move", s.fileMove)
 	mux.HandleFunc("/v1/files/chmod", s.fileChmod)
+	mux.HandleFunc("/v1/files/chown", s.fileChown)
 	mux.HandleFunc("/v1/files/recycle", s.fileRecycle)
 	mux.HandleFunc("/v1/files/backups", s.fileBackups)
 	mux.HandleFunc("/v1/files/backups/diff", s.fileBackupDiff)
 	mux.HandleFunc("/v1/files/backups/restore", s.fileBackupRestore)
 	mux.HandleFunc("/v1/ssh/status", s.sshStatus)
 	mux.HandleFunc("/v1/ssh/users", s.sshUsers)
+	mux.HandleFunc("/v1/ssh/users/manage", s.sshUserManage)
 	mux.HandleFunc("/v1/ssh/keys", s.sshKeys)
 	mux.HandleFunc("/v1/ssh/keys/add", s.sshKeyAdd)
 	mux.HandleFunc("/v1/ssh/keys/delete", s.sshKeyDelete)
@@ -109,7 +116,18 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.HandleFunc("/v1/ssh/password", s.sshPassword)
 	mux.HandleFunc("/v1/security/status", s.securityStatus)
 	mux.HandleFunc("/v1/security/fail2ban/install", s.fail2banInstall)
+	mux.HandleFunc("/v1/security/fail2ban", s.fail2banStatus)
+	mux.HandleFunc("/v1/security/fail2ban/unban", s.fail2banUnban)
+	mux.HandleFunc("/v1/security/fail2ban/ignore", s.fail2banIgnore)
 	mux.HandleFunc("/v1/security/auto-updates/enable", s.autoUpdatesEnable)
+	mux.HandleFunc("/v1/security/firewall", s.firewallHandler)
+	mux.HandleFunc("/v1/security/firewall/install", s.firewallInstall)
+	mux.HandleFunc("/v1/security/firewall/enable", s.firewallEnable)
+	mux.HandleFunc("/v1/security/firewall/confirm", s.firewallConfirm)
+	mux.HandleFunc("/v1/security/firewall/disable", s.firewallDisable)
+	mux.HandleFunc("/v1/security/firewall/rule", s.firewallRule)
+	mux.HandleFunc("/v1/host/ntp", s.hostNTP)
+	mux.HandleFunc("/v1/apt/sources", s.aptSources)
 	mux.HandleFunc("/v1/snapshots", s.snapshotHandler)
 	mux.HandleFunc("/v1/apt/preflight", s.aptPreflight)
 	mux.HandleFunc("/v1/apt/search", s.aptSearch)
@@ -118,6 +136,11 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.HandleFunc("/v1/apt/package", s.aptPackage)
 	mux.HandleFunc("/v1/docker/compose/config", s.dockerComposeConfig)
 	mux.HandleFunc("/v1/docker/images/build", s.dockerImageBuild)
+	mux.HandleFunc("/v1/docker/hub/search", s.dockerHubSearch)
+	mux.HandleFunc("/v1/docker/volumes/usage", s.dockerVolumeUsage)
+	mux.HandleFunc("/v1/docker/compose/create", s.dockerComposeCreate)
+	mux.HandleFunc("/v1/docker/exec", s.dockerExec)
+	mux.HandleFunc("/v1/docker/volumes/archive", s.dockerVolumeArchive)
 	mux.HandleFunc("/v1/files/search", s.fileSearch)
 	mux.HandleFunc("/v1/files/preview", s.filePreview)
 	mux.HandleFunc("/v1/files/preview/raw", s.filePreviewRaw)
@@ -1079,6 +1102,54 @@ func (s *Server) securityStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, hostadmin.SecurityStatus(r.Context(), cfg, s.ssh.Status(r.Context())))
 }
 
+func (s *Server) fail2banStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, hostadmin.Fail2BanStatus(r.Context()))
+}
+
+func (s *Server) fail2banUnban(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		IP string `json:"ip"`
+	}
+	if decodeJSON(w, r, 4096, &req) != nil {
+		return
+	}
+	if err := hostadmin.Fail2BanUnban(r.Context(), req.IP); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, hostadmin.Fail2BanStatus(r.Context()))
+}
+
+func (s *Server) fail2banIgnore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Entry     string `json:"entry"`
+		Action    string `json:"action"`
+		CurrentIP string `json:"current_ip"`
+	}
+	if decodeJSON(w, r, 8192, &req) != nil {
+		return
+	}
+	_, _ = s.snapshots.Create("fail2ban", "修改 Fail2ban 白名单前", req.Action+" "+req.Entry, []string{"/etc/fail2ban/jail.d/lukepanel-sshd.local"})
+	info, err := hostadmin.UpdateFail2BanIgnore(r.Context(), req.Entry, req.Action, req.CurrentIP)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
 func (s *Server) autoUpdatesEnable(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
@@ -1109,6 +1180,217 @@ func (s *Server) fail2banInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) dockerHubSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	items, err := s.docker.SearchDockerHub(r.Context(), r.URL.Query().Get("q"), parseInt(r.URL.Query().Get("limit"), 20))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"repositories": items})
+}
+
+func (s *Server) dockerVolumeUsage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	items, err := s.docker.VolumeUsage(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"volumes": items})
+}
+
+func (s *Server) dockerComposeCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req dockerapi.ComposeWizardRequest
+	if decodeJSON(w, r, 2<<20, &req) != nil {
+		return
+	}
+	resolved, err := s.files.ResolveDirectoryForWrite(req.Directory)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.Directory = resolved
+	result, err := s.docker.CreateComposeProject(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) firewallHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, hostadmin.FirewallInfo(r.Context()))
+}
+func (s *Server) firewallInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	result, err := hostadmin.InstallUFW(r.Context())
+	if err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error(), "output": result.Output})
+		return
+	}
+	writeJSON(w, 200, result)
+}
+func (s *Server) firewallEnable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		CurrentIP string `json:"current_ip"`
+	}
+	if decodeJSON(w, r, 4096, &req) != nil {
+		return
+	}
+	_, _ = s.snapshots.Create("ufw", "启用 UFW 前", "自动防失联恢复窗口 5 分钟", []string{"/etc/ufw", "/etc/default/ufw"})
+	sshStatus := s.ssh.Status(r.Context())
+	var ports []int
+	for _, part := range strings.Fields(sshStatus.Port) {
+		if n, err := strconv.Atoi(part); err == nil {
+			ports = append(ports, n)
+		}
+	}
+	status, err := hostadmin.EnableUFW(r.Context(), req.CurrentIP, ports)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, status)
+}
+func (s *Server) firewallConfirm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if err := hostadmin.ConfirmUFW(r.Context()); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, hostadmin.FirewallInfo(r.Context()))
+}
+func (s *Server) firewallDisable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	_, _ = s.snapshots.Create("ufw", "关闭 UFW 前", "", []string{"/etc/ufw", "/etc/default/ufw"})
+	if err := hostadmin.DisableUFW(r.Context()); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, hostadmin.FirewallInfo(r.Context()))
+}
+func (s *Server) firewallRule(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Operation string                        `json:"operation"`
+		Number    int                           `json:"number"`
+		Rule      hostadmin.FirewallRuleRequest `json:"rule"`
+	}
+	if decodeJSON(w, r, 32<<10, &req) != nil {
+		return
+	}
+	_, _ = s.snapshots.Create("ufw", "修改 UFW 规则前", req.Operation, []string{"/etc/ufw", "/etc/default/ufw"})
+	var status hostadmin.FirewallStatus
+	var err error
+	switch req.Operation {
+	case "add":
+		status, err = hostadmin.AddUFWRule(r.Context(), req.Rule)
+	case "delete":
+		status, err = hostadmin.DeleteUFWRule(r.Context(), req.Number)
+	default:
+		err = errors.New("不支持的防火墙操作")
+	}
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, status)
+}
+func (s *Server) hostNTP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, 200, hostadmin.NTPStatus(r.Context()))
+	case http.MethodPost:
+		var req struct {
+			Enabled bool `json:"enabled"`
+		}
+		if decodeJSON(w, r, 4096, &req) != nil {
+			return
+		}
+		result, err := hostadmin.SetNTP(r.Context(), req.Enabled)
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, result)
+	default:
+		methodNotAllowed(w)
+	}
+}
+func (s *Server) aptSources(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		items, err := hostadmin.ListSoftwareSources()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]any{"sources": items})
+	case http.MethodPost:
+		var req struct {
+			Action, Path, Name, Content string
+			Enabled                     bool
+		}
+		if decodeJSON(w, r, 2<<20, &req) != nil {
+			return
+		}
+		_, _ = s.snapshots.Create("apt-sources", "修改软件源前", req.Action, []string{"/etc/apt/sources.list", "/etc/apt/sources.list.d"})
+		var result any
+		var err error
+		switch req.Action {
+		case "enable":
+			result, err = hostadmin.SetSoftwareSourceEnabled(req.Path, true)
+		case "disable":
+			result, err = hostadmin.SetSoftwareSourceEnabled(req.Path, false)
+		case "add":
+			result, err = hostadmin.AddSoftwareSource(req.Name, req.Content)
+		case "delete":
+			err = hostadmin.RemoveSoftwareSource(req.Path)
+			result = map[string]bool{"ok": true}
+		default:
+			err = errors.New("不支持的软件源操作")
+		}
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, result)
+	default:
+		methodNotAllowed(w)
+	}
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, max int64, out any) error {
@@ -1516,4 +1798,205 @@ func (s *Server) hostSysctl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (s *Server) dockerExec(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct{ ID, Command string }
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	output, err := s.docker.ExecDiagnostic(ctx, req.ID, req.Command)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]string{"output": output})
+}
+
+func (s *Server) dockerVolumeArchive(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct{ Action, Name, Path string }
+	if decodeJSON(w, r, 32<<10, &req) != nil {
+		return
+	}
+	volumes, err := s.docker.ListVolumes(r.Context())
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	var mountpoint string
+	for _, volume := range volumes {
+		if volume.Name == req.Name {
+			mountpoint = volume.Mountpoint
+			break
+		}
+	}
+	if mountpoint == "" {
+		writeError(w, 404, "Docker 存储卷不存在")
+		return
+	}
+	if info, err := os.Stat(mountpoint); err != nil || !info.IsDir() {
+		writeError(w, 400, "存储卷挂载目录不可访问")
+		return
+	}
+	switch req.Action {
+	case "backup":
+		destination := filepath.Clean(strings.TrimSpace(req.Path))
+		if !strings.HasSuffix(strings.ToLower(destination), ".tar.gz") {
+			destination += ".tar.gz"
+		}
+		parent, err := s.files.ResolveDirectoryForWrite(filepath.Dir(destination))
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		destination = filepath.Join(parent, filepath.Base(destination))
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, "tar", "-C", mountpoint, "-czf", destination, ".").CombinedOutput()
+		if err != nil {
+			writeError(w, 400, "备份失败："+strings.TrimSpace(string(out)))
+			return
+		}
+		writeJSON(w, 200, map[string]string{"path": destination})
+	case "restore":
+		source, info, err := s.files.ResolveExisting(req.Path, false)
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		if info.Size() > 20<<30 {
+			writeError(w, 400, "备份文件超过 20GB，拒绝在线恢复")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		defer cancel()
+		// Restore is additive/overwriting and never deletes files absent from the archive.
+		out, err := exec.CommandContext(ctx, "tar", "-C", mountpoint, "-xzf", source, "--no-same-owner", "--no-same-permissions").CombinedOutput()
+		if err != nil {
+			writeError(w, 400, "恢复失败："+strings.TrimSpace(string(out)))
+			return
+		}
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	default:
+		writeError(w, 400, "不支持的存储卷操作")
+	}
+}
+
+func (s *Server) fileChown(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct{ Path, Owner, Group string }
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	if err := s.files.Chown(req.Path, req.Owner, req.Group); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (s *Server) sshUserManage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Action, Name     string
+		Sudo, RemoveHome bool
+	}
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	switch req.Action {
+	case "create":
+		item, err := s.ssh.CreateUser(r.Context(), req.Name, req.Sudo)
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, item)
+	case "delete":
+		if err := s.ssh.DeleteUser(r.Context(), req.Name, req.RemoveHome); err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	case "sudo":
+		if err := s.ssh.SetSudo(r.Context(), req.Name, req.Sudo); err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	default:
+		writeError(w, 400, "不支持的用户操作")
+	}
+}
+
+func (s *Server) jobList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	if id := strings.TrimSpace(r.URL.Query().Get("id")); id != "" {
+		job, ok := s.jobs.Get(id)
+		if !ok {
+			writeError(w, http.StatusNotFound, "后台任务不存在或已过期")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job": job})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"jobs": s.jobs.List()})
+}
+
+func (s *Server) jobStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Action   string                      `json:"action"`
+		Packages []string                    `json:"packages,omitempty"`
+		Build    dockerapi.ImageBuildRequest `json:"build,omitempty"`
+	}
+	if decodeJSON(w, r, 128<<10, &req) != nil {
+		return
+	}
+	var job BackgroundJob
+	switch req.Action {
+	case "apt.download":
+		job = s.jobs.Start(req.Action, "system", func(ctx context.Context) (any, error) { return s.apt.Download(ctx) })
+	case "apt.upgrade":
+		job = s.jobs.Start(req.Action, "system", func(ctx context.Context) (any, error) { return s.apt.Upgrade(ctx) })
+	case "apt.install":
+		packages := append([]string{}, req.Packages...)
+		job = s.jobs.Start(req.Action, strings.Join(packages, ","), func(ctx context.Context) (any, error) { return s.apt.Install(ctx, packages) })
+	case "apt.remove":
+		packages := append([]string{}, req.Packages...)
+		job = s.jobs.Start(req.Action, strings.Join(packages, ","), func(ctx context.Context) (any, error) { return s.apt.Remove(ctx, packages) })
+	case "docker.image.build":
+		if _, _, err := s.files.ResolveExisting(req.Build.ContextDir, true); err != nil {
+			writeError(w, http.StatusBadRequest, "构建目录不在文件管理授权范围内: "+err.Error())
+			return
+		}
+		build := req.Build
+		job = s.jobs.Start(req.Action, build.Tag, func(ctx context.Context) (any, error) { return s.docker.BuildImage(ctx, build) })
+	default:
+		writeError(w, http.StatusBadRequest, "不支持的后台任务类型")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
 }

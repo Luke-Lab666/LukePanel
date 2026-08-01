@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/Luke-Lab666/LukePanel/internal/agent"
 	"github.com/Luke-Lab666/LukePanel/internal/config"
@@ -18,6 +19,8 @@ func main() {
 	initOnly := flag.Bool("init", false, "initialize configuration and exit")
 	agentMode := flag.Bool("agent", false, "run privileged local agent")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	backupAuto := flag.Bool("backup-auto", false, "create a scheduled panel backup and exit")
+	backupDir := flag.String("backup-dir", "", "scheduled backup directory")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version)
@@ -36,6 +39,19 @@ func main() {
 		if password == "" {
 			fmt.Printf("LukePanel configuration already exists: %s\n", *configPath)
 		}
+		return
+	}
+	if *backupAuto {
+		directory := *backupDir
+		if directory == "" {
+			directory = filepath.Join(cfg.DataDir, "scheduled-backups")
+		}
+		path, err := server.CreateScheduledPanelBackup(*configPath, cfg.DataDir, version, directory, 7)
+		if err != nil {
+			logger.Error("scheduled backup failed", "error", err)
+			os.Exit(1)
+		}
+		fmt.Printf("LukePanel backup created: %s\n", path)
 		return
 	}
 	if *agentMode {

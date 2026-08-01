@@ -10,16 +10,17 @@ lukepanel.service（普通用户）
       ├── 登录、会话、CSRF、限速
       ├── /proc 实时概览与 SSE
       ├── GitHub HTTPS API（仅用户主动调用）
-      ├── 审计与嵌入式前端
+      ├── JSONL 审计、可重建 SQLite 索引与嵌入式前端
       │
       │ /run/lukepanel/agent.sock + Agent Secret
       ▼
 lukepanel-agent.service（root）
       ├── Docker Engine Unix Socket / Compose CLI
       ├── systemctl / journalctl
-      ├── 进程信号、网络、存储、timer、APT 检查
+      ├── 进程信号、网络、存储、timer、APT 与后台任务
       ├── 文件写入、复制、备份与回收站
-      └── SSH authorized_keys 管理
+      ├── SSH、UFW、Fail2ban 与主机安全管理
+      └── 文件、快照、完整备份恢复与回收站
 ```
 
 Agent 不监听 TCP，不接收通用 Shell 字符串。Compose 命令只从 Docker 容器可信标签重新发现项目路径和配置文件，再以固定 argv 调用 `docker compose`。
@@ -63,3 +64,19 @@ Agent 不监听 TCP，不接收通用 Shell 字符串。Compose 命令只从 Doc
 - `/var/lib/lukepanel/recycle/`：回收站对象与元数据。
 - `/var/lib/lukepanel/github-imports/`：GitHub ZIP 预览临时文件，30 分钟过期或会话结束后清理。
 - `/run/lukepanel/agent.sock`：临时 Unix Socket。
+
+## 后台任务
+
+APT 下载/升级、软件安装删除和 Docker 镜像构建通过 Agent 内的固定任务注册表执行。任务 ID、状态、开始/结束时间和输出保存在 Agent 内存中，浏览器关闭或反向代理连接断开不影响子进程；Agent 重启会结束正在运行的任务。任务类型和参数均经过白名单校验，不接受 Shell 字符串。
+
+## 面板备份与恢复
+
+- 导出包含配置、JSONL 审计、快照、文件备份、文件偏好和回收站。
+- SQLite 仅是查询索引，不进入备份；恢复后从 JSONL 重建。
+- 上传限制 512MB、最多 10,000 个条目和 2GB 展开体积，拒绝绝对路径、路径穿越、符号链接和特殊文件。
+- 恢复不会导入其他机器的监听地址、DataDir、Agent Socket、Agent Secret、Session Secret、Secure Cookie 和 Trusted Proxy。
+- 数据目录先安装到临时位置再原子切换，失败会回滚。
+
+## 主机安全边界
+
+UFW、SSH 端口、密码登录、IP 允许列表和 Fail2ban 都采用“保留当前访问路径 → 校验 → 应用 → 确认 → 取消恢复”的策略。不能证明新路径可用时，不自动删除旧登录路径。

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	pathpkg "path"
 	"path/filepath"
 	"sort"
@@ -954,4 +955,56 @@ func statGID(info os.FileInfo) int {
 // ResolveExisting validates a path against the configured roots for other trusted modules.
 func (m *Manager) ResolveExisting(path string, wantDir bool) (string, os.FileInfo, error) {
 	return m.resolveExisting(path, wantDir)
+}
+
+// ResolveDirectoryForWrite validates that path is inside an allowed root and
+// returns a normalized absolute directory path. The directory may not exist yet.
+func (m *Manager) ResolveDirectoryForWrite(path string) (string, error) {
+	resolved, err := m.resolveNew(path)
+	if err != nil {
+		return "", err
+	}
+	if sensitivePath(resolved) {
+		return "", errors.New("不允许写入敏感路径")
+	}
+	return resolved, nil
+}
+
+func (m *Manager) Chown(path, ownerName, groupName string) error {
+	resolved, _, err := m.resolveAny(path)
+	if err != nil {
+		return err
+	}
+	ownerName = strings.TrimSpace(ownerName)
+	groupName = strings.TrimSpace(groupName)
+	if ownerName == "" && groupName == "" {
+		return errors.New("用户和用户组不能同时为空")
+	}
+	uid, gid := -1, -1
+	if ownerName != "" {
+		u, err := user.Lookup(ownerName)
+		if err != nil {
+			return errors.New("系统用户不存在")
+		}
+		value, err := strconv.Atoi(u.Uid)
+		if err != nil {
+			return errors.New("系统用户 UID 无效")
+		}
+		uid = value
+	}
+	if groupName != "" {
+		g, err := user.LookupGroup(groupName)
+		if err != nil {
+			return errors.New("系统用户组不存在")
+		}
+		value, err := strconv.Atoi(g.Gid)
+		if err != nil {
+			return errors.New("系统用户组 GID 无效")
+		}
+		gid = value
+	}
+	if m.isManagedRoot(resolved) {
+		return errors.New("不能修改授权根目录本身的所有者")
+	}
+	return os.Chown(resolved, uid, gid)
 }

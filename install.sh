@@ -16,6 +16,11 @@ die() { printf '[LukePanel] 错误：%s\n' "$*" >&2; exit 1; }
 command -v curl >/dev/null || die "缺少 curl"
 command -v sha256sum >/dev/null || die "缺少 sha256sum"
 command -v systemctl >/dev/null || die "当前系统不支持 systemd"
+if ! command -v sqlite3 >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+  log "安装轻量审计索引依赖 sqlite3"
+  DEBIAN_FRONTEND=noninteractive apt-get update -qq || true
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sqlite3 || log "警告：sqlite3 安装失败，将使用 JSONL 兼容检索"
+fi
 
 case "$(uname -m)" in
   x86_64|amd64) ARCH="amd64" ;;

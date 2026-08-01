@@ -10,26 +10,45 @@ import (
 	"path/filepath"
 	"regexp"
 	"syscall"
+	"time"
 
 	"github.com/Luke-Lab666/LukePanel/internal/auth"
 )
 
+type TrustedDevice struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	TokenHash string    `json:"token_hash"`
+	CreatedAt time.Time `json:"created_at"`
+	LastUsed  time.Time `json:"last_used"`
+	LastIP    string    `json:"last_ip,omitempty"`
+}
+
 var adminUserPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{2,31}$`)
 
 type Config struct {
-	Listen             string   `json:"listen"`
-	DataDir            string   `json:"data_dir"`
-	AdminUser          string   `json:"admin_user"`
-	PasswordHash       string   `json:"password_hash"`
-	SessionSecret      string   `json:"session_secret"`
-	AgentSecret        string   `json:"agent_secret"`
-	AgentSocket        string   `json:"agent_socket"`
-	TrustedProxy       string   `json:"trusted_proxy"`
-	SecureCookie       bool     `json:"secure_cookie"`
-	AllowedRoots       []string `json:"allowed_roots"`
-	AutoRefreshSeconds int      `json:"auto_refresh_seconds"`
-	TOTPSecret         string   `json:"totp_secret,omitempty"`
-	RecoveryCodeHashes []string `json:"recovery_code_hashes,omitempty"`
+	Listen             string                   `json:"listen"`
+	DataDir            string                   `json:"data_dir"`
+	AdminUser          string                   `json:"admin_user"`
+	PasswordHash       string                   `json:"password_hash"`
+	SessionSecret      string                   `json:"session_secret"`
+	AgentSecret        string                   `json:"agent_secret"`
+	AgentSocket        string                   `json:"agent_socket"`
+	TrustedProxy       string                   `json:"trusted_proxy"`
+	SecureCookie       bool                     `json:"secure_cookie"`
+	AllowedRoots       []string                 `json:"allowed_roots"`
+	AutoRefreshSeconds int                      `json:"auto_refresh_seconds"`
+	TOTPSecret         string                   `json:"totp_secret,omitempty"`
+	RecoveryCodeHashes []string                 `json:"recovery_code_hashes,omitempty"`
+	Passkeys           []auth.PasskeyCredential `json:"passkeys,omitempty"`
+	TrustedDevices     []TrustedDevice          `json:"trusted_devices,omitempty"`
+	IPAllowlistEnabled bool                     `json:"ip_allowlist_enabled,omitempty"`
+	IPAllowlist        []string                 `json:"ip_allowlist,omitempty"`
+	IPRecoveryHash     string                   `json:"ip_recovery_hash,omitempty"`
+	IPRecoveryExpires  time.Time                `json:"ip_recovery_expires,omitempty"`
+	LoginNotifyEnabled bool                     `json:"login_notify_enabled,omitempty"`
+	TelegramBotToken   string                   `json:"telegram_bot_token,omitempty"`
+	TelegramChatID     string                   `json:"telegram_chat_id,omitempty"`
 }
 
 func Default() Config {
