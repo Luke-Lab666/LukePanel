@@ -230,6 +230,7 @@ type Mount struct {
 	Total      uint64 `json:"total"`
 	Used       uint64 `json:"used"`
 	Available  uint64 `json:"available"`
+	Virtual    bool   `json:"virtual"`
 }
 
 func Storage() ([]Mount, error) {
@@ -238,8 +239,9 @@ func Storage() ([]Mount, error) {
 		return nil, err
 	}
 	defer f.Close()
-	skip := map[string]bool{"proc": true, "sysfs": true, "devtmpfs": true, "devpts": true, "tmpfs": true, "cgroup": true, "cgroup2": true, "overlay": false, "squashfs": true, "securityfs": true, "pstore": true, "debugfs": true, "tracefs": true, "mqueue": true, "hugetlbfs": true, "configfs": true, "fusectl": true, "autofs": true}
+	skip := map[string]bool{"proc": true, "sysfs": true, "devtmpfs": true, "devpts": true, "tmpfs": true, "cgroup": true, "cgroup2": true, "squashfs": true, "securityfs": true, "pstore": true, "debugfs": true, "tracefs": true, "mqueue": true, "hugetlbfs": true, "configfs": true, "fusectl": true, "autofs": true}
 	seen := map[string]bool{}
+	seenStorage := map[string]bool{}
 	out := []Mount{}
 	s := bufio.NewScanner(f)
 	for s.Scan() {
@@ -258,7 +260,11 @@ func Storage() ([]Mount, error) {
 		}
 		total := st.Blocks * uint64(st.Bsize)
 		available := st.Bavail * uint64(st.Bsize)
-		out = append(out, Mount{Device: fields[0], Mountpoint: mount, Filesystem: fields[2], Total: total, Used: total - available, Available: available})
+		used := (st.Blocks - st.Bfree) * uint64(st.Bsize)
+		storageKey := fmt.Sprintf("%s|%s|%d|%d", fields[0], fields[2], st.Blocks, st.Bsize)
+		duplicate := seenStorage[storageKey]
+		seenStorage[storageKey] = true
+		out = append(out, Mount{Device: fields[0], Mountpoint: mount, Filesystem: fields[2], Total: total, Used: used, Available: available, Virtual: duplicate || virtualMount(fields[2], mount)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Mountpoint < out[j].Mountpoint })
 	return out, s.Err()
@@ -269,6 +275,29 @@ type UpdateInfo struct {
 	Count     int      `json:"count"`
 	Packages  []string `json:"packages"`
 	Output    string   `json:"output,omitempty"`
+}
+
+func virtualMount(filesystem, mountpoint string) bool {
+	// The root filesystem is always meaningful, even when LukePanel itself runs
+	// inside a container where / is backed by overlayfs.
+	if mountpoint == "/" {
+		return false
+	}
+	virtualFS := map[string]bool{"overlay": true, "nsfs": true, "bpf": true, "binfmt_misc": true, "ramfs": true, "fuse.portal": true}
+	if virtualFS[filesystem] {
+		return true
+	}
+	for _, exact := range []string{"/etc/hostname", "/etc/hosts", "/etc/resolv.conf"} {
+		if mountpoint == exact {
+			return true
+		}
+	}
+	for _, prefix := range []string{"/proc/", "/sys/", "/dev/", "/run/docker/netns/", "/var/lib/docker/overlay2/"} {
+		if strings.HasPrefix(mountpoint, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func CheckUpdates(ctx context.Context) (UpdateInfo, error) {

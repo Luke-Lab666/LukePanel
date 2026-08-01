@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/Luke-Lab666/LukePanel/internal/auth"
@@ -37,5 +38,25 @@ func TestLoadOrCreateMigratesAgentSettings(t *testing.T) {
 	}
 	if cfg.AutoRefreshSeconds != 5 {
 		t.Fatalf("unexpected refresh interval %d", cfg.AutoRefreshSeconds)
+	}
+}
+
+func TestLegacyDefaultRootsMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := Default()
+	cfg.AllowedRoots = []string{"/home", "/opt", "/srv", "/var/www", "/etc"}
+	cfg.PasswordHash, _ = auth.HashPassword("example-password")
+	cfg.SessionSecret = "session-secret"
+	cfg.AgentSecret = "agent-secret"
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _, err := LoadOrCreate(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Default().AllowedRoots
+	if !reflect.DeepEqual(loaded.AllowedRoots, want) {
+		t.Fatalf("allowed roots = %#v, want %#v", loaded.AllowedRoots, want)
 	}
 }

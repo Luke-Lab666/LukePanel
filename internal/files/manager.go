@@ -4,11 +4,14 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +29,16 @@ type FileContent struct {
 	Size       int64     `json:"size"`
 	Mode       string    `json:"mode"`
 	ModifiedAt time.Time `json:"modified_at"`
+}
+
+type RecycleEntry struct {
+	ID           string    `json:"id"`
+	OriginalPath string    `json:"original_path"`
+	RecycledPath string    `json:"recycled_path"`
+	Name         string    `json:"name"`
+	IsDir        bool      `json:"is_dir"`
+	Size         int64     `json:"size"`
+	DeletedAt    time.Time `json:"deleted_at"`
 }
 
 type Manager struct {
@@ -136,43 +149,190 @@ func (m *Manager) Mkdir(path string) error {
 }
 
 func (m *Manager) Rename(source, destination string) error {
-	src, _, err := m.resolveExisting(source, false)
+	return m.Move(source, destination)
+}
+
+func (m *Manager) Copy(source, destination string) error {
+	src, info, err := m.resolveAny(source)
 	if err != nil {
-		if srcDir, _, dirErr := m.resolveExisting(source, true); dirErr == nil {
-			src = srcDir
-		} else {
-			return err
-		}
+		return err
+	}
+	if m.isManagedRoot(src) {
+		return errors.New("不允许直接复制授权根目录")
 	}
 	dst, err := m.resolveNew(destination)
 	if err != nil {
 		return err
 	}
-	return os.Rename(src, dst)
+	if src == dst {
+		return errors.New("源路径和目标路径相同")
+	}
+	if info.IsDir() && strings.HasPrefix(dst+string(os.PathSeparator), src+string(os.PathSeparator)) {
+		return errors.New("不能把文件夹复制到自身内部")
+	}
+	if _, err := os.Lstat(dst); err == nil {
+		return errors.New("目标路径已存在")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return copyPath(src, dst, info)
+}
+
+func (m *Manager) Move(source, destination string) error {
+	src, info, err := m.resolveAny(source)
+	if err != nil {
+		return err
+	}
+	if m.isManagedRoot(src) {
+		return errors.New("不允许移动授权根目录")
+	}
+	dst, err := m.resolveNew(destination)
+	if err != nil {
+		return err
+	}
+	if src == dst {
+		return nil
+	}
+	if info.IsDir() && strings.HasPrefix(dst+string(os.PathSeparator), src+string(os.PathSeparator)) {
+		return errors.New("不能把文件夹移动到自身内部")
+	}
+	if _, err := os.Lstat(dst); err == nil {
+		return errors.New("目标路径已存在")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	} else if !errors.Is(err, syscall.EXDEV) {
+		return err
+	}
+	if err := copyPath(src, dst, info); err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return os.RemoveAll(src)
+	}
+	return os.Remove(src)
+}
+
+func (m *Manager) Chmod(path, mode string) error {
+	resolved, _, err := m.resolveAny(path)
+	if err != nil {
+		return err
+	}
+	if m.isManagedRoot(resolved) {
+		return errors.New("不允许修改授权根目录权限")
+	}
+	value, err := parseMode(mode)
+	if err != nil {
+		return err
+	}
+	return os.Chmod(resolved, value)
 }
 
 func (m *Manager) Trash(path string) (string, error) {
-	resolved, _, err := m.resolveExisting(path, false)
+	resolved, info, err := m.resolveAny(path)
 	if err != nil {
-		if dir, _, dirErr := m.resolveExisting(path, true); dirErr == nil {
-			resolved = dir
-		} else {
-			return "", err
-		}
-	}
-	root := filepath.Join(m.dataDir, "recycle")
-	if err := os.MkdirAll(root, 0o750); err != nil {
 		return "", err
 	}
-	name := fmt.Sprintf("%s-%s", time.Now().UTC().Format("20060102T150405.000000000"), filepath.Base(resolved))
-	destination := filepath.Join(root, name)
-	if err := os.Rename(resolved, destination); err != nil {
-		if errors.Is(err, syscall.EXDEV) {
-			return "", errors.New("当前版本暂不支持跨文件系统移动到回收站")
-		}
+	if m.isManagedRoot(resolved) {
+		return "", errors.New("不允许删除授权根目录")
+	}
+	root := filepath.Join(m.dataDir, "recycle")
+	itemsDir := filepath.Join(root, "items")
+	metaDir := filepath.Join(root, "meta")
+	if err := os.MkdirAll(itemsDir, 0o750); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(metaDir, 0o750); err != nil {
+		return "", err
+	}
+	now := time.Now().UTC()
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", resolved, now.UnixNano())))
+	id := fmt.Sprintf("%s-%s", now.Format("20060102T150405"), hex.EncodeToString(sum[:5]))
+	destination := filepath.Join(itemsDir, id)
+	if err := moveInternal(resolved, destination, info); err != nil {
+		return "", err
+	}
+	entry := RecycleEntry{ID: id, OriginalPath: resolved, RecycledPath: destination, Name: filepath.Base(resolved), IsDir: info.IsDir(), Size: info.Size(), DeletedAt: now}
+	if err := writeJSONFile(filepath.Join(metaDir, id+".json"), entry, 0o600); err != nil {
+		_ = moveInternal(destination, resolved, info)
 		return "", err
 	}
 	return destination, nil
+}
+
+func (m *Manager) ListRecycle() ([]RecycleEntry, error) {
+	metaDir := filepath.Join(m.dataDir, "recycle", "meta")
+	entries, err := os.ReadDir(metaDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return []RecycleEntry{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RecycleEntry, 0, len(entries))
+	for _, item := range entries {
+		if item.IsDir() || !strings.HasSuffix(item.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(metaDir, item.Name()))
+		if err != nil {
+			continue
+		}
+		var entry RecycleEntry
+		if json.Unmarshal(data, &entry) != nil || entry.ID == "" {
+			continue
+		}
+		if _, err := os.Lstat(entry.RecycledPath); err != nil {
+			continue
+		}
+		out = append(out, entry)
+	}
+	sortRecycle(out)
+	if len(out) > 500 {
+		out = out[:500]
+	}
+	return out, nil
+}
+
+func (m *Manager) RestoreRecycle(id, destination string) (string, error) {
+	entry, metaPath, err := m.recycleEntry(id)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(destination) == "" {
+		destination = entry.OriginalPath
+	}
+	dst, err := m.resolveNew(destination)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Lstat(dst); err == nil {
+		return "", errors.New("恢复目标已存在，请改名后再恢复")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	info, err := os.Lstat(entry.RecycledPath)
+	if err != nil {
+		return "", err
+	}
+	if err := moveInternal(entry.RecycledPath, dst, info); err != nil {
+		return "", err
+	}
+	_ = os.Remove(metaPath)
+	return dst, nil
+}
+
+func (m *Manager) PurgeRecycle(id string) error {
+	entry, metaPath, err := m.recycleEntry(id)
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(entry.RecycledPath); err != nil {
+		return err
+	}
+	return os.Remove(metaPath)
 }
 
 func (m *Manager) OpenDownload(path string) (*os.File, os.FileInfo, error) {
@@ -239,6 +399,187 @@ func (m *Manager) SaveUpload(directory, filename string, source io.Reader, sizeL
 	return destination, nil
 }
 
+func (m *Manager) resolveAny(path string) (string, os.FileInfo, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", nil, err
+	}
+	abs = filepath.Clean(abs)
+	if !m.allowed(abs) {
+		return "", nil, errors.New("path is outside allowed roots")
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", nil, err
+	}
+	if !m.allowed(resolved) {
+		return "", nil, errors.New("symlink target is outside allowed roots")
+	}
+	info, err := os.Lstat(resolved)
+	if err != nil {
+		return "", nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", nil, errors.New("不支持直接操作符号链接")
+	}
+	return resolved, info, nil
+}
+
+func (m *Manager) recycleEntry(id string) (RecycleEntry, string, error) {
+	if id == "" || filepath.Base(id) != id || strings.ContainsAny(id, `/\\`) {
+		return RecycleEntry{}, "", errors.New("invalid recycle id")
+	}
+	metaPath := filepath.Join(m.dataDir, "recycle", "meta", id+".json")
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		return RecycleEntry{}, "", err
+	}
+	var entry RecycleEntry
+	if err := json.Unmarshal(data, &entry); err != nil || entry.ID != id {
+		return RecycleEntry{}, "", errors.New("回收站记录损坏")
+	}
+	itemsDir := filepath.Join(m.dataDir, "recycle", "items")
+	clean := filepath.Clean(entry.RecycledPath)
+	if !strings.HasPrefix(clean, filepath.Clean(itemsDir)+string(os.PathSeparator)) {
+		return RecycleEntry{}, "", errors.New("回收站路径异常")
+	}
+	return entry, metaPath, nil
+}
+
+func copyPath(source, destination string, info os.FileInfo) error {
+	if info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("不支持复制符号链接")
+	}
+	if !info.IsDir() {
+		return copyFile(source, destination, info)
+	}
+	if err := os.Mkdir(destination, info.Mode().Perm()); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		_ = os.Remove(destination)
+		return err
+	}
+	for _, entry := range entries {
+		src := filepath.Join(source, entry.Name())
+		dst := filepath.Join(destination, entry.Name())
+		childInfo, err := os.Lstat(src)
+		if err != nil {
+			_ = os.RemoveAll(destination)
+			return err
+		}
+		if childInfo.Mode()&os.ModeSymlink != 0 {
+			_ = os.RemoveAll(destination)
+			return fmt.Errorf("目录包含符号链接：%s", src)
+		}
+		if err := copyPath(src, dst, childInfo); err != nil {
+			_ = os.RemoveAll(destination)
+			return err
+		}
+	}
+	_ = os.Chown(destination, statUID(info), statGID(info))
+	return os.Chtimes(destination, info.ModTime(), info.ModTime())
+}
+
+func copyFile(source, destination string, info os.FileInfo) error {
+	src, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	dst, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	ok := false
+	defer func() {
+		_ = dst.Close()
+		if !ok {
+			_ = os.Remove(destination)
+		}
+	}()
+	buffer := make([]byte, 128<<10)
+	if _, err := io.CopyBuffer(dst, src, buffer); err != nil {
+		return err
+	}
+	if err := dst.Sync(); err != nil {
+		return err
+	}
+	if err := dst.Close(); err != nil {
+		return err
+	}
+	_ = os.Chown(destination, statUID(info), statGID(info))
+	_ = os.Chtimes(destination, info.ModTime(), info.ModTime())
+	ok = true
+	return nil
+}
+
+func moveInternal(source, destination string, info os.FileInfo) error {
+	if err := os.Rename(source, destination); err == nil {
+		return nil
+	} else if !errors.Is(err, syscall.EXDEV) {
+		return err
+	}
+	if err := copyPath(source, destination, info); err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return os.RemoveAll(source)
+	}
+	return os.Remove(source)
+}
+
+func parseMode(value string) (os.FileMode, error) {
+	value = strings.TrimSpace(strings.TrimPrefix(value, "0o"))
+	if len(value) < 3 || len(value) > 4 {
+		return 0, errors.New("权限格式应为 644、755 或 0644")
+	}
+	n, err := strconv.ParseUint(value, 8, 32)
+	if err != nil || n > 0o7777 {
+		return 0, errors.New("无效的八进制权限")
+	}
+	return os.FileMode(n), nil
+}
+
+func writeJSONFile(path string, value any, mode os.FileMode) error {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".meta-*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
+}
+
+func sortRecycle(entries []RecycleEntry) {
+	for i := 1; i < len(entries); i++ {
+		for j := i; j > 0 && entries[j].DeletedAt.After(entries[j-1].DeletedAt); j-- {
+			entries[j], entries[j-1] = entries[j-1], entries[j]
+		}
+	}
+}
+
 func (m *Manager) resolveExisting(path string, wantDir bool) (string, os.FileInfo, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -292,6 +633,16 @@ func (m *Manager) resolveNew(path string) (string, error) {
 	return resolved, nil
 }
 
+func (m *Manager) isManagedRoot(path string) bool {
+	clean := filepath.Clean(path)
+	for _, root := range m.roots {
+		if clean == filepath.Clean(root) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) allowed(path string) bool {
 	clean := filepath.Clean(path)
 	for _, root := range m.roots {
@@ -321,9 +672,50 @@ func (m *Manager) backup(path string, info os.FileInfo) error {
 	if err != nil {
 		return err
 	}
-	defer dst.Close()
-	_, err = io.Copy(dst, src)
-	return err
+	if _, err = io.Copy(dst, src); err != nil {
+		dst.Close()
+		_ = os.Remove(dst.Name())
+		return err
+	}
+	if err := dst.Close(); err != nil {
+		return err
+	}
+	_ = pruneDirectory(dir, 500<<20, 500)
+	return nil
+}
+
+func pruneDirectory(dir string, maxBytes int64, maxFiles int) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	type candidate struct {
+		path string
+		size int64
+		at   time.Time
+	}
+	files := make([]candidate, 0, len(entries))
+	var total int64
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, candidate{path: filepath.Join(dir, entry.Name()), size: info.Size(), at: info.ModTime()})
+		total += info.Size()
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].at.Before(files[j].at) })
+	for len(files) > 0 && (len(files) > maxFiles || total > maxBytes) {
+		item := files[0]
+		files = files[1:]
+		if err := os.Remove(item.path); err == nil || errors.Is(err, os.ErrNotExist) {
+			total -= item.size
+		}
+	}
+	return nil
 }
 
 func sensitivePath(path string) bool {

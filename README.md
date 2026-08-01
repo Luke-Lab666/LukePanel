@@ -1,72 +1,99 @@
 # LukePanel
 
-面向 Debian 12/13 的轻量系统管理面板。移动端优先、桌面端增强，核心服务使用 Go 单二进制，不依赖 Node.js、Redis、外部数据库或 Prometheus。
+面向 Debian 12/13 的轻量系统管理面板。移动端优先、桌面端增强；核心由 Go 单二进制构成，不依赖 Node.js 运行时、Redis、外部数据库、Prometheus 或 Grafana。
 
-> 当前版本：`v0.2.0-alpha`。已经具备日常单机 VPS 管理的核心能力，但仍处于 Alpha 阶段，建议通过 HTTPS 反向代理并限制访问来源。
+> 当前版本：`v0.3.0-alpha`。已经覆盖单机 VPS 的高频日常管理，但仍处于 Alpha 阶段。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
+
+## 设计目标
+
+- **低占用**：Web 和 root Agent 按需工作，概览离开前台后停止实时采集。
+- **手机好用**：底部导航、卡片式操作、触控尺寸、完整安全区留白。
+- **不藏风险**：停止服务、删除文件、修改 SSH、公有仓库写入等操作需要再次验证。
+- **不做 WebShell**：Agent 只开放固定动作，不接受浏览器传入的通用 `sh -c`。
 
 ## 已实现
 
-### 系统与监控
+### 实时系统概览
 
 - CPU、内存、Swap、系统盘、负载和运行时间
-- 实时网络上传/下载速率与累计流量
-- 系统概览自动刷新，可设为 2–60 秒
-- 页面进入后台时自动暂停刷新，回到前台立即同步
-- systemd 服务列表、启动、停止、重启和日志
+- 实时上传/下载速率与累计流量
+- Server-Sent Events 每 2 秒推送，不刷新整个页面
+- 页面不可见或离开概览后立即断开实时流
+- SSE 不可用时自动切回低频兼容刷新
+
+### 系统管理
+
+- systemd 服务搜索、运行/异常筛选、启动、停止、重启和日志
 - 进程 CPU/内存排行，支持 SIGTERM / SIGKILL
 - 网络接口、地址、累计流量和监听端口
-- 文件系统、挂载点与空间占用
+- 存储分区与空间占用；默认隐藏 overlay、netns、BPF、重复绑定挂载等虚拟项目
 - systemd timer 查看
 - APT 可升级软件包模拟检查
+- SSH Server 状态、可登录用户与 `authorized_keys` 公钥管理
 
 ### Docker
 
 - Docker Engine 状态和版本
-- 容器列表、状态、镜像、端口
-- 启动、停止和重启容器
-- 容器日志
+- 容器列表、状态、镜像、端口、启停、重启、删除和日志
 - 镜像列表、拉取和删除
-- Docker 网络与存储卷查看、删除
+- 网络与存储卷查看、删除
+- 自动识别 Docker Compose 项目
+- Compose 拉取、启动、停止、重启和下线
 
 ### 文件管理
 
-- 受限根目录浏览
-- 上传、下载、新建文件和目录
-- 文本文件预览与编辑（最大 2MB）
-- 保存前自动备份
-- 重命名
-- 删除到 LukePanel 回收站
-- 符号链接越界防护
-- 私钥、证书私钥和系统密码文件保护
+- 允许目录浏览，默认包含 `/home`、`/root`、`/opt`、`/srv`、`/var/www`、`/etc`、`/usr/local`
+- 可点击面包屑路径与一键复制完整路径
+- 当前目录搜索、多文件顺序上传、下载
+- 新建文件/文件夹、在线文本编辑（最大 2MB）
+- 重命名、复制、移动、八进制权限修改
+- 删除进入 LukePanel 回收站
+- 回收站查看、恢复到原位置/新位置、永久清理
+- 跨文件系统复制、移动和回收
+- 编辑前自动备份；文件备份总量自动限制为 500MB / 500 份
+- 授权根目录保护、符号链接越界防护
+- 系统密码文件、SSH 私钥和常见私钥文件禁止在线读取或下载
 
-### 工具、日志与安全
+### 工具、日志与审计
 
 - Ping、DNS、TCP 端口、HTTP 检查
-- systemd 日志与面板操作审计
+- systemd 系统日志
+- 操作审计搜索、单条复制、当前结果一键复制、JSON/文本导出
+- 审计文件 20MB 自动轮转，最多保留 3 个历史文件
+- 审计不记录密码、GitHub Token 或 Cookie
+
+### GitHub 新手助手
+
+- 检查仓库默认分支、最新提交、Tag、Release 和最近 Actions
+- 复制仓库地址和一键安装命令
+- 引导创建 Fine-grained Token
+- 使用一次性 Token 在 `main` 最新提交上创建版本 Tag
+- Tag 自动触发仓库 Release Actions
+- 失败的 Actions 可一键请求重试失败任务
+- Token 只保存在当前输入框和本次请求内，不写入配置或日志
+- Release 工作流也支持在 GitHub 网页手动输入版本号运行，并可安全覆盖已有附件
+
+### 安全
+
 - PBKDF2-HMAC-SHA256 密码哈希（600,000 次迭代）
-- HttpOnly + SameSite=Strict Cookie
+- HttpOnly、SameSite=Strict、Secure Cookie
 - CSRF 防护与登录失败限速
 - 会话查看和退出其他设备
-- 高风险操作二次验证，验证后 5 分钟内免重复输入
-- Web 服务普通用户运行，root 权限由本地 Unix Socket Agent 隔离
+- 高风险操作二次验证，授权窗口 5 分钟
+- Web 普通用户与 root Agent 通过本地 Unix Socket 隔离
+- Agent Secret 固定时序比较，Agent 不监听 TCP
 
 ## 安装或升级
 
-先在 GitHub Releases 发布最新版本，然后以 root 执行：
+先确保最新版本已经出现在 GitHub Releases，然后以 root 执行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Luke-Lab666/LukePanel/main/install.sh | bash
 ```
 
-安装器会：
+安装器会自动识别 AMD64 / ARM64，下载并校验二进制，安装或升级两个 systemd 服务。升级保留现有密码、配置、审计、备份和回收站。
 
-1. 自动识别 AMD64 / ARM64。
-2. 下载 Release 二进制并校验 SHA256。
-3. 创建 `lukepanel` 系统用户。
-4. 安装 Web 服务和本地 root Agent。
-5. 首次安装输出随机管理员密码；升级保留原密码和配置。
-
-默认访问链路：
+默认链路：
 
 ```text
 浏览器 → HTTPS / Nginx Proxy Manager → 127.0.0.1:6767
@@ -74,7 +101,7 @@ curl -fsSL https://raw.githubusercontent.com/Luke-Lab666/LukePanel/main/install.
                               /run/lukepanel/agent.sock
 ```
 
-不要直接将 `6767` 端口开放到公网。
+不要直接把 `6767`、Docker Socket 或 Agent Socket 暴露到公网。
 
 ## 登录
 
@@ -84,7 +111,7 @@ curl -fsSL https://raw.githubusercontent.com/Luke-Lab666/LukePanel/main/install.
 admin
 ```
 
-初始密码仅在首次安装终端显示。配置文件只保存密码哈希，无法反查明文。
+随机初始密码只在首次安装终端显示，配置文件中只保存密码哈希，无法反查明文。
 
 ## 配置
 
@@ -94,7 +121,7 @@ admin
 /etc/lukepanel/config.json
 ```
 
-主要字段：
+示例：
 
 ```json
 {
@@ -103,11 +130,13 @@ admin
   "agent_socket": "/run/lukepanel/agent.sock",
   "secure_cookie": true,
   "auto_refresh_seconds": 5,
-  "allowed_roots": ["/home", "/opt", "/srv", "/var/www", "/etc"]
+  "allowed_roots": ["/home", "/root", "/opt", "/srv", "/var/www", "/etc", "/usr/local"]
 }
 ```
 
-修改配置后执行：
+`auto_refresh_seconds` 只用于 SSE 不可用时的兼容刷新。实时模式固定为 2 秒，并且只在概览页面可见时运行。
+
+修改配置后：
 
 ```bash
 systemctl restart lukepanel-agent lukepanel
@@ -133,8 +162,8 @@ make build VERSION=dev
 
 ## 当前限制
 
-- Docker Compose 项目编排尚未接入；镜像、网络和存储卷已提供基础管理。
-- SSH 配置编辑、Cron 写入、APT 实际升级尚未开放。
-- TOTP 与 Passkey 仍在规划中。
-- 回收站跨文件系统移动暂不支持。
-- 当前审计使用 JSONL，后续再迁移 SQLite 检索。
+- 容器实时资源统计、镜像构建、网络/卷创建和高级清理仍未开放。
+- 计划任务目前以查看 systemd timer 为主，不提供任意 Shell 定时任务。
+- APT 目前只检查，不直接执行升级；避免面板升级中断 SSH 或网络。
+- TOTP、Passkey、IP 白名单和安全通知仍在后续阶段。
+- 审计仍使用追加式 JSONL；大规模检索和留存策略后续迁移 SQLite。

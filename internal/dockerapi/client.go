@@ -13,6 +13,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -73,6 +77,25 @@ type Volume struct {
 	Scope      string            `json:"scope"`
 	Labels     map[string]string `json:"labels"`
 }
+
+type ComposeContainer struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Service string `json:"service"`
+	State   string `json:"state"`
+	Status  string `json:"status"`
+}
+
+type ComposeProject struct {
+	Name        string             `json:"name"`
+	WorkingDir  string             `json:"working_dir"`
+	ConfigFiles []string           `json:"config_files"`
+	Running     int                `json:"running"`
+	Total       int                `json:"total"`
+	Containers  []ComposeContainer `json:"containers"`
+}
+
+var composeProjectPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 
 func New(socketPath string) *Client {
 	if socketPath == "" {
@@ -302,6 +325,130 @@ func (c *Client) ListVolumes(ctx context.Context) ([]Volume, error) {
 	}
 	return out, nil
 }
+func (c *Client) ComposeProjects(ctx context.Context) ([]ComposeProject, error) {
+	containers, err := c.ListContainers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	projects := map[string]*ComposeProject{}
+	for _, container := range containers {
+		name := strings.TrimSpace(container.Labels["com.docker.compose.project"])
+		if name == "" || !composeProjectPattern.MatchString(name) {
+			continue
+		}
+		project := projects[name]
+		if project == nil {
+			workingDir := filepath.Clean(container.Labels["com.docker.compose.project.working_dir"])
+			files := splitComposeFiles(container.Labels["com.docker.compose.project.config_files"])
+			project = &ComposeProject{Name: name, WorkingDir: workingDir, ConfigFiles: files}
+			projects[name] = project
+		}
+		containerName := container.ID[:minInt(len(container.ID), 12)]
+		if len(container.Names) > 0 {
+			containerName = strings.TrimPrefix(container.Names[0], "/")
+		}
+		project.Containers = append(project.Containers, ComposeContainer{ID: container.ID, Name: containerName, Service: container.Labels["com.docker.compose.service"], State: container.State, Status: container.Status})
+		project.Total++
+		if container.State == "running" {
+			project.Running++
+		}
+	}
+	out := make([]ComposeProject, 0, len(projects))
+	for _, project := range projects {
+		sort.Slice(project.Containers, func(i, j int) bool { return project.Containers[i].Service < project.Containers[j].Service })
+		out = append(out, *project)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func (c *Client) ComposeAction(ctx context.Context, projectName, action string) (string, error) {
+	if !composeProjectPattern.MatchString(projectName) {
+		return "", errors.New("invalid compose project")
+	}
+	allowed := map[string]bool{"up": true, "stop": true, "restart": true, "down": true, "pull": true}
+	if !allowed[action] {
+		return "", errors.New("unsupported compose action")
+	}
+	projects, err := c.ComposeProjects(ctx)
+	if err != nil {
+		return "", err
+	}
+	var project *ComposeProject
+	for i := range projects {
+		if projects[i].Name == projectName {
+			project = &projects[i]
+			break
+		}
+	}
+	if project == nil {
+		return "", errors.New("Compose 项目不存在")
+	}
+	if !filepath.IsAbs(project.WorkingDir) {
+		return "", errors.New("Compose 工作目录无效")
+	}
+	if _, err := os.Stat(project.WorkingDir); err != nil {
+		return "", fmt.Errorf("Compose 工作目录不可用: %w", err)
+	}
+	if _, err := exec.LookPath("docker"); err != nil {
+		return "", errors.New("未找到 docker 命令")
+	}
+	args := []string{"compose", "--project-directory", project.WorkingDir, "-p", project.Name}
+	for _, file := range project.ConfigFiles {
+		if !filepath.IsAbs(file) || strings.ContainsAny(file, "\x00\r\n") {
+			return "", errors.New("Compose 配置路径无效")
+		}
+		if _, err := os.Stat(file); err != nil {
+			return "", fmt.Errorf("Compose 配置不存在: %s", file)
+		}
+		args = append(args, "-f", file)
+	}
+	if len(project.ConfigFiles) == 0 {
+		return "", errors.New("没有读取到 Compose 配置文件")
+	}
+	switch action {
+	case "up":
+		args = append(args, "up", "-d")
+	case "pull":
+		args = append(args, "pull")
+	default:
+		args = append(args, action)
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(commandCtx, "docker", args...)
+	cmd.Dir = project.WorkingDir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			message = err.Error()
+		}
+		return stdout.String(), errors.New(message)
+	}
+	return strings.TrimSpace(stdout.String() + "\n" + stderr.String()), nil
+}
+
+func splitComposeFiles(value string) []string {
+	parts := strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ';' })
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = filepath.Clean(strings.TrimSpace(part))
+		if part != "." && part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func (c *Client) RemoveVolume(ctx context.Context, name string) error {
 	if !validID(name) {
 		return errors.New("invalid volume name")

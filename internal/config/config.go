@@ -34,7 +34,7 @@ func Default() Config {
 		AdminUser:          "admin",
 		AgentSocket:        "/run/lukepanel/agent.sock",
 		SecureCookie:       true,
-		AllowedRoots:       []string{"/home", "/opt", "/srv", "/var/www", "/etc"},
+		AllowedRoots:       []string{"/home", "/root", "/opt", "/srv", "/var/www", "/etc", "/usr/local"},
 		AutoRefreshSeconds: 5,
 	}
 }
@@ -73,6 +73,12 @@ func LoadOrCreate(path string) (Config, string, error) {
 		}
 		if cfg.AutoRefreshSeconds == 0 {
 			cfg.AutoRefreshSeconds = Default().AutoRefreshSeconds
+			changed = true
+		}
+		// v0.1/v0.2 used the original default roots. Extend only that known
+		// default set so custom administrator policies are never silently widened.
+		if legacyDefaultRoots(cfg.AllowedRoots) {
+			cfg.AllowedRoots = Default().AllowedRoots
 			changed = true
 		}
 		if err := cfg.Validate(); err != nil {
@@ -163,6 +169,19 @@ func (c Config) Validate() error {
 		return errors.New("auto_refresh_seconds must be between 2 and 300")
 	}
 	return nil
+}
+
+func legacyDefaultRoots(roots []string) bool {
+	legacy := []string{"/home", "/opt", "/srv", "/var/www", "/etc"}
+	if len(roots) != len(legacy) {
+		return false
+	}
+	for i := range legacy {
+		if filepath.Clean(roots[i]) != legacy[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func randomString(n int) (string, error) {

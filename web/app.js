@@ -12,21 +12,37 @@ const state = {
   dockerNetworks: null,
   dockerVolumes: null,
   dockerTab: 'containers',
+  dockerCompose: null,
   services: null,
+  serviceFilter: 'running',
+  serviceQuery: '',
   processes: null,
   network: null,
   storage: null,
+  storageShowVirtual: false,
   timers: null,
   updates: null,
   processPrimed: false,
   files: null,
+  fileView: 'files',
+  fileFilter: '',
+  recycle: null,
   fileContent: null,
   audit: null,
+  auditFilter: '',
+  logTab: 'audit',
   systemLogs: null,
   settings: null,
+  ssh: null,
+  sshUsers: null,
+  sshKeys: null,
+  sshUser: '',
+  github: null,
   loading: {},
   errors: {},
   refreshTimer: null,
+  overviewStream: null,
+  overviewStreamFailed: false,
   modal: null,
 }
 
@@ -58,7 +74,7 @@ const icons = {
   download:'<path d="M12 4v12M7 11l5 5 5-5"/><path d="M20 20H4"/>', edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6"/>', save:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
   search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>', terminal:'<path d="m4 17 6-6-6-6M12 19h8"/>',
-  close:'<path d="M18 6 6 18M6 6l12 12"/>', play:'<path d="m5 3 14 9-14 9z"/>', stop:'<rect x="5" y="5" width="14" height="14" rx="1"/>',
+  copy:'<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', move:'<path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3"/><path d="M2 12h20M12 2v20"/>', github:'<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.28-.36 6.72-1.61 6.72-7A5.4 5.4 0 0 0 19.3 3.8 5 5 0 0 0 19.16 0S18.03-.36 15 1.48a13.4 13.4 0 0 0-7 0C4.97-.36 3.84 0 3.84 0a5 5 0 0 0-.14 3.8A5.4 5.4 0 0 0 2.28 7.5c0 5.38 3.44 6.63 6.72 7A4.8 4.8 0 0 0 7.5 18v4"/><path d="M7.5 19c-3 .9-3-1.5-4.2-2"/>', restore:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>', external:'<path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>', close:'<path d="M18 6 6 18M6 6l12 12"/>', play:'<path d="m5 3 14 9-14 9z"/>', stop:'<rect x="5" y="5" width="14" height="14" rx="1"/>',
 }
 function icon(name, size=20, cls=''){ return `<svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]||''}</svg>` }
 function escapeHTML(value=''){ return String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])) }
@@ -70,7 +86,7 @@ async function api(url, options={}){
   if(options.method && options.method!=='GET' && state.csrf) headers.set('X-CSRF-Token',state.csrf)
   const res = await fetch(url,{...options,headers,credentials:'same-origin'})
   const body = await res.json().catch(()=>({}))
-  if(res.status===401 && state.authenticated){ state.authenticated=false; stopAutoRefresh(); render() }
+  if(res.status===401 && state.authenticated){ state.authenticated=false; stopOverviewUpdates(); render() }
   if(!res.ok){const error=new Error(body.error||`请求失败（${res.status}）`);error.status=res.status;throw error}
   return body
 }
@@ -92,7 +108,7 @@ window.addEventListener('popstate',()=>{state.modal=null;render()})
 document.addEventListener('click',e=>{const link=e.target.closest('[data-nav]');if(link){e.preventDefault();navigate(link.getAttribute('href'))}})
 
 document.addEventListener('visibilitychange',()=>{
-  syncAutoRefresh()
+  syncOverviewUpdates()
   if(!document.hidden && location.pathname==='/' && state.authenticated) loadOverview(true)
 })
 
@@ -105,9 +121,9 @@ async function restore(){
 }
 
 function navItems(){return [
-  ['概览','/','home'],['系统管理','/system','server'],['文件管理','/files','folder'],['Docker','/docker','container'],['常用工具','/tools','wrench'],['日志审计','/audit','scroll'],['安全设置','/security','shield']
+  ['概览','/','home'],['系统管理','/system','server'],['文件管理','/files','folder'],['Docker','/docker','container'],['常用工具','/tools','wrench'],['GitHub 助手','/github','github'],['日志审计','/audit','scroll'],['安全设置','/security','shield']
 ]}
-function isActive(href){ return href==='/' ? location.pathname==='/' : location.pathname===href || (href==='/system' && ['/services','/processes','/network','/storage','/tasks','/updates'].includes(location.pathname)) }
+function isActive(href){ return href==='/' ? location.pathname==='/' : location.pathname===href || (href==='/system' && ['/services','/processes','/network','/storage','/tasks','/updates','/ssh'].includes(location.pathname)) }
 function shell(content){
   const nav=navItems()
   return `<div class="app-shell"><aside class="sidebar"><div class="brand"><div class="brand-mark">L</div><div><strong>LukePanel</strong><span>${escapeHTML(state.settings?.version||'轻量系统管理')}</span></div></div><nav class="sidebar-nav">${nav.map(([label,href,i])=>`<a data-nav href="${href}" class="${isActive(href)?'active':''}">${icon(i,19)}<span>${label}</span></a>`).join('')}</nav><div class="sidebar-footer"><button id="theme-toggle" class="icon-text-button">${icon(theme()==='dark'?'sun':'moon',18)}${theme()==='dark'?'浅色模式':'深色模式'}</button><button id="logout" class="icon-text-button danger-text">${icon('logout',18)}退出登录</button></div></aside><main class="main-content">${content}</main><nav class="mobile-nav">${nav.filter(([,href])=>['/','/system','/docker','/tools','/security'].includes(href)).map(([label,href,i])=>`<a data-nav href="${href}" class="${isActive(href)?'active':''}">${icon(href==='/security'?'user':i,21)}<span>${href==='/security'?'我的':label.replace('管理','')}</span></a>`).join('')}</nav>${modalHTML()}</div>`
@@ -119,12 +135,26 @@ function formatBytes(value){let v=Number(value||0);const u=['B','KB','MB','GB','
 function formatRate(value){return `${formatBytes(value)}/s`}
 function formatUptime(sec){const d=Math.floor(sec/86400),h=Math.floor(sec%86400/3600),m=Math.floor(sec%3600/60);return `${d} 天 ${h} 小时 ${m} 分钟`}
 function formatDate(value){try{return new Date(value).toLocaleString()}catch{return value||'-'}}
+async function copyText(value,notice='已复制'){
+  const text=String(value??'')
+  try{
+    if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(text)
+    else{const area=document.createElement('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();document.execCommand('copy');area.remove()}
+    showToast(notice)
+  }catch{alert('复制失败，请长按文本手动复制')}
+}
+function downloadText(filename,text,type='text/plain;charset=utf-8'){
+  const blob=new Blob([text],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)
+}
+function showToast(message){
+  document.querySelector('.toast')?.remove();const node=document.createElement('div');node.className='toast';node.textContent=message;document.body.appendChild(node);requestAnimationFrame(()=>node.classList.add('show'));setTimeout(()=>{node.classList.remove('show');setTimeout(()=>node.remove(),180)},1500)
+}
 function metric(label,value,detail,percent,id){return `<article class="metric-card surface" data-metric="${id}"><div class="metric-card__header"><span>${label}</span><strong data-value>${value}</strong></div>${percent!==undefined?`<div class="progress"><span data-progress style="width:${clamp(percent)}%"></span></div>`:''}<p data-detail>${detail||''}</p></article>`}
 function clamp(v){return Math.min(100,Math.max(0,Number(v)||0))}
 function statusBadge(status){const kind=['running','active'].includes(status)?'success':['exited','inactive','failed','dead'].includes(status)?'muted':'warning';return `<span class="status-badge ${kind}"><i></i>${escapeHTML(status||'unknown')}</span>`}
 
 function renderLogin(){
-  stopAutoRefresh()
+  stopOverviewUpdates()
   app.innerHTML=`<main class="login-page"><section class="login-card surface"><div class="login-logo">L</div><h1>登录 LukePanel</h1><p>安全、轻量地管理你的服务器</p><form id="login-form"><label>用户名<input name="username" value="admin" autocomplete="username"></label><label>密码<div class="password-field"><input name="password" type="password" autocomplete="current-password" autofocus><button type="button" id="show-password">显示</button></div></label><div id="login-error" class="form-error" hidden></div><button class="primary-button" type="submit">登录</button></form><div class="security-note">${icon('shield',17)}会话仅通过 HttpOnly Cookie 保存</div></section></main>`
   document.querySelector('#show-password').onclick=e=>{const input=document.querySelector('[name=password]');input.type=input.type==='password'?'text':'password';e.currentTarget.textContent=input.type==='password'?'显示':'隐藏'}
   document.querySelector('#login-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget),button=e.currentTarget.querySelector('button[type=submit]'),error=document.querySelector('#login-error');button.disabled=true;button.textContent='正在登录…';error.hidden=true;try{const r=await api('/api/v1/auth/login',{method:'POST',body:jsonBody({username:f.get('username'),password:f.get('password')})});state.authenticated=true;state.username=r.username;state.csrf=r.csrf_token;state.settings=await api('/api/v1/settings');navigate('/')}catch(err){error.textContent=err.message;error.hidden=false}finally{button.disabled=false;button.textContent='登录'}}
@@ -141,7 +171,7 @@ function dashboard(){
   const d=state.overview
   if(!d){if(state.errors.overview)return `<div class="page-wrap">${pageHeader('系统概览','系统状态读取失败',`<button id="refresh-overview" class="secondary-button compact">${icon('refresh',17)}重试</button>`)}${errorBox(state.errors.overview)}</div>`;queueMicrotask(()=>loadOverview());return `<div class="page-wrap">${pageHeader('系统概览','正在读取实时状态')}${surfaceLoading('正在采集系统信息')}</div>`}
   const mp=d.memory.Total?d.memory.Used/d.memory.Total*100:0,dp=d.disk.Total?d.disk.Used/d.disk.Total*100:0
-  return `<div class="page-wrap" data-dashboard>${pageHeader('系统概览',`${d.hostname} · ${d.os}`,`<button id="refresh-overview" class="secondary-button compact">${icon('refresh',17,state.loading.overview?'spin':'')}<span>刷新</span></button>`)}${errorBox(state.errors.overview)}<section class="status-hero surface"><div><span class="status-dot"></span><strong>系统运行正常</strong><p>${icon('clock',16)}已运行 <span data-uptime>${formatUptime(d.uptime_seconds)}</span></p></div><div class="collection-time">自动刷新：${state.settings?.auto_refresh_seconds||5} 秒<br><span data-collected>${formatDate(d.collected_at)}</span></div></section><section class="metrics-grid">${metric('CPU',`${d.cpu_percent.toFixed(1)}%`,`${d.cpu_cores} 核 · 负载 ${d.load_1.toFixed(2)} / ${d.load_5.toFixed(2)} / ${d.load_15.toFixed(2)}`,d.cpu_percent,'cpu')}${metric('内存',`${mp.toFixed(1)}%`,`${formatBytes(d.memory.Used)} / ${formatBytes(d.memory.Total)}`,mp,'memory')}${metric('系统盘',`${dp.toFixed(1)}%`,`${formatBytes(d.disk.Used)} / ${formatBytes(d.disk.Total)}`,dp,'disk')}${metric('实时网络',`↓ ${formatRate(d.network.download_bps)}`,`↑ ${formatRate(d.network.upload_bps)} · 累计 ↓ ${formatBytes(d.network.received_bytes)}`,undefined,'network')}</section><section class="dashboard-grid"><article class="surface summary-card" id="dashboard-docker"><div class="card-heading">${icon('container',19)}<strong>Docker</strong></div><div class="empty-state"><button class="text-link" id="load-dashboard-docker">读取容器状态</button></div></article><article class="surface summary-card"><div class="card-heading">${icon('server',19)}<strong>系统信息</strong></div><dl class="info-list"><div><dt>内核</dt><dd>${escapeHTML(d.kernel)}</dd></div><div><dt>架构</dt><dd>${escapeHTML(d.architecture)}</dd></div><div><dt>Swap</dt><dd>${formatBytes(d.memory.SwapUsed)} / ${formatBytes(d.memory.SwapTotal)}</dd></div></dl></article></section></div>`
+  return `<div class="page-wrap" data-dashboard>${pageHeader('系统概览',`${d.hostname} · ${d.os}`,`<button id="refresh-overview" class="secondary-button compact">${icon('refresh',17,state.loading.overview?'spin':'')}<span>刷新</span></button>`)}${errorBox(state.errors.overview)}<section class="status-hero surface"><div><span class="status-dot"></span><strong>系统运行正常</strong><p>${icon('clock',16)}已运行 <span data-uptime>${formatUptime(d.uptime_seconds)}</span></p></div><div class="collection-time"><span data-stream-state>实时推送 · 2 秒</span><br><span data-collected>${formatDate(d.collected_at)}</span></div></section><section class="metrics-grid">${metric('CPU',`${d.cpu_percent.toFixed(1)}%`,`${d.cpu_cores} 核 · 负载 ${d.load_1.toFixed(2)} / ${d.load_5.toFixed(2)} / ${d.load_15.toFixed(2)}`,d.cpu_percent,'cpu')}${metric('内存',`${mp.toFixed(1)}%`,`${formatBytes(d.memory.Used)} / ${formatBytes(d.memory.Total)}`,mp,'memory')}${metric('系统盘',`${dp.toFixed(1)}%`,`${formatBytes(d.disk.Used)} / ${formatBytes(d.disk.Total)}`,dp,'disk')}${metric('实时网络',`↓ ${formatRate(d.network.download_bps)}`,`↑ ${formatRate(d.network.upload_bps)} · 累计 ↓ ${formatBytes(d.network.received_bytes)}`,undefined,'network')}</section><section class="dashboard-grid"><article class="surface summary-card" id="dashboard-docker"><div class="card-heading">${icon('container',19)}<strong>Docker</strong></div><div class="empty-state"><button class="text-link" id="load-dashboard-docker">读取容器状态</button></div></article><article class="surface summary-card"><div class="card-heading">${icon('server',19)}<strong>系统信息</strong></div><dl class="info-list"><div><dt>内核</dt><dd>${escapeHTML(d.kernel)}</dd></div><div><dt>架构</dt><dd>${escapeHTML(d.architecture)}</dd></div><div><dt>Swap</dt><dd>${formatBytes(d.memory.SwapUsed)} / ${formatBytes(d.memory.SwapTotal)}</dd></div></dl></article></section></div>`
 }
 function updateDashboard(d){
   const mp=d.memory.Total?d.memory.Used/d.memory.Total*100:0,dp=d.disk.Total?d.disk.Used/d.disk.Total*100:0
@@ -153,20 +183,60 @@ function updateDashboard(d){
   const collected=document.querySelector('[data-collected]');if(collected)collected.textContent=formatDate(d.collected_at)
 }
 function updateMetric(id,value,detail,percent){const root=document.querySelector(`[data-metric="${id}"]`);if(!root)return;root.querySelector('[data-value]').textContent=value;root.querySelector('[data-detail]').textContent=detail;if(percent!==undefined){const p=root.querySelector('[data-progress]');if(p)p.style.width=`${clamp(percent)}%`}}
-function syncAutoRefresh(){stopAutoRefresh();if(!state.authenticated||document.hidden||location.pathname!=='/')return;const seconds=Math.max(2,Number(state.settings?.auto_refresh_seconds||5));state.refreshTimer=setInterval(()=>loadOverview(true),seconds*1000)}
-function stopAutoRefresh(){if(state.refreshTimer){clearInterval(state.refreshTimer);state.refreshTimer=null}}
+function syncOverviewUpdates(){
+  stopOverviewUpdates()
+  if(!state.authenticated||document.hidden||location.pathname!=='/')return
+  const fallback=()=>{
+    const seconds=Math.max(2,Number(state.settings?.auto_refresh_seconds||5))
+    const label=document.querySelector('[data-stream-state]');if(label)label.textContent=`兼容刷新 · ${seconds} 秒`
+    state.refreshTimer=setInterval(()=>loadOverview(true),seconds*1000)
+  }
+  if(!('EventSource' in window)){fallback();return}
+  const stream=new EventSource('/api/v1/system/overview/stream')
+  state.overviewStream=stream
+  stream.addEventListener('open',()=>{state.overviewStreamFailed=false;const label=document.querySelector('[data-stream-state]');if(label)label.textContent='实时推送 · 2 秒'})
+  stream.addEventListener('overview',event=>{
+    try{const data=JSON.parse(event.data);state.overview=data;if(location.pathname==='/'&&document.querySelector('[data-dashboard]'))updateDashboard(data)}catch{}
+  })
+  stream.onerror=()=>{
+    if(state.overviewStream!==stream)return
+    stream.close();state.overviewStream=null
+    if(!state.overviewStreamFailed){state.overviewStreamFailed=true;fallback()}
+  }
+}
+function stopOverviewUpdates(){
+  if(state.overviewStream){state.overviewStream.close();state.overviewStream=null}
+  if(state.refreshTimer){clearInterval(state.refreshTimer);state.refreshTimer=null}
+}
 
 function systemPage(){
   const modules=[
     ['服务管理','systemd 状态、控制与日志','/services','power',true],['文件管理','上传、下载与安全编辑','/files','folder',true],['日志中心','系统日志与操作审计','/audit','scroll',true],['Docker','容器状态、控制与日志','/docker','container',true],
-    ['进程管理','CPU、内存排行与进程结束','/processes','activity',true],['网络管理','接口、流量与监听端口','/network','network',true],['存储管理','分区、文件系统与空间','/storage','drive',true],['计划任务','systemd timer 查看','/tasks','calendar',true],['软件更新','APT 可升级软件包检查','/updates','package',true],['SSH 管理','密钥、登录与安全配置','','key',false]
+    ['进程管理','CPU、内存排行与进程结束','/processes','activity',true],['网络管理','接口、流量与监听端口','/network','network',true],['存储管理','分区、文件系统与空间','/storage','drive',true],['计划任务','systemd timer 查看','/tasks','calendar',true],['软件更新','APT 可升级软件包检查','/updates','package',true],['SSH 管理','登录状态与公钥管理','/ssh','key',true],['GitHub 助手','检查仓库、标签与自动发布','/github','github',true]
   ]
   return `<div class="page-wrap">${pageHeader('系统管理','核心模块已可用，危险操作均需要明确确认')}<section class="module-grid">${modules.map(([t,d,p,i,ready])=>`<${ready?'a':'article'} ${ready?`data-nav href="${p}"`:''} class="module-card surface ${ready?'':'muted'}"><div class="module-icon">${icon(i,22)}</div><div><strong>${t}</strong><p>${d}</p></div>${icon('chevron',19)}${ready?'':'<span class="soon-badge">后续迭代</span>'}</${ready?'a':'article'}>`).join('')}</section></div>`
 }
 
-async function loadServices(query=''){state.loading.services=true;state.errors.services='';try{state.services=await api(`/api/v1/system/services?query=${encodeURIComponent(query)}`)}catch(e){state.errors.services=e.message}finally{state.loading.services=false;render()}}
-function servicesPage(){const data=state.services;if(!data&&state.errors.services){return `<div class="page-wrap">${pageHeader('服务管理','无法读取 systemd 服务',`<button id="refresh-services" class="secondary-button compact">重试</button>`)}${errorBox(state.errors.services)}</div>`}if(!data){queueMicrotask(()=>loadServices());return `<div class="page-wrap">${pageHeader('服务管理','读取 systemd 服务')}${surfaceLoading()}</div>`}return `<div class="page-wrap">${pageHeader('服务管理','启动、停止、重启与查看 journald 日志',`<button id="refresh-services" class="secondary-button compact">${icon('refresh',17)}<span>刷新</span></button>`)}${errorBox(state.errors.services)}<div class="search-bar surface">${icon('search',18)}<input id="service-search" placeholder="搜索服务名称或描述"><span>${data.services.length} 项</span></div><section class="card-list">${data.services.map(service=>`<article class="resource-card surface"><div class="resource-main"><div><strong>${escapeHTML(service.name)}</strong>${statusBadge(service.active)}</div><p>${escapeHTML(service.description||'无描述')}</p><small>${escapeHTML(service.sub)} · ${escapeHTML(service.enabled||'unknown')}</small></div><div class="resource-actions"><button class="secondary-button compact" data-service-logs="${escapeHTML(service.name)}">日志</button>${service.active==='active'?`<button class="secondary-button compact" data-service-action="restart" data-name="${escapeHTML(service.name)}">重启</button><button class="danger-button compact" data-service-action="stop" data-name="${escapeHTML(service.name)}">停止</button>`:`<button class="primary-button compact" data-service-action="start" data-name="${escapeHTML(service.name)}">启动</button>`}</div></article>`).join('')||'<div class="empty-list surface">没有匹配的服务</div>'}</section></div>`}
-async function serviceAction(name,action){if(['stop','restart'].includes(action)&&!confirm(`确认${action==='stop'?'停止':'重启'} ${name}？`))return;setBusy(true);try{await secureApi('/api/v1/system/services/action',{method:'POST',body:jsonBody({name,action})});await loadServices(document.querySelector('#service-search')?.value||'')}catch(e){alert(e.message)}finally{setBusy(false)}}
+async function loadServices(query=state.serviceQuery||''){
+  state.serviceQuery=query;state.loading.services=true;state.errors.services=''
+  try{state.services=await api(`/api/v1/system/services?query=${encodeURIComponent(query)}`)}catch(e){state.errors.services=e.message}
+  finally{state.loading.services=false;render()}
+}
+function visibleServices(){
+  const all=state.services?.services||[]
+  if(state.serviceQuery)return all
+  if(state.serviceFilter==='all')return all
+  if(state.serviceFilter==='failed')return all.filter(x=>x.active==='failed'||x.sub==='failed')
+  return all.filter(x=>x.active==='active')
+}
+function servicesPage(){
+  const data=state.services
+  if(!data&&state.errors.services)return `<div class="page-wrap">${pageHeader('服务管理','无法读取 systemd 服务',`<button id="refresh-services" class="secondary-button compact">重试</button>`)}${errorBox(state.errors.services)}</div>`
+  if(!data){queueMicrotask(()=>loadServices());return `<div class="page-wrap">${pageHeader('服务管理','读取 systemd 服务')}${surfaceLoading()}</div>`}
+  const services=visibleServices(),all=data.services||[],failed=all.filter(x=>x.active==='failed'||x.sub==='failed').length
+  return `<div class="page-wrap services-page">${pageHeader('服务管理','默认只显示运行中服务，避免无关系统单元刷屏',`<button id="refresh-services" class="secondary-button compact">${icon('refresh',17)}<span>刷新</span></button>`)}${errorBox(state.errors.services)}<div class="search-bar surface">${icon('search',18)}<input id="service-search" value="${escapeHTML(state.serviceQuery)}" placeholder="搜索服务名称或描述"><span>${services.length} / ${all.length}</span></div><div class="tab-bar surface service-filter"><button data-service-filter="running" class="${state.serviceFilter==='running'?'active':''}">运行中 ${all.filter(x=>x.active==='active').length}</button><button data-service-filter="failed" class="${state.serviceFilter==='failed'?'active':''}">异常 ${failed}</button><button data-service-filter="all" class="${state.serviceFilter==='all'?'active':''}">全部 ${all.length}</button></div><section class="card-list">${services.map(service=>`<article class="resource-card surface"><div class="resource-main"><div><strong title="${escapeHTML(service.name)}">${escapeHTML(service.name)}</strong>${statusBadge(service.active)}</div><p title="${escapeHTML(service.description||'无描述')}">${escapeHTML(service.description||'无描述')}</p><small>${escapeHTML(service.sub)} · ${escapeHTML(service.enabled||'unknown')}</small></div><div class="resource-actions"><button class="secondary-button compact" data-service-logs="${escapeHTML(service.name)}">日志</button>${service.active==='active'?`<button class="secondary-button compact" data-service-action="restart" data-name="${escapeHTML(service.name)}">重启</button><button class="danger-button compact" data-service-action="stop" data-name="${escapeHTML(service.name)}">停止</button>`:`<button class="primary-button compact" data-service-action="start" data-name="${escapeHTML(service.name)}">启动</button>`}</div></article>`).join('')||'<div class="empty-list surface">没有匹配的服务</div>'}</section></div>`
+}
+async function serviceAction(name,action){if(['stop','restart'].includes(action)&&!confirm(`确认${action==='stop'?'停止':'重启'} ${name}？`))return;setBusy(true);try{await secureApi('/api/v1/system/services/action',{method:'POST',body:jsonBody({name,action})});await loadServices(state.serviceQuery)}catch(e){alert(e.message)}finally{setBusy(false)}}
 async function showServiceLogs(name){state.modal={title:name,kind:'logs',content:'正在读取日志…'};render();try{const data=await api(`/api/v1/system/services/logs?name=${encodeURIComponent(name)}&lines=400`);state.modal={title:`${name} 日志`,kind:'logs',content:data.logs||'暂无日志'};render()}catch(e){state.modal={title:name,kind:'error',content:e.message};render()}}
 
 
@@ -185,7 +255,13 @@ async function loadNetwork(){state.errors.network='';try{state.network=await api
 function networkPage(){if(!state.network&&!state.errors.network){queueMicrotask(loadNetwork);return `<div class="page-wrap">${pageHeader('网络管理','读取网络接口')}${surfaceLoading()}</div>`}return `<div class="page-wrap">${pageHeader('网络管理','接口地址、累计流量与监听端口',`<button id="refresh-network" class="secondary-button compact">${icon('refresh',17)}<span>刷新</span></button>`)}${errorBox(state.errors.network)}<section class="interface-grid">${(state.network?.interfaces||[]).map(i=>`<article class="surface interface-card"><div><strong>${escapeHTML(i.name)}</strong><span>${escapeHTML(i.flags)}</span></div><p>${(i.addresses||[]).map(escapeHTML).join('<br>')||'无地址'}</p><small>MTU ${i.mtu} · ↓ ${formatBytes(i.received_bytes)} · ↑ ${formatBytes(i.sent_bytes)}</small></article>`).join('')}</section><section class="result-panel surface"><div class="card-heading">${icon('network',19)}<strong>监听端口</strong></div><pre>${escapeHTML(state.network?.listening||'未读取到监听端口')}</pre></section></div>`}
 
 async function loadStorage(){state.errors.storage='';try{state.storage=await api('/api/v1/system/storage')}catch(e){state.errors.storage=e.message}finally{render()}}
-function storagePage(){if(!state.storage&&!state.errors.storage){queueMicrotask(loadStorage);return `<div class="page-wrap">${pageHeader('存储管理','读取文件系统')}${surfaceLoading()}</div>`}return `<div class="page-wrap">${pageHeader('存储管理','文件系统、挂载点与空间占用',`<button id="refresh-storage" class="secondary-button compact">${icon('refresh',17)}<span>刷新</span></button>`)}${errorBox(state.errors.storage)}<section class="storage-grid">${(state.storage?.mounts||[]).map(m=>{const pct=m.total?m.used/m.total*100:0;return `<article class="surface storage-card"><div><strong>${escapeHTML(m.mountpoint)}</strong><span>${escapeHTML(m.filesystem)}</span></div><p>${escapeHTML(m.device)}</p><div class="progress"><span style="width:${clamp(pct)}%"></span></div><small>${pct.toFixed(1)}% · ${formatBytes(m.used)} / ${formatBytes(m.total)}</small></article>`}).join('')||'<div class="empty-list surface">暂无挂载点</div>'}</section></div>`}
+function storagePage(){
+  if(!state.storage&&!state.errors.storage){queueMicrotask(loadStorage);return `<div class="page-wrap">${pageHeader('存储管理','读取文件系统')}${surfaceLoading()}</div>`}
+  const all=state.storage?.mounts||[],meaningful=all.filter(m=>!m.virtual),mounts=state.storageShowVirtual?all:meaningful,hidden=all.length-meaningful.length
+  const toggle=hidden?`<button id="toggle-virtual-mounts" class="secondary-button compact">${state.storageShowVirtual?'隐藏虚拟挂载':`显示全部 +${hidden}`}</button>`:''
+  return `<div class="page-wrap">${pageHeader('存储管理','默认隐藏 Docker overlay、netns、BPF 等虚拟挂载',`${toggle}<button id="refresh-storage" class="secondary-button compact">${icon('refresh',17)}<span>刷新</span></button>`)}${errorBox(state.errors.storage)}<section class="storage-grid">${mounts.map(m=>{const pct=m.total?m.used/m.total*100:0;return `<article class="surface storage-card ${m.virtual?'virtual-mount':''}"><div class="storage-card__title"><strong title="${escapeHTML(m.mountpoint)}">${escapeHTML(m.mountpoint)}</strong><span>${escapeHTML(m.filesystem)}</span></div><div class="path-line"><code title="${escapeHTML(m.device)}">${escapeHTML(m.device)}</code><button class="copy-icon" data-copy-text="${escapeHTML(m.mountpoint)}" aria-label="复制挂载路径">${icon('copy',15)}</button></div><div class="progress"><span style="width:${clamp(pct)}%"></span></div><small>${pct.toFixed(1)}% · ${formatBytes(m.used)} / ${formatBytes(m.total)}</small></article>`}).join('')||'<div class="empty-list surface">暂无挂载点</div>'}</section></div>`
+}
+
 
 async function loadTimers(){state.errors.timers='';try{state.timers=await api('/api/v1/system/timers')}catch(e){state.errors.timers=e.message}finally{render()}}
 function tasksPage(){if(!state.timers&&!state.errors.timers){queueMicrotask(loadTimers);return `<div class="page-wrap">${pageHeader('计划任务','读取 systemd timers')}${surfaceLoading()}</div>`}return `<div class="page-wrap">${pageHeader('计划任务','当前版本先提供 systemd timer 查看',`<button id="refresh-timers" class="secondary-button compact">${icon('refresh',17)}<span>刷新</span></button>`)}${errorBox(state.errors.timers)}<section class="result-panel surface"><pre>${escapeHTML(state.timers?.timers||'没有 timer')}</pre></section></div>`}
@@ -198,8 +274,8 @@ async function loadDocker(){
   try{
     const status=await api('/api/v1/docker/status');state.dockerStatus=status
     if(!status.available)throw new Error(status.error||'Docker 不可用')
-    const [containers,images,networks,volumes]=await Promise.all([api('/api/v1/docker/containers'),api('/api/v1/docker/images'),api('/api/v1/docker/networks'),api('/api/v1/docker/volumes')])
-    state.docker=containers;state.dockerImages=images;state.dockerNetworks=networks;state.dockerVolumes=volumes
+    const [containers,images,networks,volumes,compose]=await Promise.all([api('/api/v1/docker/containers'),api('/api/v1/docker/images'),api('/api/v1/docker/networks'),api('/api/v1/docker/volumes'),api('/api/v1/docker/compose')])
+    state.docker=containers;state.dockerImages=images;state.dockerNetworks=networks;state.dockerVolumes=volumes;state.dockerCompose=compose
   }catch(e){state.errors.docker=e.message}finally{state.loading.docker=false;render()}
 }
 function containerName(c){return (c.names?.[0]||c.id.slice(0,12)).replace(/^\//,'')}
@@ -207,11 +283,12 @@ function portText(c){const p=(c.ports||[]).filter(x=>x.PublicPort).map(x=>`${x.P
 function imageName(i){return i.repo_tags?.[0]||i.id.replace(/^sha256:/,'').slice(0,12)}
 function dockerPage(){
   if(!state.docker&&!state.errors.docker){queueMicrotask(loadDocker);return `<div class="page-wrap">${pageHeader('Docker','正在连接 Docker Engine')}${surfaceLoading()}</div>`}
-  const containers=state.docker?.containers||[],images=state.dockerImages?.images||[],networks=state.dockerNetworks?.networks||[],volumes=state.dockerVolumes?.volumes||[]
-  const tabs=[['containers',`容器 ${containers.length}`],['images',`镜像 ${images.length}`],['networks',`网络 ${networks.length}`],['volumes',`存储卷 ${volumes.length}`]]
-  return `<div class="page-wrap">${pageHeader('Docker',state.dockerStatus?.available?`Docker ${state.dockerStatus.version}`:'容器引擎不可用',`<button id="pull-image" class="primary-button compact">${icon('download',17)}<span>拉取镜像</span></button><button id="refresh-docker" class="secondary-button compact">${icon('refresh',17)}<span>刷新</span></button>`)}${errorBox(state.errors.docker||state.dockerStatus?.error)}${state.docker?`<div class="tab-bar surface">${tabs.map(([key,label])=>`<button data-docker-tab="${key}" class="${state.dockerTab===key?'active':''}">${label}</button>`).join('')}</div>${dockerTabContent(containers,images,networks,volumes)}`:''}</div>`
+  const containers=state.docker?.containers||[],images=state.dockerImages?.images||[],networks=state.dockerNetworks?.networks||[],volumes=state.dockerVolumes?.volumes||[],compose=state.dockerCompose?.projects||[]
+  const tabs=[['containers',`容器 ${containers.length}`],['compose',`Compose ${compose.length}`],['images',`镜像 ${images.length}`],['networks',`网络 ${networks.length}`],['volumes',`存储卷 ${volumes.length}`]]
+  return `<div class="page-wrap">${pageHeader('Docker',state.dockerStatus?.available?`Docker ${state.dockerStatus.version}`:'容器引擎不可用',`<button id="pull-image" class="primary-button compact">${icon('download',17)}<span>拉取镜像</span></button><button id="refresh-docker" class="secondary-button compact">${icon('refresh',17)}<span>刷新</span></button>`)}${errorBox(state.errors.docker||state.dockerStatus?.error)}${state.docker?`<div class="tab-bar surface">${tabs.map(([key,label])=>`<button data-docker-tab="${key}" class="${state.dockerTab===key?'active':''}">${label}</button>`).join('')}</div>${dockerTabContent(containers,images,networks,volumes,compose)}`:''}</div>`
 }
-function dockerTabContent(containers,images,networks,volumes){
+function dockerTabContent(containers,images,networks,volumes,compose){
+  if(state.dockerTab==='compose')return `<section class="compose-grid">${compose.map(project=>`<article class="surface compose-card"><div class="compose-card__top"><div><strong>${escapeHTML(project.name)}</strong><span>${project.running}/${project.total} 运行中</span></div>${statusBadge(project.running===project.total&&project.total>0?'running':project.running>0?'partial':'exited')}</div><p title="${escapeHTML(project.working_dir)}">${escapeHTML(project.working_dir||'未读取到工作目录')}</p><div class="compose-services">${(project.containers||[]).map(c=>`<span>${escapeHTML(c.service||c.name)} · ${escapeHTML(c.state)}</span>`).join('')}</div><div class="resource-actions"><button class="secondary-button compact" data-compose-action="pull" data-project="${escapeHTML(project.name)}">拉取</button><button class="primary-button compact" data-compose-action="up" data-project="${escapeHTML(project.name)}">启动/更新</button><button class="secondary-button compact" data-compose-action="restart" data-project="${escapeHTML(project.name)}">重启</button><button class="danger-button compact" data-compose-action="down" data-project="${escapeHTML(project.name)}">停止并移除</button></div></article>`).join('')||'<div class="empty-list surface">没有检测到 Docker Compose 项目</div>'}</section>`
   if(state.dockerTab==='images')return `<section class="resource-grid">${images.map(i=>`<article class="surface docker-resource-card"><div><strong>${escapeHTML(imageName(i))}</strong><span>${formatBytes(i.size)}</span></div><p>${escapeHTML(i.id.replace(/^sha256:/,'').slice(0,20))}</p><small>${formatDate(Number(i.created)*1000)} · ${i.containers>=0?`${i.containers} 个容器引用`:'引用未知'}</small><button class="danger-button compact" data-image-delete="${escapeHTML(i.id)}">删除</button></article>`).join('')||'<div class="empty-list surface">暂无镜像</div>'}</section>`
   if(state.dockerTab==='networks')return `<section class="resource-grid">${networks.map(n=>`<article class="surface docker-resource-card"><div><strong>${escapeHTML(n.name)}</strong><span>${escapeHTML(n.driver)}</span></div><p>${escapeHTML(n.id.slice(0,20))}</p><small>${escapeHTML(n.scope)}${n.internal?' · 内部网络':''}</small>${['bridge','host','none'].includes(n.name)?'<em>系统网络</em>':`<button class="danger-button compact" data-network-delete="${escapeHTML(n.id)}" data-name="${escapeHTML(n.name)}">删除</button>`}</article>`).join('')||'<div class="empty-list surface">暂无网络</div>'}</section>`
   if(state.dockerTab==='volumes')return `<section class="resource-grid">${volumes.map(v=>`<article class="surface docker-resource-card"><div><strong>${escapeHTML(v.name)}</strong><span>${escapeHTML(v.driver)}</span></div><p>${escapeHTML(v.mountpoint)}</p><small>${escapeHTML(v.scope)}</small><button class="danger-button compact" data-volume-delete="${escapeHTML(v.name)}">删除</button></article>`).join('')||'<div class="empty-list surface">暂无存储卷</div>'}</section>`
@@ -219,83 +296,287 @@ function dockerTabContent(containers,images,networks,volumes){
 }
 async function dockerAction(id,action){if(['stop','restart','kill','remove'].includes(action)&&!confirm(`确认执行 ${action}？`))return;setBusy(true);try{await secureApi('/api/v1/docker/action',{method:'POST',body:jsonBody({id,action})});await loadDocker()}catch(e){alert(e.message)}finally{setBusy(false)}}
 async function showDockerLogs(id,title){state.modal={title,kind:'logs',content:'正在读取日志…'};render();try{const data=await api(`/api/v1/docker/logs?id=${encodeURIComponent(id)}&tail=500`);state.modal={title:`${title} 日志`,kind:'logs',content:data.logs||'暂无日志'};render()}catch(e){state.modal={title,kind:'error',content:e.message};render()}}
+async function composeAction(project,action){
+  const labels={up:'启动或更新',restart:'重启',stop:'停止',down:'停止并移除',pull:'拉取镜像'}
+  if(['down','restart'].includes(action)&&!confirm(`确认${labels[action]} Compose 项目 ${project}？`))return
+  setBusy(true)
+  try{const result=await secureApi('/api/v1/docker/compose/action',{method:'POST',body:jsonBody({project,action})});if(result.output)alert(result.output);await loadDocker()}catch(e){alert(e.message)}finally{setBusy(false)}
+}
 async function pullImage(){const reference=prompt('镜像名称，例如 nginx:latest');if(!reference)return;setBusy(true);try{await secureApi('/api/v1/docker/images/pull',{method:'POST',body:jsonBody({reference})});state.dockerTab='images';await loadDocker()}catch(e){alert(e.message)}finally{setBusy(false)}}
 async function deleteDockerResource(kind,value,label=value){if(!confirm(`确认删除 ${label}？正在使用的资源会被 Docker 拒绝。`))return;const map={image:['/api/v1/docker/images/delete',{id:value}],network:['/api/v1/docker/networks/delete',{id:value}],volume:['/api/v1/docker/volumes/delete',{name:value}]};setBusy(true);try{await secureApi(map[kind][0],{method:'POST',body:jsonBody(map[kind][1])});await loadDocker()}catch(e){alert(e.message)}finally{setBusy(false)}}
 
-async function loadFiles(path='/'){state.loading.files=true;state.errors.files='';try{state.files=await api(`/api/v1/files?path=${encodeURIComponent(path)}`);state.fileContent=null}catch(e){state.errors.files=e.message}finally{state.loading.files=false;render()}}
-function filesPage(){const l=state.files;if(!l&&!state.errors.files){queueMicrotask(()=>loadFiles('/'));return `<div class="page-wrap">${pageHeader('文件管理','读取允许访问的位置')}${surfaceLoading()}</div>`}return `<div class="page-wrap files-page">${pageHeader('文件管理','支持上传、下载、回收站删除与文本安全编辑',`<button id="new-file" class="secondary-button compact">${icon('plus',17)}<span>新建</span></button><button id="upload-file" class="primary-button compact">${icon('upload',17)}<span>上传</span></button><input id="upload-input" type="file" hidden>`)}${errorBox(state.errors.files)}${l?`<div class="file-toolbar surface"><button id="file-back" ${l.parent?'':'disabled'}>${icon('back',19)}</button><button id="file-home">${icon('home',18)}</button><div class="path-pill">${escapeHTML(l.path==='/'?'允许访问的位置':l.path)}</div><button id="refresh-files">${icon('refresh',18)}</button></div><section class="file-list surface">${l.entries.map(item=>`<button class="file-row" data-file-path="${escapeHTML(item.path)}" data-directory="${item.is_dir}"><div class="file-icon">${icon(item.is_dir?'folder':'file',22)}</div><div class="file-main"><strong>${escapeHTML(item.name)}</strong><span>${item.is_dir?'文件夹':formatBytes(item.size)} · ${formatDate(item.modified_at)}</span></div><code>${escapeHTML(item.mode)}</code>${icon('chevron',18)}</button>`).join('')||'<div class="empty-list">这个目录是空的</div>'}</section>`:''}</div>`}
+async function loadFiles(path='/'){
+  state.loading.files=true;state.errors.files=''
+  try{state.files=await api(`/api/v1/files?path=${encodeURIComponent(path)}`);state.fileContent=null}catch(e){state.errors.files=e.message}
+  finally{state.loading.files=false;render()}
+}
+async function loadRecycle(){
+  state.loading.recycle=true;state.errors.recycle=''
+  try{state.recycle=await api('/api/v1/files/recycle')}catch(e){state.errors.recycle=e.message}
+  finally{state.loading.recycle=false;render()}
+}
+function filteredFileEntries(){
+  const entries=state.files?.entries||[],q=state.fileFilter.trim().toLowerCase()
+  return q?entries.filter(item=>item.name.toLowerCase().includes(q)):entries
+}
+function fileBreadcrumb(path){
+  if(!path||path==='/')return '<span class="breadcrumb-current">允许访问的位置</span>'
+  const parts=path.split('/').filter(Boolean),crumbs=['<button data-file-jump="/" aria-label="返回允许访问的位置">/</button>']
+  let current=''
+  parts.forEach((part,index)=>{current+=`/${part}`;crumbs.push('<span>/</span>');crumbs.push(index===parts.length-1?`<span class="breadcrumb-current" title="${escapeHTML(current)}">${escapeHTML(part)}</span>`:`<button data-file-jump="${escapeHTML(current)}" title="${escapeHTML(current)}">${escapeHTML(part)}</button>`)})
+  return crumbs.join('')
+}
+function copiedName(name,isDir){
+  if(isDir)return `${name}-副本`
+  const dot=name.lastIndexOf('.')
+  return dot>0?`${name.slice(0,dot)}-副本${name.slice(dot)}`:`${name}-副本`
+}
+
+function filesPage(){
+  const l=state.files
+  if(state.fileView==='recycle'){
+    if(!state.recycle&&!state.errors.recycle){queueMicrotask(loadRecycle);return `<div class="page-wrap">${pageHeader('文件管理','读取回收站')}${surfaceLoading()}</div>`}
+    const entries=state.recycle?.entries||[]
+    return `<div class="page-wrap files-page">${pageHeader('文件管理','删除内容先进入回收站，可恢复或永久清理')}<div class="tab-bar surface file-tabs"><button data-file-view="files">文件</button><button class="active" data-file-view="recycle">回收站 ${entries.length}</button></div>${errorBox(state.errors.recycle)}<section class="recycle-list">${entries.map(item=>`<article class="surface recycle-card"><div class="recycle-main"><div class="file-icon">${icon(item.is_dir?'folder':'file',21)}</div><div><strong>${escapeHTML(item.name)}</strong><p title="${escapeHTML(item.original_path)}">${escapeHTML(item.original_path)}</p><small>${formatDate(item.deleted_at)}${item.is_dir?' · 文件夹':` · ${formatBytes(item.size)}`}</small></div></div><div class="resource-actions"><button class="secondary-button compact" data-copy-text="${escapeHTML(item.original_path)}">复制原路径</button><button class="primary-button compact" data-recycle-action="restore" data-recycle-id="${escapeHTML(item.id)}">恢复</button><button class="danger-button compact" data-recycle-action="purge" data-recycle-id="${escapeHTML(item.id)}">永久删除</button></div></article>`).join('')||'<div class="empty-list surface">回收站是空的</div>'}</section></div>`
+  }
+  if(!l&&!state.errors.files){queueMicrotask(()=>loadFiles('/'));return `<div class="page-wrap">${pageHeader('文件管理','读取允许访问的位置')}${surfaceLoading()}</div>`}
+  const entries=filteredFileEntries()
+  return `<div class="page-wrap files-page">${pageHeader('文件管理','支持上传、下载、编辑、复制、移动、权限和回收站',`<button id="new-file" class="secondary-button compact">${icon('plus',17)}<span>新建</span></button><button id="upload-file" class="primary-button compact">${icon('upload',17)}<span>上传</span></button><input id="upload-input" type="file" multiple hidden>`)}<div class="tab-bar surface file-tabs"><button class="active" data-file-view="files">文件</button><button data-file-view="recycle">回收站</button></div>${errorBox(state.errors.files)}${l?`<div class="file-toolbar surface"><button id="file-back" ${l.parent?'':'disabled'} aria-label="返回">${icon('back',19)}</button><button id="file-home" aria-label="根目录">${icon('home',18)}</button><div class="path-pill file-breadcrumb" title="${escapeHTML(l.path==='/'?'允许访问的位置':l.path)}">${fileBreadcrumb(l.path)}</div><button id="copy-current-path" data-copy-text="${escapeHTML(l.path)}" aria-label="复制当前路径">${icon('copy',18)}</button><button id="refresh-files" aria-label="刷新">${icon('refresh',18)}</button></div><div class="search-bar surface file-search">${icon('search',18)}<input id="file-search" value="${escapeHTML(state.fileFilter)}" placeholder="筛选当前目录"><span>${entries.length} / ${l.entries.length}</span></div><section class="file-list surface">${entries.map(item=>`<div class="file-row"><button class="file-open" data-file-path="${escapeHTML(item.path)}" data-directory="${item.is_dir}"><div class="file-icon">${icon(item.is_dir?'folder':'file',22)}</div><div class="file-main"><strong title="${escapeHTML(item.name)}">${escapeHTML(item.name)}</strong><span>${item.is_dir?'文件夹':formatBytes(item.size)} · ${formatDate(item.modified_at)}</span></div><code>${escapeHTML(item.mode)}</code>${icon('chevron',18)}</button>${l.path==='/'?'':`<button class="file-more" data-file-menu="${escapeHTML(item.path)}" aria-label="更多操作">${icon('more',19)}</button>`}</div>`).join('')||'<div class="empty-list">这个目录是空的</div>'}</section>`:''}</div>`
+}
 async function openFile(path){state.modal={title:'读取文件',kind:'loading',content:''};render();try{const data=await api(`/api/v1/files/content?path=${encodeURIComponent(path)}`);state.fileContent=data;state.modal={title:data.name,kind:'editor',content:data.content,path:data.path,dirty:false};render()}catch(e){state.modal={title:'无法打开文件',kind:'error',content:e.message};render()}}
+function openFileMenu(path){
+  const item=(state.files?.entries||[]).find(entry=>entry.path===path)
+  if(!item)return
+  state.modal={title:item.name,kind:'file-actions',path:item.path,item};render()
+}
 async function saveFile(){const editor=document.querySelector('#file-editor');if(!editor||!state.modal?.path)return;const button=document.querySelector('#save-file');button.disabled=true;button.textContent='保存中…';try{await secureApi('/api/v1/files/content',{method:'PUT',body:jsonBody({path:state.modal.path,content:editor.value})});state.modal.content=editor.value;state.modal.dirty=false;button.textContent='已保存';setTimeout(()=>{if(document.querySelector('#save-file'))document.querySelector('#save-file').textContent='保存'},1200)}catch(e){alert(e.message);button.textContent='保存'}finally{button.disabled=false}}
-async function createEntry(){if(!state.files||state.files.path==='/'){alert('请先进入一个实际目录');return}const type=confirm('确定创建文件夹？\n点“取消”则创建文件。')?'folder':'file';const name=prompt(type==='folder'?'文件夹名称':'文件名称');if(!name)return;const base=state.files.path.replace(/\/$/,'');const path=`${base}/${name}`;try{await secureApi(type==='folder'?'/api/v1/files/mkdir':'/api/v1/files/create',{method:'POST',body:jsonBody({path})});await loadFiles(state.files.path)}catch(e){alert(e.message)}}
-async function uploadSelected(file){if(!state.files||state.files.path==='/'){alert('请先进入目标目录');return}const form=new FormData();form.append('directory',state.files.path);form.append('file',file);setBusy(true);try{await secureApi('/api/v1/files/upload',{method:'POST',body:form});await loadFiles(state.files.path)}catch(e){alert(e.message)}finally{setBusy(false)}}
-async function renameCurrent(){const old=state.modal?.path;if(!old)return;const name=prompt('新名称',old.split('/').pop());if(!name)return;const destination=`${old.slice(0,old.lastIndexOf('/'))}/${name}`;try{await secureApi('/api/v1/files/rename',{method:'POST',body:jsonBody({source:old,destination})});state.modal=null;await loadFiles(state.files.path)}catch(e){alert(e.message)}}
-async function deleteCurrent(){const path=state.modal?.path;if(!path||!confirm(`将 ${path} 移入回收站？`))return;try{await secureApi('/api/v1/files/delete',{method:'POST',body:jsonBody({path})});state.modal=null;await loadFiles(state.files.path)}catch(e){alert(e.message)}}
+async function createEntry(){if(!state.files||state.files.path==='/'){alert('请先进入一个实际目录');return}const type=confirm('创建文件夹请点“确定”；创建空文件请点“取消”。')?'folder':'file';const name=prompt(type==='folder'?'文件夹名称':'文件名称');if(!name)return;const base=state.files.path.replace(/\/$/,'');const path=`${base}/${name}`;try{await secureApi(type==='folder'?'/api/v1/files/mkdir':'/api/v1/files/create',{method:'POST',body:jsonBody({path})});await loadFiles(state.files.path)}catch(e){alert(e.message)}}
+async function uploadSelected(files){if(!state.files||state.files.path==='/'){alert('请先进入目标目录');return}const list=Array.from(files||[]);if(!list.length)return;setBusy(true);let completed=0;try{for(const file of list){const form=new FormData();form.append('directory',state.files.path);form.append('file',file);await secureApi('/api/v1/files/upload',{method:'POST',body:form});completed++}await loadFiles(state.files.path);if(list.length>1)alert(`已上传 ${completed} 个文件`)}catch(e){alert(`已上传 ${completed}/${list.length} 个文件\n${e.message}`)}finally{setBusy(false)}}
+async function fileMutation(action,item){
+  const source=item.path,base=source.slice(0,source.lastIndexOf('/'))||'/',name=source.split('/').pop()
+  try{
+    if(action==='rename'){
+      const next=prompt('新名称',name);if(!next||next===name)return
+      await secureApi('/api/v1/files/rename',{method:'POST',body:jsonBody({source,destination:`${base==='/'?'':base}/${next}`})})
+    }else if(action==='copy'||action==='move'){
+      const suggestion=action==='copy'?`${base==='/'?'':base}/${copiedName(name,item.is_dir)}`:source
+      const destination=prompt(action==='copy'?'复制到完整路径':'移动到完整路径',suggestion);if(!destination||destination===source)return
+      await secureApi(`/api/v1/files/${action}`,{method:'POST',body:jsonBody({source,destination})})
+    }else if(action==='chmod'){
+      const current=String(item.mode||'').replace(/^.*?(\d{3,4})$/,'$1')
+      const mode=prompt('输入八进制权限，例如文件 644、目录 755',current.match(/^\d{3,4}$/)?.[0]||'644');if(!mode)return
+      await secureApi('/api/v1/files/chmod',{method:'POST',body:jsonBody({path:source,mode})})
+    }else if(action==='delete'){
+      if(!confirm(`将 ${source} 移入回收站？`))return
+      await secureApi('/api/v1/files/delete',{method:'POST',body:jsonBody({path:source})})
+    }
+    state.modal=null;await loadFiles(state.files.path)
+  }catch(e){alert(e.message)}
+}
+async function recycleAction(id,action){
+  if(action==='purge'&&!confirm('永久删除后无法恢复，确认继续？'))return
+  try{
+    await secureApi('/api/v1/files/recycle',{method:'POST',body:jsonBody({id,action,destination:''})})
+    await loadRecycle()
+  }catch(error){
+    if(action==='restore'&&String(error.message).includes('恢复目标已存在')){
+      const item=(state.recycle?.entries||[]).find(entry=>entry.id===id)
+      const destination=prompt('原位置已有同名文件，请输入新的完整恢复路径',item?.original_path?`${item.original_path}-恢复`:'')
+      if(!destination)return
+      try{await secureApi('/api/v1/files/recycle',{method:'POST',body:jsonBody({id,action,destination})});await loadRecycle()}catch(nextError){alert(nextError.message)}
+      return
+    }
+    alert(error.message)
+  }
+}
 
 function toolsPage(){return `<div class="page-wrap">${pageHeader('常用工具','结果实时返回，不保存敏感请求内容')}<section class="tools-grid">${[['ping','Ping','测试基础网络延迟','example.com',''],['dns','DNS 查询','解析 A / AAAA 地址','example.com',''],['tcp','TCP 端口','测试目标端口连通性','example.com','443'],['http','HTTP 检查','查看状态码、跳转与耗时','https://example.com','']].map(([tool,title,desc,placeholder,port])=>`<article class="tool-card surface"><div class="tool-icon">${icon(tool==='dns'?'network':tool==='tcp'?'server':tool==='http'?'activity':'terminal',22)}</div><h2>${title}</h2><p>${desc}</p><form class="tool-form" data-tool="${tool}"><input name="target" placeholder="${placeholder}" required>${port?`<input name="port" type="number" value="${port}" min="1" max="65535">`:''}<button class="primary-button" type="submit">开始测试</button></form></article>`).join('')}</section><section id="tool-result" class="result-panel surface" hidden><div class="card-heading">${icon('terminal',19)}<strong>测试结果</strong></div><pre></pre></section></div>`}
 async function runTool(form){const f=new FormData(form),button=form.querySelector('button'),result=document.querySelector('#tool-result'),pre=result.querySelector('pre');button.disabled=true;button.textContent='测试中…';result.hidden=false;pre.textContent='正在执行…';try{const data=await api('/api/v1/tools/run',{method:'POST',body:jsonBody({tool:form.dataset.tool,target:f.get('target'),port:Number(f.get('port')||0)})});pre.textContent=(data.output||'完成')+`\n\n耗时：${data.duration_ms} ms`}catch(e){pre.textContent=e.message}finally{button.disabled=false;button.textContent='开始测试'}}
 
-async function loadAudit(){state.loading.audit=true;state.errors.audit='';try{const [audit,logs]=await Promise.all([api('/api/v1/audit?limit=500'),api('/api/v1/logs/system?lines=400')]);state.audit=audit;state.systemLogs=logs}catch(e){state.errors.audit=e.message}finally{state.loading.audit=false;render()}}
-function auditPage(){if(!state.audit&&!state.errors.audit){queueMicrotask(loadAudit);return `<div class="page-wrap">${pageHeader('日志审计','读取日志')}${surfaceLoading()}</div>`}return `<div class="page-wrap">${pageHeader('日志审计','系统日志与面板操作记录',`<button id="refresh-audit" class="secondary-button compact">${icon('refresh',17)}<span>刷新</span></button>`)}${errorBox(state.errors.audit)}<div class="tab-bar surface"><button class="active" data-log-tab="audit">操作审计</button><button data-log-tab="system">系统日志</button></div><section id="audit-panel" class="audit-list surface">${(state.audit?.events||[]).map(e=>`<div class="audit-row"><time>${formatDate(e.time)}</time><div><strong>${escapeHTML(e.action)}</strong><p>${escapeHTML(e.target||'-')}</p></div><span>${escapeHTML(e.user||'-')} · ${escapeHTML(e.ip||'-')}</span><b class="${e.result==='success'?'ok':'bad'}">${escapeHTML(e.result)}</b></div>`).join('')||'<div class="empty-list">暂无审计记录</div>'}</section><section id="system-log-panel" class="log-view surface" hidden><pre>${escapeHTML(state.systemLogs?.logs||'暂无系统日志')}</pre></section></div>`}
+async function loadAudit(){state.loading.audit=true;state.errors.audit='';try{const [audit,logs]=await Promise.all([api('/api/v1/audit?limit=1000'),api('/api/v1/logs/system?lines=600')]);state.audit=audit;state.systemLogs=logs}catch(e){state.errors.audit=e.message}finally{state.loading.audit=false;render()}}
+function auditEventText(e){return `${formatDate(e.time)} | ${e.result} | ${e.action} | ${e.target||'-'} | ${e.user||'-'} | ${e.ip||'-'}${e.detail?` | ${e.detail}`:''}`}
+function filteredAuditEvents(){const items=state.audit?.events||[],q=state.auditFilter.trim().toLowerCase();return q?items.filter(e=>auditEventText(e).toLowerCase().includes(q)):items}
+function auditPage(){
+  if(!state.audit&&!state.errors.audit){queueMicrotask(loadAudit);return `<div class="page-wrap">${pageHeader('日志审计','读取日志')}${surfaceLoading()}</div>`}
+  const events=filteredAuditEvents(),auditText=events.map(auditEventText).join('\n'),systemText=state.systemLogs?.logs||''
+  const actions=`<button id="copy-current-log" class="secondary-button compact">${icon('copy',16)}<span>复制当前</span></button><button id="export-audit" class="secondary-button compact">${icon('download',16)}<span>导出</span></button><button id="refresh-audit" class="secondary-button compact">${icon('refresh',17)}<span>刷新</span></button>`
+  return `<div class="page-wrap">${pageHeader('日志审计','支持搜索、一键复制和导出，敏感凭据不会写入日志',actions)}${errorBox(state.errors.audit)}<div class="tab-bar surface"><button class="${state.logTab==='audit'?'active':''}" data-log-tab="audit">操作审计</button><button class="${state.logTab==='system'?'active':''}" data-log-tab="system">系统日志</button></div>${state.logTab==='audit'?`<div class="search-bar surface audit-search">${icon('search',18)}<input id="audit-search" value="${escapeHTML(state.auditFilter)}" placeholder="搜索操作、目标、IP 或结果"><span>${events.length} / ${state.audit?.events?.length||0}</span></div><section id="audit-panel" class="audit-list surface" data-copy-block="${escapeHTML(auditText)}">${events.map(e=>`<div class="audit-row"><time>${formatDate(e.time)}</time><div><strong>${escapeHTML(e.action)}</strong><p title="${escapeHTML(e.target||'-')}">${escapeHTML(e.target||'-')}</p></div><span>${escapeHTML(e.user||'-')} · ${escapeHTML(e.ip||'-')}</span><b class="${e.result==='success'?'ok':'bad'}">${escapeHTML(e.result)}</b><button class="copy-icon audit-copy" data-copy-text="${escapeHTML(auditEventText(e))}" aria-label="复制这条记录">${icon('copy',14)}</button></div>`).join('')||'<div class="empty-list">暂无审计记录</div>'}</section>`:`<section id="system-log-panel" class="log-view surface"><pre>${escapeHTML(systemText||'暂无系统日志')}</pre></section>`}</div>`
+}
+
+
+async function loadSSH(user=''){
+  state.loading.ssh=true;state.errors.ssh=''
+  try{
+    const [status,users]=await Promise.all([api('/api/v1/ssh/status'),api('/api/v1/ssh/users')])
+    state.ssh=status;state.sshUsers=users
+    if(!user)user=state.sshUser||users.users?.[0]?.name||''
+    state.sshUser=user
+    state.sshKeys=user?await api(`/api/v1/ssh/keys?user=${encodeURIComponent(user)}`):{keys:[]}
+  }catch(e){state.errors.ssh=e.message}
+  finally{state.loading.ssh=false;render()}
+}
+function sshPage(){
+  if(!state.ssh&&!state.errors.ssh){queueMicrotask(()=>loadSSH());return `<div class="page-wrap">${pageHeader('SSH 管理','读取 SSH 状态')}${surfaceLoading()}</div>`}
+  const users=state.sshUsers?.users||[],keys=state.sshKeys?.keys||[],status=state.ssh||{}
+  return `<div class="page-wrap">${pageHeader('SSH 管理','只管理公钥，不提供任意终端，也不会直接改坏 sshd_config',`<button id="refresh-ssh" class="secondary-button compact">${icon('refresh',17)}<span>刷新</span></button>`)}${errorBox(state.errors.ssh)}<section class="ssh-status-grid"><article class="surface status-card"><div class="card-heading">${icon('shield',19)}<strong>OpenSSH 状态</strong></div>${status.available?`<dl class="info-list"><div><dt>服务</dt><dd>${escapeHTML(status.service||'已安装')}</dd></div><div><dt>端口</dt><dd>${escapeHTML(status.port||'-')}</dd></div><div><dt>Root 登录</dt><dd>${escapeHTML(status.permit_root_login||'-')}</dd></div><div><dt>密码登录</dt><dd>${escapeHTML(status.password_authentication||'-')}</dd></div><div><dt>公钥登录</dt><dd>${escapeHTML(status.pubkey_authentication||'-')}</dd></div></dl>`:`<div class="empty-state"><span>${escapeHTML(status.error||'OpenSSH 不可用')}</span></div>`}</article><article class="surface status-card ssh-guide"><div class="card-heading">${icon('key',19)}<strong>新手建议</strong></div><ol><li>先添加并测试公钥登录。</li><li>确认手机或电脑能用密钥连接。</li><li>再考虑关闭密码登录，避免把自己锁在服务器外。</li></ol><p>LukePanel 暂不自动关闭密码登录，这是刻意的安全限制。</p></article></section><section class="surface ssh-keys-panel"><header><div><strong>授权公钥</strong><p>选择 Linux 用户后管理 <code>~/.ssh/authorized_keys</code></p></div><select id="ssh-user">${users.map(user=>`<option value="${escapeHTML(user.name)}" ${user.name===state.sshUser?'selected':''}>${escapeHTML(user.name)} · ${user.key_count} 把</option>`).join('')}</select></header><div class="key-list">${keys.map(key=>`<article class="key-row"><div class="key-type">${escapeHTML(key.type.replace('ssh-',''))}</div><div><strong>${escapeHTML(key.comment||'未命名公钥')}</strong><p>${escapeHTML(key.fingerprint)}</p><small>${escapeHTML(key.preview)}</small></div><button class="danger-button compact" data-ssh-key-delete="${escapeHTML(key.id)}">删除</button></article>`).join('')||'<div class="empty-list">这个用户还没有公钥</div>'}</div><form id="ssh-key-form" class="ssh-key-form"><label>粘贴完整公钥<textarea name="key" rows="4" placeholder="ssh-ed25519 AAAA... iPhone" required></textarea></label><button class="primary-button" type="submit">添加公钥</button></form></section></div>`
+}
+async function addSSHKey(form){const button=form.querySelector('button'),key=new FormData(form).get('key');button.disabled=true;button.textContent='添加中…';try{await secureApi('/api/v1/ssh/keys/add',{method:'POST',body:jsonBody({user:state.sshUser,key})});form.reset();await loadSSH(state.sshUser);showToast('公钥已添加')}catch(e){alert(e.message)}finally{button.disabled=false;button.textContent='添加公钥'}}
+async function deleteSSHKey(id){if(!confirm('确认删除这把 SSH 公钥？请确保你还有其他可用登录方式。'))return;try{await secureApi('/api/v1/ssh/keys/delete',{method:'POST',body:jsonBody({user:state.sshUser,id})});await loadSSH(state.sshUser)}catch(e){alert(e.message)}}
+
+function githubDefaults(){return {owner:localStorage.getItem('github-owner')||'Luke-Lab666',repo:localStorage.getItem('github-repo')||'LukePanel'}}
+async function loadGitHub(owner,repo){
+  const defaults=githubDefaults();owner=owner||defaults.owner;repo=repo||defaults.repo
+  state.loading.github=true;state.errors.github='';localStorage.setItem('github-owner',owner);localStorage.setItem('github-repo',repo)
+  try{state.github=await api(`/api/v1/github/summary?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`)}catch(e){state.errors.github=e.message}
+  finally{state.loading.github=false;render()}
+}
+function workflowStatus(run){if(run.status!=='completed')return '运行中';return run.conclusion==='success'?'成功':run.conclusion||'未知'}
+function githubPage(){
+  const defaults=githubDefaults(),data=state.github
+  if(!data&&!state.errors.github&&!state.loading.github)queueMicrotask(()=>loadGitHub(defaults.owner,defaults.repo))
+  const latest=data?.latest_release,tagSuggestion=latest?.tag_name?nextVersionSuggestion(latest.tag_name):'v0.3.0-alpha'
+  const actions=data?`<a class="secondary-button compact" href="https://github.com/${escapeHTML(data.full_name)}/actions" target="_blank" rel="noopener">${icon('external',16)}<span>打开 Actions</span></a>`:''
+  return `<div class="page-wrap github-page">${pageHeader('GitHub 发布助手','面向新手的仓库检查、版本发布和失败任务重试',actions)}<form id="github-repo-form" class="surface github-repo-form"><label>所有者<input name="owner" value="${escapeHTML(data?.owner||defaults.owner)}" required></label><label>仓库<input name="repo" value="${escapeHTML(data?.name||defaults.repo)}" required></label><button class="primary-button" type="submit">检查仓库</button></form>${errorBox(state.errors.github)}${state.loading.github?surfaceLoading('读取 GitHub 仓库'):data?`<section class="github-summary-grid"><article class="surface status-card"><div class="card-heading">${icon('github',20)}<strong>${escapeHTML(data.full_name)}</strong></div><dl class="info-list"><div><dt>默认分支</dt><dd>${escapeHTML(data.default_branch)}</dd></div><div><dt>最新提交</dt><dd><code>${escapeHTML((data.main_sha||'').slice(0,12)||'-')}</code></dd></div><div><dt>最新标签</dt><dd>${escapeHTML(data.tags?.[0]?.name||'暂无')}</dd></div><div><dt>最新 Release</dt><dd>${escapeHTML(latest?.tag_name||'暂无')}</dd></div><div><dt>可见性</dt><dd>${escapeHTML(data.visibility)}</dd></div></dl><div class="quick-copy-grid"><button class="secondary-button compact" data-copy-text="curl -fsSL https://raw.githubusercontent.com/${escapeHTML(data.full_name)}/main/install.sh | bash">复制安装命令</button><button class="secondary-button compact" data-copy-text="https://github.com/${escapeHTML(data.full_name)}">复制仓库地址</button></div></article><article class="surface status-card"><div class="card-heading">${icon('activity',20)}<strong>最近 Actions</strong></div><div class="workflow-list">${(data.workflow_runs||[]).slice(0,8).map(run=>`<div><span class="workflow-dot ${run.conclusion==='success'?'ok':run.status!=='completed'?'running':'bad'}"></span><div><strong>${escapeHTML(run.name)}</strong><small>${escapeHTML(run.head_branch||run.event)} · ${formatDate(run.created_at)}</small></div><div class="workflow-actions"><b>${workflowStatus(run)}</b><a href="${escapeHTML(run.html_url)}" target="_blank" rel="noopener" aria-label="打开运行记录">${icon('external',14)}</a>${['failure','cancelled','timed_out'].includes(run.conclusion)?`<button data-github-rerun="${run.id}" aria-label="重试失败任务">重试</button>`:''}</div></div>`).join('')||'<div class="empty-list">暂无 Actions 记录</div>'}</div></article></section><section class="surface release-helper"><div><h2>创建版本标签并触发 Release</h2><p>你只需要确认版本号。LukePanel 会把 Tag 创建在当前 main 最新提交上，仓库中的 <code>release.yml</code> 会继续完成编译和发布。</p></div><details class="token-guide"><summary>第一次使用：怎样获取 Token？</summary><ol><li>打开 GitHub Token 创建页面。</li><li>Repository access 只选择当前仓库。</li><li>Repository permissions 开启 <strong>Contents: Read and write</strong>；需要重试 Actions 时再开启 <strong>Actions: Read and write</strong>。</li><li>生成后复制到下面。Token 只在本次页面内使用，不会写入配置和审计日志。</li></ol><a class="secondary-button compact" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">${icon('external',15)}打开 GitHub Token 页面</a></details><form id="github-tag-form"><label>版本号<input name="tag" value="${escapeHTML(tagSuggestion)}" pattern="v[0-9][A-Za-z0-9._-]*" required></label><label>目标提交<input name="sha" value="${escapeHTML(data.main_sha||'')}" readonly></label><label class="wide-field">一次性 Fine-grained Token<input id="github-token" name="token" type="password" autocomplete="off" placeholder="粘贴 Token；不会保存" required></label><div class="release-warning">${icon('shield',17)}必须通过 HTTPS 使用。操作完成后输入框会自动清空。</div><button class="primary-button" type="submit">创建 Tag 并触发发布</button></form></section>`:''}</div>`
+}
+
+function nextVersionSuggestion(current){const match=String(current).match(/^v(\d+)\.(\d+)\.(\d+)(.*)$/);if(!match)return 'v0.3.0-alpha';return `v${match[1]}.${Number(match[2])+1}.0-alpha`}
+async function createGitHubTag(form){const f=new FormData(form),button=form.querySelector('button');if(!confirm(`确认创建标签 ${f.get('tag')}？创建后 GitHub Actions 会开始发布。`))return;button.disabled=true;button.textContent='正在创建…';try{await secureApi('/api/v1/github/tag',{method:'POST',body:jsonBody({owner:state.github.owner,repo:state.github.name,tag:f.get('tag'),targetSHA:f.get('sha'),token:f.get('token')})});form.querySelector('[name=token]').value='';showToast('标签已创建，Release Actions 将自动运行');setTimeout(()=>loadGitHub(state.github.owner,state.github.name),2500)}catch(e){alert(e.message)}finally{button.disabled=false;button.textContent='创建 Tag 并触发发布'}}
+
+async function rerunGitHubAction(runID){
+  const tokenInput=document.querySelector('#github-token')
+  if(!tokenInput?.value){tokenInput?.focus();showToast('请先在下方填写一次性 Token');return}
+  if(!confirm('确认重新运行这个 Actions 中失败的任务？'))return
+  try{
+    await secureApi('/api/v1/github/rerun',{method:'POST',body:jsonBody({owner:state.github.owner,repo:state.github.name,run_id:Number(runID),token:tokenInput.value})})
+    tokenInput.value=''
+    showToast('已请求重试失败任务')
+    setTimeout(()=>loadGitHub(state.github.owner,state.github.name),2200)
+  }catch(error){alert(error.message)}
+}
 
 async function loadSecurity(){if(state.loading.security)return;state.loading.security=true;try{const [settings,sessions]=await Promise.all([api('/api/v1/settings'),api('/api/v1/auth/sessions')]);state.settings=settings;state.sessions=sessions}catch(e){state.errors.security=e.message}finally{state.loading.security=false;render()}}
-function securityPage(){if((!state.settings||!state.sessions)&&!state.errors.security){queueMicrotask(loadSecurity)}return `<div class="page-wrap">${pageHeader('我的与安全','账户、会话、刷新策略与面板安全')}${errorBox(state.errors.security)}<section class="settings-list surface"><div class="setting-row"><div class="setting-icon">${icon('shield',21)}</div><div><strong>当前账户</strong><p>${escapeHTML(state.username)} · 当前会话 ${escapeHTML(state.sessionID||'-')}</p></div><span>${escapeHTML(state.settings?.version||'dev')}</span></div><div class="setting-row"><div class="setting-icon">${icon('refresh',21)}</div><div><strong>概览自动刷新</strong><p>页面在前台时自动刷新，切到后台会暂停</p></div><select id="refresh-interval"><option value="2">2 秒</option><option value="5">5 秒</option><option value="10">10 秒</option><option value="30">30 秒</option><option value="60">60 秒</option></select></div><div class="setting-row"><div class="setting-icon">${icon('clock',21)}</div><div><strong>活跃会话</strong><p>${state.sessions?.sessions?.length||1} 个会话，密码修改后其余会话会失效</p></div><button id="revoke-sessions" class="secondary-button compact">退出其他设备</button></div><div class="setting-row muted"><div class="setting-icon">${icon('key',21)}</div><div><strong>TOTP / Passkey</strong><p>需要下一阶段补充完整恢复流程后开放</p></div><span>规划中</span></div></section><section class="password-panel surface"><h2>修改登录密码</h2><p>新密码至少 12 个字符，保存后其他会话会自动退出。</p><form id="password-form"><label>当前密码<input name="current" type="password" autocomplete="current-password"></label><label>新密码<input name="next" type="password" minlength="12" autocomplete="new-password"></label><label>确认新密码<input name="confirm" type="password" minlength="12" autocomplete="new-password"></label><div id="password-message" class="form-error" hidden></div><button class="primary-button" type="submit">保存新密码</button></form></section><section class="security-meta surface"><dl class="info-list"><div><dt>监听</dt><dd>${escapeHTML(state.settings?.listen||'-')}</dd></div><div><dt>安全 Cookie</dt><dd>${state.settings?.secure_cookie?'已开启':'已关闭'}</dd></div><div><dt>Agent Socket</dt><dd>${escapeHTML(state.settings?.agent_socket||'-')}</dd></div></dl></section></div>`}
+function securityPage(){if((!state.settings||!state.sessions)&&!state.errors.security){queueMicrotask(loadSecurity)}return `<div class="page-wrap">${pageHeader('我的与安全','账户、会话、刷新策略与面板安全')}${errorBox(state.errors.security)}<section class="settings-list surface"><div class="setting-row"><div class="setting-icon">${icon('shield',21)}</div><div><strong>当前账户</strong><p>${escapeHTML(state.username)} · 当前会话 ${escapeHTML(state.sessionID||'-')}</p></div><span>${escapeHTML(state.settings?.version||'dev')}</span></div><div class="setting-row"><div class="setting-icon">${icon('refresh',21)}</div><div><strong>兼容刷新间隔</strong><p>实时推送不可用时才启用；页面后台仍会暂停</p></div><select id="refresh-interval"><option value="2">2 秒</option><option value="5">5 秒</option><option value="10">10 秒</option><option value="30">30 秒</option><option value="60">60 秒</option></select></div><div class="setting-row"><div class="setting-icon">${icon('clock',21)}</div><div><strong>活跃会话</strong><p>${state.sessions?.sessions?.length||1} 个会话，密码修改后其余会话会失效</p></div><button id="revoke-sessions" class="secondary-button compact">退出其他设备</button></div><div class="setting-row muted"><div class="setting-icon">${icon('key',21)}</div><div><strong>TOTP / Passkey</strong><p>需要下一阶段补充完整恢复流程后开放</p></div><span>规划中</span></div></section><section class="password-panel surface"><h2>修改登录密码</h2><p>新密码至少 12 个字符，保存后其他会话会自动退出。</p><form id="password-form"><label>当前密码<input name="current" type="password" autocomplete="current-password"></label><label>新密码<input name="next" type="password" minlength="12" autocomplete="new-password"></label><label>确认新密码<input name="confirm" type="password" minlength="12" autocomplete="new-password"></label><div id="password-message" class="form-error" hidden></div><button class="primary-button" type="submit">保存新密码</button></form></section><section class="security-meta surface"><dl class="info-list"><div><dt>监听</dt><dd>${escapeHTML(state.settings?.listen||'-')}</dd></div><div><dt>安全 Cookie</dt><dd>${state.settings?.secure_cookie?'已开启':'已关闭'}</dd></div><div><dt>Agent Socket</dt><dd>${escapeHTML(state.settings?.agent_socket||'-')}</dd></div></dl></section></div>`}
 
-function modalHTML(){if(!state.modal)return'';const m=state.modal;let body='';if(m.kind==='loading')body='<div class="modal-loading"><div class="spinner"></div></div>';else if(m.kind==='logs')body=`<pre class="modal-log">${escapeHTML(m.content)}</pre>`;else if(m.kind==='error')body=`<div class="alert error">${icon('alert',18)}${escapeHTML(m.content)}</div>`;else if(m.kind==='editor')body=`<textarea id="file-editor" spellcheck="false">${escapeHTML(m.content)}</textarea>`;else if(m.kind==='process')body=`<div class="process-dialog"><p>${escapeHTML(m.content)}</p><code>PID ${m.pid}</code><button class="secondary-button" id="process-term">正常结束 SIGTERM</button><button class="danger-button" id="process-kill">强制结束 SIGKILL</button></div>`;return `<div class="modal-backdrop" id="modal-backdrop"><section class="modal-card ${m.kind==='editor'||m.kind==='logs'?'wide':''}"><header><div><strong>${escapeHTML(m.title)}</strong>${m.path?`<small>${escapeHTML(m.path)}</small>`:''}</div><button id="modal-close">${icon('close',20)}</button></header><div class="modal-body">${body}</div>${m.kind==='editor'?`<footer><div><button id="download-file" class="secondary-button compact">${icon('download',16)}下载</button><button id="rename-file" class="secondary-button compact">重命名</button><button id="delete-file" class="danger-button compact">${icon('trash',16)}删除</button></div><button id="save-file" class="primary-button compact">${icon('save',16)}保存</button></footer>`:''}</section></div>`}
+function modalHTML(){
+  if(!state.modal)return''
+  const m=state.modal;let body='',footer=''
+  if(m.kind==='loading')body='<div class="modal-loading"><div class="spinner"></div></div>'
+  else if(m.kind==='logs'){body=`<pre class="modal-log">${escapeHTML(m.content)}</pre>`;footer=`<footer><button class="secondary-button compact" id="copy-modal-log">${icon('copy',16)}复制全部</button><button class="primary-button compact" id="modal-done">完成</button></footer>`}
+  else if(m.kind==='error')body=`<div class="alert error modal-error">${icon('alert',18)}${escapeHTML(m.content)}</div>`
+  else if(m.kind==='editor'){
+    body=`<textarea id="file-editor" spellcheck="false">${escapeHTML(m.content)}</textarea>`
+    footer=`<footer><div class="editor-secondary-actions"><button id="copy-file-path" class="secondary-button compact">${icon('copy',16)}路径</button><button id="copy-file-content" class="secondary-button compact">${icon('copy',16)}内容</button><button id="download-file" class="secondary-button compact">${icon('download',16)}下载</button><button id="rename-file" class="secondary-button compact">重命名</button><button id="delete-file" class="danger-button compact">${icon('trash',16)}删除</button></div><button id="save-file" class="primary-button compact">${icon('save',16)}保存</button></footer>`
+  }else if(m.kind==='file-actions'){
+    const item=m.item
+    body=`<div class="action-sheet"><button data-file-action="copy-path">${icon('copy',19)}<span>复制完整路径</span></button>${item.is_dir?'':`<button data-file-action="download">${icon('download',19)}<span>下载文件</span></button>`}<button data-file-action="rename">${icon('edit',19)}<span>重命名</span></button><button data-file-action="copy">${icon('copy',19)}<span>复制到…</span></button><button data-file-action="move">${icon('move',19)}<span>移动到…</span></button><button data-file-action="chmod">${icon('shield',19)}<span>修改权限</span><small>${escapeHTML(item.mode||'')}</small></button><button class="danger" data-file-action="delete">${icon('trash',19)}<span>移入回收站</span></button></div>`
+  }else if(m.kind==='process')body=`<div class="process-dialog"><p>${escapeHTML(m.content)}</p><code>PID ${m.pid}</code><button class="secondary-button" id="process-term">正常结束 SIGTERM</button><button class="danger-button" id="process-kill">强制结束 SIGKILL</button></div>`
+  return `<div class="modal-backdrop" id="modal-backdrop"><section class="modal-card ${['editor','logs'].includes(m.kind)?'wide':''}"><header><div><strong>${escapeHTML(m.title)}</strong>${m.path?`<small>${escapeHTML(m.path)}</small>`:''}</div><button id="modal-close">${icon('close',20)}</button></header><div class="modal-body">${body}</div>${footer}</section></div>`
+}
+
 
 function bindShell(){
   document.querySelector('#theme-toggle')?.addEventListener('click',()=>{applyTheme(theme()==='dark'?'light':'dark');render()})
-  document.querySelector('#logout')?.addEventListener('click',async()=>{await api('/api/v1/auth/logout',{method:'POST'});state.authenticated=false;state.csrf='';render()})
+  document.querySelector('#logout')?.addEventListener('click',async()=>{await api('/api/v1/auth/logout',{method:'POST'});state.authenticated=false;state.csrf='';stopOverviewUpdates();render()})
+  document.querySelectorAll('[data-copy-text]').forEach(button=>button.addEventListener('click',event=>{event.stopPropagation();copyText(button.dataset.copyText)}))
+
   document.querySelector('#refresh-overview')?.addEventListener('click',e=>{e.currentTarget.querySelector('svg')?.classList.add('spin');loadOverview(true)})
   document.querySelector('#load-dashboard-docker')?.addEventListener('click',async()=>{const box=document.querySelector('#dashboard-docker .empty-state');box.innerHTML='<div class="spinner"></div>';try{const [status,data]=await Promise.all([api('/api/v1/docker/status'),api('/api/v1/docker/containers')]);box.innerHTML=status.available?`<strong>${data.containers.filter(c=>c.state==='running').length} 个运行中</strong><span>${data.containers.length} 个容器 · Docker ${escapeHTML(status.version)}</span><a data-nav href="/docker">进入 Docker</a>`:`<span>${escapeHTML(status.error||'Docker 不可用')}</span>`}catch(e){box.innerHTML=`<span>${escapeHTML(e.message)}</span>`}})
-  document.querySelector('#refresh-services')?.addEventListener('click',()=>loadServices(document.querySelector('#service-search')?.value||''))
-  let searchTimer;document.querySelector('#service-search')?.addEventListener('input',e=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadServices(e.target.value),350)})
+
+  document.querySelector('#refresh-services')?.addEventListener('click',()=>loadServices(state.serviceQuery))
+  let searchTimer;document.querySelector('#service-search')?.addEventListener('input',e=>{state.serviceQuery=e.target.value;clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadServices(state.serviceQuery),350)})
+  document.querySelectorAll('[data-service-filter]').forEach(button=>button.onclick=()=>{state.serviceFilter=button.dataset.serviceFilter;render()})
   document.querySelectorAll('[data-service-action]').forEach(b=>b.onclick=()=>serviceAction(b.dataset.name,b.dataset.serviceAction))
   document.querySelectorAll('[data-service-logs]').forEach(b=>b.onclick=()=>showServiceLogs(b.dataset.serviceLogs))
+
   document.querySelector('#refresh-processes')?.addEventListener('click',()=>loadProcesses())
   document.querySelectorAll('[data-process-pid]').forEach(bindProcessButton)
   document.querySelector('#refresh-network')?.addEventListener('click',loadNetwork)
   document.querySelector('#refresh-storage')?.addEventListener('click',loadStorage)
+  document.querySelector('#toggle-virtual-mounts')?.addEventListener('click',()=>{state.storageShowVirtual=!state.storageShowVirtual;render()})
   document.querySelector('#refresh-timers')?.addEventListener('click',loadTimers)
   document.querySelector('#refresh-updates')?.addEventListener('click',loadUpdates)
+
   document.querySelector('#refresh-docker')?.addEventListener('click',loadDocker)
   document.querySelector('#pull-image')?.addEventListener('click',pullImage)
   document.querySelectorAll('[data-docker-tab]').forEach(b=>b.onclick=()=>{state.dockerTab=b.dataset.dockerTab;render()})
+  document.querySelectorAll('[data-compose-action]').forEach(b=>b.onclick=()=>composeAction(b.dataset.project,b.dataset.composeAction))
   document.querySelectorAll('[data-image-delete]').forEach(b=>b.onclick=()=>deleteDockerResource('image',b.dataset.imageDelete,imageName((state.dockerImages?.images||[]).find(i=>i.id===b.dataset.imageDelete)||{id:b.dataset.imageDelete})))
   document.querySelectorAll('[data-network-delete]').forEach(b=>b.onclick=()=>deleteDockerResource('network',b.dataset.networkDelete,b.dataset.name))
   document.querySelectorAll('[data-volume-delete]').forEach(b=>b.onclick=()=>deleteDockerResource('volume',b.dataset.volumeDelete))
   document.querySelectorAll('[data-docker-action]').forEach(b=>b.onclick=()=>dockerAction(b.dataset.id,b.dataset.dockerAction))
   document.querySelectorAll('[data-docker-logs]').forEach(b=>b.onclick=()=>showDockerLogs(b.dataset.dockerLogs,b.dataset.title))
+
+  document.querySelectorAll('[data-file-view]').forEach(button=>button.onclick=()=>{state.fileView=button.dataset.fileView;if(state.fileView==='recycle'&&!state.recycle)loadRecycle();else render()})
   document.querySelector('#file-back')?.addEventListener('click',()=>state.files?.parent&&loadFiles(state.files.parent))
   document.querySelector('#file-home')?.addEventListener('click',()=>loadFiles('/'))
+  document.querySelectorAll('[data-file-jump]').forEach(button=>button.onclick=()=>loadFiles(button.dataset.fileJump))
   document.querySelector('#refresh-files')?.addEventListener('click',()=>loadFiles(state.files?.path||'/'))
+  document.querySelector('#file-search')?.addEventListener('input',event=>{
+    state.fileFilter=event.target.value.toLowerCase();let shown=0
+    document.querySelectorAll('.file-row').forEach(row=>{const match=row.textContent.toLowerCase().includes(state.fileFilter);row.hidden=!match;if(match)shown++})
+    const count=document.querySelector('.file-search span');if(count)count.textContent=`${shown} / ${state.files?.entries?.length||0}`
+  })
   document.querySelectorAll('[data-file-path]').forEach(row=>row.onclick=()=>row.dataset.directory==='true'?loadFiles(row.dataset.filePath):openFile(row.dataset.filePath))
+  document.querySelectorAll('[data-file-menu]').forEach(button=>button.onclick=event=>{event.stopPropagation();openFileMenu(button.dataset.fileMenu)})
   document.querySelector('#new-file')?.addEventListener('click',createEntry)
   document.querySelector('#upload-file')?.addEventListener('click',()=>document.querySelector('#upload-input')?.click())
-  document.querySelector('#upload-input')?.addEventListener('change',e=>e.target.files?.[0]&&uploadSelected(e.target.files[0]))
+  document.querySelector('#upload-input')?.addEventListener('change',e=>uploadSelected(e.target.files))
+  document.querySelectorAll('[data-recycle-action]').forEach(button=>button.onclick=()=>recycleAction(button.dataset.recycleId,button.dataset.recycleAction))
+
   document.querySelectorAll('.tool-form').forEach(form=>form.onsubmit=e=>{e.preventDefault();runTool(form)})
+
   document.querySelector('#refresh-audit')?.addEventListener('click',loadAudit)
-  document.querySelectorAll('[data-log-tab]').forEach(button=>button.onclick=()=>{document.querySelectorAll('[data-log-tab]').forEach(x=>x.classList.toggle('active',x===button));document.querySelector('#audit-panel').hidden=button.dataset.logTab!=='audit';document.querySelector('#system-log-panel').hidden=button.dataset.logTab!=='system'})
-  const interval=document.querySelector('#refresh-interval');if(interval){interval.value=String(state.settings?.auto_refresh_seconds||5);interval.onchange=async()=>{try{await api('/api/v1/settings',{method:'PATCH',body:jsonBody({auto_refresh_seconds:Number(interval.value)})});state.settings.auto_refresh_seconds=Number(interval.value);syncAutoRefresh()}catch(e){alert(e.message)}}}
+  document.querySelectorAll('[data-log-tab]').forEach(button=>button.onclick=()=>{state.logTab=button.dataset.logTab;render()})
+  document.querySelector('#audit-search')?.addEventListener('input',event=>{
+    state.auditFilter=event.target.value.toLowerCase();let shown=0
+    document.querySelectorAll('.audit-row').forEach(row=>{const match=row.textContent.toLowerCase().includes(state.auditFilter);row.hidden=!match;if(match)shown++})
+    const count=document.querySelector('.audit-search span');if(count)count.textContent=`${shown} / ${state.audit?.events?.length||0}`
+  })
+  document.querySelector('#copy-current-log')?.addEventListener('click',()=>copyText(state.logTab==='system'?(state.systemLogs?.logs||''):filteredAuditEvents().map(auditEventText).join('\n'),'日志已复制'))
+  document.querySelector('#export-audit')?.addEventListener('click',()=>state.logTab==='system'?downloadText(`lukepanel-system-${Date.now()}.log`,state.systemLogs?.logs||''):downloadText(`lukepanel-audit-${Date.now()}.json`,JSON.stringify(filteredAuditEvents(),null,2),'application/json;charset=utf-8'))
+
+  document.querySelector('#refresh-ssh')?.addEventListener('click',()=>loadSSH(state.sshUser))
+  document.querySelector('#ssh-user')?.addEventListener('change',event=>loadSSH(event.target.value))
+  const sshForm=document.querySelector('#ssh-key-form');if(sshForm)sshForm.onsubmit=event=>{event.preventDefault();addSSHKey(sshForm)}
+  document.querySelectorAll('[data-ssh-key-delete]').forEach(button=>button.onclick=()=>deleteSSHKey(button.dataset.sshKeyDelete))
+
+  const githubRepoForm=document.querySelector('#github-repo-form');if(githubRepoForm)githubRepoForm.onsubmit=event=>{event.preventDefault();const f=new FormData(githubRepoForm);loadGitHub(String(f.get('owner')).trim(),String(f.get('repo')).trim())}
+  const githubTagForm=document.querySelector('#github-tag-form');if(githubTagForm)githubTagForm.onsubmit=event=>{event.preventDefault();createGitHubTag(githubTagForm)}
+  document.querySelectorAll('[data-github-rerun]').forEach(button=>button.onclick=()=>rerunGitHubAction(button.dataset.githubRerun))
+
+  const interval=document.querySelector('#refresh-interval');if(interval){interval.value=String(state.settings?.auto_refresh_seconds||5);interval.onchange=async()=>{try{await api('/api/v1/settings',{method:'PATCH',body:jsonBody({auto_refresh_seconds:Number(interval.value)})});state.settings.auto_refresh_seconds=Number(interval.value);syncOverviewUpdates()}catch(e){alert(e.message)}}}
   document.querySelector('#revoke-sessions')?.addEventListener('click',async()=>{if(!confirm('确认退出其他所有设备？'))return;try{const r=await api('/api/v1/auth/sessions',{method:'DELETE'});alert(`已退出 ${r.revoked} 个会话`);await loadSecurity()}catch(e){alert(e.message)}})
   const passwordForm=document.querySelector('#password-form');if(passwordForm)passwordForm.onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget),message=document.querySelector('#password-message'),button=e.currentTarget.querySelector('button'),next=String(f.get('next')||''),confirmValue=String(f.get('confirm')||'');message.hidden=true;if(next!==confirmValue){message.textContent='两次输入的新密码不一致';message.hidden=false;return}button.disabled=true;button.textContent='正在保存…';try{await api('/api/v1/auth/password',{method:'POST',body:jsonBody({current_password:f.get('current'),new_password:next})});message.className='form-success';message.textContent='密码已更新，其他设备已退出';message.hidden=false;e.currentTarget.reset()}catch(err){message.className='form-error';message.textContent=err.message;message.hidden=false}finally{button.disabled=false;button.textContent='保存新密码'}}
+
   document.querySelector('#process-term')?.addEventListener('click',()=>signalProcess(state.modal.pid,'term'))
   document.querySelector('#process-kill')?.addEventListener('click',()=>signalProcess(state.modal.pid,'kill'))
   document.querySelector('#modal-close')?.addEventListener('click',closeModal)
+  document.querySelector('#modal-done')?.addEventListener('click',closeModal)
   document.querySelector('#modal-backdrop')?.addEventListener('click',e=>{if(e.target.id==='modal-backdrop')closeModal()})
+  document.querySelector('#copy-modal-log')?.addEventListener('click',()=>copyText(state.modal?.content||'','日志已复制'))
+  document.querySelectorAll('[data-file-action]').forEach(button=>button.onclick=()=>{
+    const action=button.dataset.fileAction,item=state.modal?.item;if(!item)return
+    if(action==='copy-path'){copyText(item.path,'路径已复制');return}
+    if(action==='download'){location.href=`/api/v1/files/download?path=${encodeURIComponent(item.path)}`;return}
+    fileMutation(action,item)
+  })
   document.querySelector('#file-editor')?.addEventListener('input',()=>{if(state.modal)state.modal.dirty=true})
   document.querySelector('#save-file')?.addEventListener('click',saveFile)
+  document.querySelector('#copy-file-path')?.addEventListener('click',()=>copyText(state.modal?.path||'','路径已复制'))
+  document.querySelector('#copy-file-content')?.addEventListener('click',()=>copyText(document.querySelector('#file-editor')?.value||'','内容已复制'))
   document.querySelector('#download-file')?.addEventListener('click',()=>{location.href=`/api/v1/files/download?path=${encodeURIComponent(state.modal.path)}`})
-  document.querySelector('#rename-file')?.addEventListener('click',renameCurrent)
-  document.querySelector('#delete-file')?.addEventListener('click',deleteCurrent)
+  document.querySelector('#rename-file')?.addEventListener('click',()=>fileMutation('rename',{path:state.modal.path,is_dir:false,mode:state.fileContent?.mode}))
+  document.querySelector('#delete-file')?.addEventListener('click',()=>fileMutation('delete',{path:state.modal.path,is_dir:false,mode:state.fileContent?.mode}))
 }
+
 function closeModal(){if(state.modal?.dirty&&!confirm('有未保存的修改，确认关闭？'))return;state.modal=null;render()}
 function setBusy(value){document.body.classList.toggle('busy',value)}
 
 function render(){
   if(!state.authenticated){if(location.pathname!='/login')history.replaceState({},'','/login');renderLogin();return}
   if(location.pathname==='/login')history.replaceState({},'','/')
-  const routes={'/':dashboard,'/system':systemPage,'/services':servicesPage,'/processes':processesPage,'/network':networkPage,'/storage':storagePage,'/tasks':tasksPage,'/updates':updatesPage,'/files':filesPage,'/docker':dockerPage,'/tools':toolsPage,'/audit':auditPage,'/security':securityPage}
-  app.innerHTML=shell((routes[location.pathname]||routes['/'])());bindShell();syncAutoRefresh()
+  const routes={'/':dashboard,'/system':systemPage,'/services':servicesPage,'/processes':processesPage,'/network':networkPage,'/storage':storagePage,'/tasks':tasksPage,'/updates':updatesPage,'/files':filesPage,'/docker':dockerPage,'/tools':toolsPage,'/github':githubPage,'/ssh':sshPage,'/audit':auditPage,'/security':securityPage}
+  app.innerHTML=shell((routes[location.pathname]||routes['/'])());bindShell();syncOverviewUpdates()
 }
 
 restore()

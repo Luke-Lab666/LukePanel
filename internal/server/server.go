@@ -20,6 +20,7 @@ import (
 	"github.com/Luke-Lab666/LukePanel/internal/agent"
 	"github.com/Luke-Lab666/LukePanel/internal/auth"
 	"github.com/Luke-Lab666/LukePanel/internal/config"
+	"github.com/Luke-Lab666/LukePanel/internal/githubhelper"
 	"github.com/Luke-Lab666/LukePanel/internal/system"
 	"github.com/Luke-Lab666/LukePanel/internal/tools"
 )
@@ -35,6 +36,7 @@ type Server struct {
 	http       *http.Server
 	collector  *system.Collector
 	agent      *agent.Client
+	github     *githubhelper.Client
 	sessions   *auth.Store
 	limiter    *auth.LoginLimiter
 	audit      *AuditLog
@@ -46,7 +48,7 @@ type Server struct {
 func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*Server, error) {
 	s := &Server{
 		cfg: cfg, configPath: configPath, version: version, collector: system.NewCollector(),
-		agent: agent.NewClient(cfg.AgentSocket, cfg.AgentSecret), sessions: auth.NewStore(cfg.SessionSecret, 24*time.Hour),
+		agent: agent.NewClient(cfg.AgentSocket, cfg.AgentSecret), github: githubhelper.New(), sessions: auth.NewStore(cfg.SessionSecret, 24*time.Hour),
 		limiter: auth.NewLoginLimiter(), audit: NewAuditLog(cfg.DataDir), logger: logger, elevated: make(map[string]time.Time),
 	}
 	mux := http.NewServeMux()
@@ -58,6 +60,7 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/auth/me", s.requireAuth(s.me))
 	mux.HandleFunc("/api/v1/auth/sessions", s.requireAuth(s.sessionManagement))
 	mux.HandleFunc("/api/v1/system/overview", s.requireAuth(s.overview))
+	mux.HandleFunc("/api/v1/system/overview/stream", s.requireAuth(s.overviewStream))
 	mux.HandleFunc("/api/v1/system/services", s.requireAuth(s.serviceList))
 	mux.HandleFunc("/api/v1/system/services/action", s.requireAuth(s.serviceAction))
 	mux.HandleFunc("/api/v1/system/services/logs", s.requireAuth(s.serviceLogs))
@@ -78,6 +81,8 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/docker/networks/delete", s.requireAuth(s.dockerNetworkDelete))
 	mux.HandleFunc("/api/v1/docker/volumes", s.requireAuth(s.dockerVolumes))
 	mux.HandleFunc("/api/v1/docker/volumes/delete", s.requireAuth(s.dockerVolumeDelete))
+	mux.HandleFunc("/api/v1/docker/compose", s.requireAuth(s.dockerCompose))
+	mux.HandleFunc("/api/v1/docker/compose/action", s.requireAuth(s.dockerComposeAction))
 	mux.HandleFunc("/api/v1/files", s.requireAuth(s.files))
 	mux.HandleFunc("/api/v1/files/content", s.requireAuth(s.fileContent))
 	mux.HandleFunc("/api/v1/files/create", s.requireAuth(s.fileCreate))
@@ -86,6 +91,18 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/files/delete", s.requireAuth(s.fileDelete))
 	mux.HandleFunc("/api/v1/files/download", s.requireAuth(s.fileDownload))
 	mux.HandleFunc("/api/v1/files/upload", s.requireAuth(s.fileUpload))
+	mux.HandleFunc("/api/v1/files/copy", s.requireAuth(s.fileCopy))
+	mux.HandleFunc("/api/v1/files/move", s.requireAuth(s.fileMove))
+	mux.HandleFunc("/api/v1/files/chmod", s.requireAuth(s.fileChmod))
+	mux.HandleFunc("/api/v1/files/recycle", s.requireAuth(s.fileRecycle))
+	mux.HandleFunc("/api/v1/ssh/status", s.requireAuth(s.sshStatus))
+	mux.HandleFunc("/api/v1/ssh/users", s.requireAuth(s.sshUsers))
+	mux.HandleFunc("/api/v1/ssh/keys", s.requireAuth(s.sshKeys))
+	mux.HandleFunc("/api/v1/ssh/keys/add", s.requireAuth(s.sshKeyAdd))
+	mux.HandleFunc("/api/v1/ssh/keys/delete", s.requireAuth(s.sshKeyDelete))
+	mux.HandleFunc("/api/v1/github/summary", s.requireAuth(s.githubSummary))
+	mux.HandleFunc("/api/v1/github/tag", s.requireAuth(s.githubCreateTag))
+	mux.HandleFunc("/api/v1/github/rerun", s.requireAuth(s.githubRerunFailed))
 	mux.HandleFunc("/api/v1/logs/system", s.requireAuth(s.systemLogs))
 	mux.HandleFunc("/api/v1/audit", s.requireAuth(s.auditEvents))
 	mux.HandleFunc("/api/v1/tools/run", s.requireAuth(s.runTool))
@@ -265,6 +282,59 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, data)
 }
 
+func (s *Server) overviewStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "当前环境不支持实时推送")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	send := func() error {
+		data, err := s.collector.Collect()
+		if err != nil {
+			return err
+		}
+		payload, err := json.Marshal(data)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "event: overview\ndata: %s\n\n", payload); err != nil {
+			return err
+		}
+		flusher.Flush()
+		return nil
+	}
+	if err := send(); err != nil {
+		return
+	}
+	ticker := time.NewTicker(2 * time.Second)
+	keepAlive := time.NewTicker(25 * time.Second)
+	defer ticker.Stop()
+	defer keepAlive.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			if err := send(); err != nil {
+				return
+			}
+		case <-keepAlive.C:
+			if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
 func (s *Server) serviceList(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/services", url.Values{"query": {r.URL.Query().Get("query")}}), nil, "")
 }
@@ -355,6 +425,30 @@ func (s *Server) dockerAction(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditRequest(r, "docker."+req["action"], req["id"], "success", "")
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) dockerCompose(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/docker/compose", nil, "")
+}
+func (s *Server) dockerComposeAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]string
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/docker/compose/action", req, &out); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.auditRequest(r, "docker.compose."+req["action"], req["project"], "success", "")
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) dockerImages(w http.ResponseWriter, r *http.Request) {
@@ -476,6 +570,40 @@ func (s *Server) fileMutation(w http.ResponseWriter, r *http.Request, endpoint, 
 	s.auditRequest(r, action, target, "success", "")
 	writeJSON(w, http.StatusOK, out)
 }
+func (s *Server) fileCopy(w http.ResponseWriter, r *http.Request) {
+	s.fileMutation(w, r, "/v1/files/copy", "files.copy")
+}
+func (s *Server) fileMove(w http.ResponseWriter, r *http.Request) {
+	s.fileMutation(w, r, "/v1/files/move", "files.move")
+}
+func (s *Server) fileChmod(w http.ResponseWriter, r *http.Request) {
+	s.fileMutation(w, r, "/v1/files/chmod", "files.chmod")
+}
+func (s *Server) fileRecycle(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		s.proxyAgentJSON(w, r, http.MethodGet, "/v1/files/recycle", nil, "")
+		return
+	}
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]string
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/files/recycle", req, &out); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.auditRequest(r, "files.recycle."+req["action"], req["id"], "success", "")
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) fileDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -526,6 +654,133 @@ func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditRequest(r, "files.upload", fmt.Sprint(out["path"]), "success", "")
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) sshStatus(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/ssh/status", nil, "")
+}
+func (s *Server) sshUsers(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/ssh/users", nil, "")
+}
+func (s *Server) sshKeys(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/ssh/keys", url.Values{"user": {r.URL.Query().Get("user")}}), nil, "")
+}
+func (s *Server) sshKeyAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]string
+	if decodeJSON(w, r, 1<<20, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/ssh/keys/add", req, &out); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.auditRequest(r, "ssh.key.add", req["user"], "success", "")
+	writeJSON(w, http.StatusOK, out)
+}
+func (s *Server) sshKeyDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]string
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/ssh/keys/delete", req, nil); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.auditRequest(r, "ssh.key.delete", req["user"]+":"+req["id"], "success", "")
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) githubSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	owner, repo := r.URL.Query().Get("owner"), r.URL.Query().Get("repo")
+	summary, err := s.github.Summary(r.Context(), owner, repo, "")
+	if err != nil {
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "无法连接 GitHub API") {
+			status = http.StatusBadGateway
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+func (s *Server) githubCreateTag(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req struct{ Owner, Repo, Tag, TargetSHA, Token string }
+	if decodeJSON(w, r, 64<<10, &req) != nil {
+		return
+	}
+	if !s.cfg.SecureCookie {
+		writeError(w, http.StatusBadRequest, "必须通过 HTTPS 使用 GitHub Token")
+		return
+	}
+	if err := s.github.CreateTag(r.Context(), req.Owner, req.Repo, req.Tag, req.TargetSHA, req.Token); err != nil {
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "无法连接 GitHub API") {
+			status = http.StatusBadGateway
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	s.auditRequest(r, "github.tag.create", req.Owner+"/"+req.Repo+":"+req.Tag, "success", "token not stored")
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) githubRerunFailed(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req struct {
+		Owner string `json:"owner"`
+		Repo  string `json:"repo"`
+		RunID int64  `json:"run_id"`
+		Token string `json:"token"`
+	}
+	if decodeJSON(w, r, 64<<10, &req) != nil {
+		return
+	}
+	if !s.cfg.SecureCookie {
+		writeError(w, http.StatusBadRequest, "必须通过 HTTPS 使用 GitHub Token")
+		return
+	}
+	if err := s.github.RerunFailedJobs(r.Context(), req.Owner, req.Repo, req.RunID, req.Token); err != nil {
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "无法连接 GitHub API") {
+			status = http.StatusBadGateway
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	s.auditRequest(r, "github.actions.rerun_failed", fmt.Sprintf("%s/%s#%d", req.Owner, req.Repo, req.RunID), "success", "token not stored")
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) systemLogs(w http.ResponseWriter, r *http.Request) {

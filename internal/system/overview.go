@@ -141,7 +141,8 @@ func readDisk(path string) Disk {
 	}
 	total := st.Blocks * uint64(st.Bsize)
 	available := st.Bavail * uint64(st.Bsize)
-	return Disk{total, total - available, available}
+	used := (st.Blocks - st.Bfree) * uint64(st.Bsize)
+	return Disk{total, used, available}
 }
 func readNetworkTotals() (uint64, uint64) {
 	f, err := os.Open("/proc/net/dev")

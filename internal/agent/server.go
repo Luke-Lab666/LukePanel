@@ -19,6 +19,7 @@ import (
 	"github.com/Luke-Lab666/LukePanel/internal/dockerapi"
 	filemanager "github.com/Luke-Lab666/LukePanel/internal/files"
 	"github.com/Luke-Lab666/LukePanel/internal/services"
+	"github.com/Luke-Lab666/LukePanel/internal/sshadmin"
 	"github.com/Luke-Lab666/LukePanel/internal/systemadmin"
 )
 
@@ -29,6 +30,7 @@ type Server struct {
 	services  *services.Manager
 	files     *filemanager.Manager
 	processes *systemadmin.ProcessManager
+	ssh       *sshadmin.Manager
 	http      *http.Server
 }
 
@@ -37,7 +39,7 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, logger: logger, docker: dockerapi.New("/var/run/docker.sock"), services: services.New(), files: fm, processes: systemadmin.NewProcessManager()}
+	s := &Server{cfg: cfg, logger: logger, docker: dockerapi.New("/var/run/docker.sock"), services: services.New(), files: fm, processes: systemadmin.NewProcessManager(), ssh: sshadmin.New(cfg.DataDir)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", s.health)
 	mux.HandleFunc("/v1/docker/status", s.dockerStatus)
@@ -51,6 +53,8 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.HandleFunc("/v1/docker/networks/delete", s.dockerNetworkDelete)
 	mux.HandleFunc("/v1/docker/volumes", s.dockerVolumes)
 	mux.HandleFunc("/v1/docker/volumes/delete", s.dockerVolumeDelete)
+	mux.HandleFunc("/v1/docker/compose", s.dockerCompose)
+	mux.HandleFunc("/v1/docker/compose/action", s.dockerComposeAction)
 	mux.HandleFunc("/v1/services", s.serviceList)
 	mux.HandleFunc("/v1/services/action", s.serviceAction)
 	mux.HandleFunc("/v1/services/logs", s.serviceLogs)
@@ -69,6 +73,15 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.HandleFunc("/v1/files/delete", s.fileDelete)
 	mux.HandleFunc("/v1/files/download", s.fileDownload)
 	mux.HandleFunc("/v1/files/upload", s.fileUpload)
+	mux.HandleFunc("/v1/files/copy", s.fileCopy)
+	mux.HandleFunc("/v1/files/move", s.fileMove)
+	mux.HandleFunc("/v1/files/chmod", s.fileChmod)
+	mux.HandleFunc("/v1/files/recycle", s.fileRecycle)
+	mux.HandleFunc("/v1/ssh/status", s.sshStatus)
+	mux.HandleFunc("/v1/ssh/users", s.sshUsers)
+	mux.HandleFunc("/v1/ssh/keys", s.sshKeys)
+	mux.HandleFunc("/v1/ssh/keys/add", s.sshKeyAdd)
+	mux.HandleFunc("/v1/ssh/keys/delete", s.sshKeyDelete)
 	s.http = &http.Server{Handler: s.authenticate(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Minute, WriteTimeout: 10 * time.Minute, IdleTimeout: 60 * time.Second}
 	return s, nil
 }
@@ -259,6 +272,35 @@ func (s *Server) dockerVolumeDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) dockerCompose(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	projects, err := s.docker.ComposeProjects(r.Context())
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"projects": projects})
+}
+func (s *Server) dockerComposeAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct{ Project, Action string }
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	output, err := s.docker.ComposeAction(r.Context(), req.Project, req.Action)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"output": output})
 }
 
 func (s *Server) serviceList(w http.ResponseWriter, r *http.Request) {
@@ -487,6 +529,87 @@ func (s *Server) fileDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"recycle_path": destination})
 }
+func (s *Server) fileCopy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct{ Source, Destination string }
+	if decodeJSON(w, r, 32<<10, &req) != nil {
+		return
+	}
+	if err := s.files.Copy(req.Source, req.Destination); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+func (s *Server) fileMove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct{ Source, Destination string }
+	if decodeJSON(w, r, 32<<10, &req) != nil {
+		return
+	}
+	if err := s.files.Move(req.Source, req.Destination); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+func (s *Server) fileChmod(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct{ Path, Mode string }
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	if err := s.files.Chmod(req.Path, req.Mode); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+func (s *Server) fileRecycle(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		entries, err := s.files.ListRecycle()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"entries": entries})
+	case http.MethodPost:
+		var req struct{ ID, Action, Destination string }
+		if decodeJSON(w, r, 16<<10, &req) != nil {
+			return
+		}
+		switch req.Action {
+		case "restore":
+			path, err := s.files.RestoreRecycle(req.ID, req.Destination)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"path": path})
+		case "purge":
+			if err := s.files.PurgeRecycle(req.ID); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		default:
+			writeError(w, http.StatusBadRequest, "不支持的回收站操作")
+		}
+	default:
+		methodNotAllowed(w)
+	}
+}
+
 func (s *Server) fileDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -525,6 +648,69 @@ func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"path": path})
+}
+
+func (s *Server) sshStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.ssh.Status(r.Context()))
+}
+func (s *Server) sshUsers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	users, err := s.ssh.Users()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+func (s *Server) sshKeys(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	keys, err := s.ssh.Keys(r.URL.Query().Get("user"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"keys": keys})
+}
+func (s *Server) sshKeyAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct{ User, Key string }
+	if decodeJSON(w, r, 1<<20, &req) != nil {
+		return
+	}
+	key, err := s.ssh.AddKey(req.User, req.Key)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, key)
+}
+func (s *Server) sshKeyDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct{ User, ID string }
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	if err := s.ssh.DeleteKey(req.User, req.ID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, max int64, out any) error {
