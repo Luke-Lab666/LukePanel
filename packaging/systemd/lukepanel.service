@@ -1,0 +1,23 @@
+[Unit]
+Description=LukePanel lightweight system management panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lukepanel
+Group=lukepanel
+ExecStart=/usr/local/bin/lukepanel --config /etc/lukepanel/config.json
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=/var/lib/lukepanel /etc/lukepanel
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target
