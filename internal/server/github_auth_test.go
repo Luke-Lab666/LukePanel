@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/Luke-Lab666/LukePanel/internal/auth"
-	"github.com/Luke-Lab666/LukePanel/internal/config"
 )
 
 func githubTestRequest(method, target, body string) *http.Request {
@@ -27,29 +26,38 @@ func TestGitHubAuthStatusReportsDeviceLoginAvailability(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["connected"] != false || body["device_login_available"] != true {
+	if body["connected"] != false || body["device_login_available"] != true || body["device_login_configurable"] != false {
 		t.Fatalf("body = %#v", body)
 	}
 }
 
-func TestGitHubDeviceStartWithoutClientIDReturnsUnavailable(t *testing.T) {
-	srv := &Server{
-		cfg:          config.Config{SecureCookie: true},
-		githubTokens: make(map[string]githubCredential),
-		githubFlows:  make(map[string]*githubDeviceFlow),
+func TestEffectiveGitHubClientIDUsesGitHubCLIFallback(t *testing.T) {
+	srv := &Server{}
+	if got := srv.effectiveGitHubClientID(); got != defaultGitHubDeviceClientID {
+		t.Fatalf("client id = %q", got)
 	}
+}
+
+func TestEffectiveGitHubClientIDAllowsProjectOverride(t *testing.T) {
+	const custom = "Ov23li12345678901234"
+	srv := &Server{githubClientID: custom}
+	if got := srv.effectiveGitHubClientID(); got != custom {
+		t.Fatalf("client id = %q", got)
+	}
+}
+
+func TestGitHubAuthStatusUsesZeroSetupDeviceLogin(t *testing.T) {
+	srv := &Server{githubTokens: make(map[string]githubCredential)}
 	recorder := httptest.NewRecorder()
-	req := githubTestRequest(http.MethodPost, "/api/v1/github/auth/device/start", `{}`)
-	req.Header.Set("Content-Type", "application/json")
-	srv.githubDeviceStart(recorder, req)
-	if recorder.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, body=%s", recorder.Code, recorder.Body.String())
+	srv.githubAuthStatus(recorder, githubTestRequest(http.MethodGet, "/api/v1/github/auth/status", ""))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d", recorder.Code)
 	}
-	var body map[string]string
+	var body map[string]any
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["code"] != "github_device_unavailable" {
+	if body["device_login_available"] != true || body["device_login_configurable"] != false || body["device_login_provider"] != "github-cli" {
 		t.Fatalf("body = %#v", body)
 	}
 }

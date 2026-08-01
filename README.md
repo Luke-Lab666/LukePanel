@@ -2,7 +2,7 @@
 
 面向 Debian 12/13 的轻量系统管理面板。移动端优先、桌面端增强；核心由 Go 单二进制构成，不依赖 Node.js 运行时、Redis、外部数据库、Prometheus 或 Grafana。
 
-> 当前版本：`v0.9.6-beta`。核心单机管理功能已经进入功能冻结阶段；Beta 期间重点处理真实环境兼容性、安全审计和交互细节。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
+> 当前版本：`v0.9.7-beta`。核心单机管理功能已经进入功能冻结阶段；Beta 期间重点处理真实环境兼容性、安全审计和交互细节。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
 
 ## 设计目标
 
@@ -213,9 +213,11 @@ lukepanel-uninstall --purge
 systemctl restart lukepanel-agent lukepanel
 ```
 
-### GitHub 设备登录构建配置
+### GitHub 设备登录
 
-面板用户不需要填写 Client ID。项目维护者需要在 GitHub 仓库的 Actions Variables 中设置 `LUKEPANEL_GITHUB_CLIENT_ID`，Release 构建会把公开的 OAuth App Client ID 注入二进制；本地运行也可通过同名环境变量提供。未配置时仅隐藏设备登录按钮，Token 登录仍可使用。OAuth App 必须开启 Device Flow。
+GitHub 助手默认提供零配置 Device Flow：点击“使用 GitHub 设备登录”，在 `github.com/login/device` 输入一次性代码并授权，LukePanel 会在后台轮询并自动完成登录。OAuth Token 不返回给浏览器、不显示给用户，只保存在当前 LukePanel 会话内；断开连接、退出面板或服务重启后清除。
+
+默认流程使用 GitHub CLI 的公开 OAuth 应用标识作为设备授权入口。项目维护者如需换成自己的 OAuth App，可通过 Actions Variable `LUKEPANEL_GITHUB_CLIENT_ID`、同名环境变量或构建参数覆盖；自定义 OAuth App 必须开启 Device Flow。
 
 ## 服务排查
 

@@ -31,6 +31,18 @@ type githubDeviceFlow struct {
 	NextPoll        time.Time
 }
 
+// defaultGitHubDeviceClientID is the public OAuth client ID used by GitHub CLI.
+// Device Flow does not require a client secret. A LukePanel-specific OAuth app
+// can still override this value through the existing build flag or environment.
+const defaultGitHubDeviceClientID = "178c6fc778ccc68e1d6a"
+
+func (s *Server) effectiveGitHubClientID() string {
+	if clientID := strings.TrimSpace(s.githubClientID); clientID != "" {
+		return clientID
+	}
+	return defaultGitHubDeviceClientID
+}
+
 func (s *Server) githubAuthStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -40,14 +52,22 @@ func (s *Server) githubAuthStatus(w http.ResponseWriter, r *http.Request) {
 	s.githubMu.Lock()
 	credential, ok := s.githubTokens[session.ID]
 	s.githubMu.Unlock()
+	deviceAvailable := s.effectiveGitHubClientID() != ""
 	if !ok {
-		writeJSON(w, http.StatusOK, map[string]any{"connected": false, "device_login_available": s.githubClientID != ""})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"connected":                 false,
+			"device_login_available":    deviceAvailable,
+			"device_login_configurable": false,
+			"device_login_provider":     "github-cli",
+		})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"connected": true, "login": credential.Login, "name": credential.Name, "avatar_url": credential.AvatarURL,
 		"html_url": credential.HTMLURL, "scope": credential.Scope, "connected_at": credential.ConnectedAt,
-		"device_login_available": s.githubClientID != "",
+		"device_login_available":    deviceAvailable,
+		"device_login_configurable": false,
+		"device_login_provider":     "github-cli",
 	})
 }
 
@@ -60,9 +80,13 @@ func (s *Server) githubDeviceStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "必须先通过 HTTPS 访问面板才能连接 GitHub")
 		return
 	}
-	clientID := strings.TrimSpace(s.githubClientID)
-	if clientID == "" {
-		writeErrorCode(w, http.StatusServiceUnavailable, "GitHub 设备登录暂不可用", "github_device_unavailable")
+	var req struct{}
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	clientID := s.effectiveGitHubClientID()
+	if len(clientID) < 12 || len(clientID) > 128 || strings.ContainsAny(clientID, " \t\r\n") {
+		writeErrorCode(w, http.StatusServiceUnavailable, "GitHub 设备登录配置无效", "github_device_unavailable")
 		return
 	}
 	const scope = "repo workflow read:user"

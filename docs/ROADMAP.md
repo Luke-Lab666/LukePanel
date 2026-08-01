@@ -119,6 +119,13 @@
 - [x] 项目级 GitHub Device Flow 登录与 Token 备用入口
 - [x] 完整文件系统管理、虚拟目录只读和敏感文件二次验证
 
+## v0.9.7 Device Flow 收尾
+
+- [x] GitHub 设备授权零配置入口
+- [x] 授权成功后后台自动登录，前端不接收或显示 OAuth Token
+- [x] Token 登录折叠为高级备用方式
+- [x] iOS 键盘、全屏弹窗与二级页面布局复检
+
 ## v1.0 稳定版
 
 - [ ] 真实 Debian 12/13、Ubuntu LTS 和主流反向代理兼容性矩阵

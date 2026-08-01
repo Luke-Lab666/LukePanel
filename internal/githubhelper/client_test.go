@@ -160,6 +160,13 @@ func TestDeviceFlow(t *testing.T) {
 	if err != nil || second.Status != "authorized" || second.AccessToken != "token" {
 		t.Fatalf("second=%#v err=%v", second, err)
 	}
+	encoded, err := json.Marshal(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte("access_token")) || bytes.Contains(encoded, []byte(`"token"`)) {
+		t.Fatalf("device response leaked access token: %s", encoded)
+	}
 }
 
 func TestListAndMergePullRequests(t *testing.T) {

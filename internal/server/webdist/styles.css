@@ -258,3 +258,162 @@ input,select,textarea,button{max-width:100%}
   .elevation-dialog-backdrop{align-items:flex-end}
 }
 @media(min-width:768px){.elevation-dialog-backdrop{align-items:center}.elevation-dialog-card{border-radius:16px}}
+
+/* v0.9.7 mobile viewport, device-login and compact-card follow-up */
+:root{
+  --visual-viewport-height:100dvh;
+  --visual-viewport-top:0px;
+  --visual-viewport-bottom:0px;
+}
+
+.github-auth-card{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  align-items:stretch;
+  gap:14px;
+}
+.github-auth-heading h2{margin:0;font-size:18px}
+.github-auth-heading p{margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.55}
+.github-device-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end;width:100%;margin:0!important}
+.github-device-form label{display:grid;gap:7px;min-width:0;font-size:12px;font-weight:650}
+.github-device-form input{width:100%;height:46px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);padding:0 12px;outline:0}
+.github-device-form>button{min-width:190px}
+.github-device-form.needs-client-id{grid-template-columns:minmax(0,1fr) auto}
+.github-device-status{grid-column:1/-1;display:flex;align-items:flex-start;gap:9px;padding:11px 12px;border-radius:10px;background:color-mix(in srgb,#d97706 9%,var(--surface));color:#b45309;font-size:12px;line-height:1.55}
+.github-device-status svg{flex:0 0 auto;margin-top:1px}
+.github-auth-card .token-guide{width:100%;margin:0}
+.device-flow-box{margin:0}
+
+@media(max-width:767px){
+  body.overlay-open,body.keyboard-open{overflow:hidden;overscroll-behavior:none}
+  body.overlay-open .mobile-nav,body.keyboard-open .mobile-nav{display:none!important}
+
+  .app-shell.no-mobile-nav .main-content{padding-bottom:calc(28px + env(safe-area-inset-bottom))!important}
+  .app-shell.has-mobile-nav .main-content{padding-bottom:calc(104px + env(safe-area-inset-bottom) + var(--visual-viewport-bottom))!important}
+  .mobile-nav{bottom:calc(10px + env(safe-area-inset-bottom) + var(--visual-viewport-bottom))!important}
+
+  .modal-backdrop,.app-dialog-backdrop,.elevation-dialog-backdrop{
+    inset:auto 0 auto 0!important;
+    top:var(--visual-viewport-top)!important;
+    height:var(--visual-viewport-height)!important;
+    max-height:var(--visual-viewport-height)!important;
+  }
+  .modal-backdrop{align-items:flex-end!important;padding:8px 0 0!important}
+  .modal-card,.modal-card.wide{
+    width:100%!important;
+    max-height:calc(var(--visual-viewport-height) - 8px)!important;
+    border-radius:18px 18px 0 0!important;
+    border-bottom:0!important;
+  }
+  .modal-card>header{flex:0 0 auto}
+  .modal-body{
+    min-height:0;
+    overflow:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    padding-bottom:max(16px,env(safe-area-inset-bottom));
+  }
+  .modal-card>footer{
+    flex:0 0 auto;
+    padding-bottom:calc(10px + env(safe-area-inset-bottom))!important;
+  }
+  .modal-body>.compose-config-editor{padding:14px 14px calc(18px + env(safe-area-inset-bottom))}
+  .compose-config-editor>button[type=submit]{
+    position:sticky;
+    bottom:0;
+    z-index:4;
+    width:100%;
+    min-height:50px;
+    box-shadow:0 -10px 24px color-mix(in srgb,var(--surface) 88%,transparent);
+  }
+  .compose-file-editor textarea{min-height:44vh!important;max-height:58vh}
+
+  .elevation-dialog-backdrop{
+    align-items:center!important;
+    padding:12px max(12px,env(safe-area-inset-right)) 12px max(12px,env(safe-area-inset-left))!important;
+  }
+  .elevation-dialog-card{max-height:calc(var(--visual-viewport-height) - 24px);overflow:auto}
+  #elevation-direct-form{gap:13px;padding:17px}
+  #elevation-direct-form header strong{font-size:17px}
+  #elevation-direct-form input{min-height:48px}
+
+  .github-device-form,.github-device-form.needs-client-id{grid-template-columns:minmax(0,1fr)}
+  .github-device-form>button{width:100%;min-width:0}
+  .github-device-status{grid-column:1}
+  .github-auth-card{padding:17px}
+  .device-flow-box>div{display:grid!important;grid-template-columns:1fr!important}
+  .device-flow-box>div>*{width:100%}
+
+  .apt-page .update-summary{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr);
+    align-items:stretch!important;
+    gap:16px!important;
+    padding:18px!important;
+  }
+  .apt-page .update-count{align-items:baseline}
+  .apt-page .update-summary>.info-list{
+    width:100%;
+    margin:0;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px;
+  }
+  .apt-page .update-summary>.info-list>div{
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+    gap:4px;
+    padding:11px;
+    border:0;
+    border-radius:10px;
+    background:var(--soft);
+  }
+  .apt-page .update-summary>.info-list dt{font-size:11px}
+  .apt-page .update-summary>.info-list dd{margin:0;text-align:left;font-size:13px;font-weight:650}
+  .apt-page .update-summary>.resource-actions{
+    width:100%;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:9px;
+  }
+  .apt-page .update-summary>.resource-actions button{width:100%;padding:0 10px}
+}
+
+
+/* v0.9.7 zero-setup GitHub Device Flow and iOS overlay polish */
+.github-device-form{display:block!important;width:100%;margin:0!important}
+.github-device-form>button{width:100%;min-width:0;min-height:50px}
+.device-flow-box{display:grid;gap:11px;text-align:center}
+.device-flow-box>strong{font-size:30px;letter-spacing:.14em;overflow-wrap:anywhere}
+.device-flow-hint{margin:0;color:var(--muted);font-size:12px;line-height:1.6}
+.device-flow-waiting{display:flex!important;align-items:center;justify-content:center;gap:6px;color:var(--primary)!important}
+.github-auth-card .token-guide{border-top:1px solid var(--border);padding-top:12px}
+.github-auth-card .token-guide>summary{color:var(--muted);font-size:12px}
+
+@media(max-width:767px){
+  .github-page{padding-bottom:calc(28px + env(safe-area-inset-bottom))}
+  .github-auth-card,.github-repo-form,.github-repo-empty{overflow:hidden}
+  .device-flow-box>strong{font-size:27px}
+
+  .modal-card,.modal-card.wide{
+    height:calc(var(--visual-viewport-height) - 8px)!important;
+    display:flex!important;
+    flex-direction:column!important;
+  }
+  .modal-card>.modal-body{flex:1 1 auto!important;min-height:0!important}
+
+  body.keyboard-open .elevation-dialog-backdrop{
+    align-items:flex-start!important;
+    padding-top:8px!important;
+  }
+  body.keyboard-open .elevation-dialog-card{
+    margin-top:0!important;
+    max-height:calc(var(--visual-viewport-height) - 16px)!important;
+  }
+  body.keyboard-open #elevation-direct-form header{display:none}
+  body.keyboard-open #elevation-direct-form{padding-top:14px}
+  body.keyboard-open #elevation-direct-form input{scroll-margin-top:12px}
+
+  .apt-page .update-summary{min-height:0!important}
+  .apt-page .update-summary>.info-list{align-self:stretch}
+}
