@@ -46,6 +46,8 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.HandleFunc("/v1/docker/containers", s.dockerContainers)
 	mux.HandleFunc("/v1/docker/action", s.dockerAction)
 	mux.HandleFunc("/v1/docker/logs", s.dockerLogs)
+	mux.HandleFunc("/v1/docker/inspect", s.dockerInspect)
+	mux.HandleFunc("/v1/docker/recreate", s.dockerRecreate)
 	mux.HandleFunc("/v1/docker/images", s.dockerImages)
 	mux.HandleFunc("/v1/docker/images/pull", s.dockerImagePull)
 	mux.HandleFunc("/v1/docker/images/delete", s.dockerImageDelete)
@@ -73,6 +75,7 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.HandleFunc("/v1/files/delete", s.fileDelete)
 	mux.HandleFunc("/v1/files/download", s.fileDownload)
 	mux.HandleFunc("/v1/files/upload", s.fileUpload)
+	mux.HandleFunc("/v1/files/archive/extract", s.fileArchiveExtract)
 	mux.HandleFunc("/v1/files/copy", s.fileCopy)
 	mux.HandleFunc("/v1/files/move", s.fileMove)
 	mux.HandleFunc("/v1/files/chmod", s.fileChmod)
@@ -166,6 +169,36 @@ func (s *Server) dockerLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"logs": logs})
+}
+
+func (s *Server) dockerInspect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	spec, err := s.docker.InspectContainer(r.Context(), r.URL.Query().Get("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, spec)
+}
+
+func (s *Server) dockerRecreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req dockerapi.RecreateRequest
+	if decodeJSON(w, r, 2<<20, &req) != nil {
+		return
+	}
+	result, err := s.docker.RecreateContainer(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) dockerImages(w http.ResponseWriter, r *http.Request) {
@@ -631,7 +664,7 @@ func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, filemanager.MaxUploadSize+(1<<20))
+	r.Body = http.MaxBytesReader(w, r.Body, filemanager.MaxUploadSize+(2<<20))
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "上传请求格式错误或文件过大")
 		return
@@ -642,12 +675,42 @@ func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	path, err := s.files.SaveUpload(r.FormValue("directory"), filepath.Base(header.Filename), file, filemanager.MaxUploadSize)
+	relativePath := strings.TrimSpace(r.FormValue("relative_path"))
+	if relativePath == "" {
+		relativePath = filepath.Base(header.Filename)
+	}
+	overwrite := r.FormValue("overwrite") == "1" || strings.EqualFold(r.FormValue("overwrite"), "true")
+	path, err := s.files.SaveUploadRelative(r.FormValue("directory"), relativePath, file, filemanager.MaxUploadSize, overwrite)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"path": path})
+}
+
+func (s *Server) fileArchiveExtract(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, filemanager.MaxUploadSize+(2<<20))
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "压缩包请求格式错误或文件过大")
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "缺少 ZIP 压缩包")
+		return
+	}
+	defer file.Close()
+	overwrite := r.FormValue("overwrite") == "1" || strings.EqualFold(r.FormValue("overwrite"), "true")
+	result, err := s.files.ExtractZIP(r.FormValue("directory"), file, overwrite)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) sshStatus(w http.ResponseWriter, r *http.Request) {

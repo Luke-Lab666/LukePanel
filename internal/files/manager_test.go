@@ -1,8 +1,11 @@
 package files
 
 import (
+	"archive/zip"
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -147,5 +150,76 @@ func TestManagerProtectsAllowedRoot(t *testing.T) {
 		if err := fn(); err == nil {
 			t.Fatalf("%s should reject the allowed root", name)
 		}
+	}
+}
+
+func TestSaveUploadRelativePreservesFoldersAndRejectsTraversal(t *testing.T) {
+	root := t.TempDir()
+	m, err := NewManager([]string{root}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := m.SaveUploadRelative(root, "project/config/app.yaml", strings.NewReader("ok\n"), 1024, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(root, "project", "config", "app.yaml"); path != want {
+		t.Fatalf("path = %q, want %q", path, want)
+	}
+	if content, err := os.ReadFile(path); err != nil || string(content) != "ok\n" {
+		t.Fatalf("content=%q err=%v", content, err)
+	}
+	if _, err := m.SaveUploadRelative(root, "../escape.txt", strings.NewReader("bad"), 1024, false); err == nil {
+		t.Fatal("expected traversal to be rejected")
+	}
+}
+
+func TestExtractZIPRejectsTraversal(t *testing.T) {
+	root := t.TempDir()
+	m, err := NewManager([]string{root}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	file, err := writer.Create("../escape.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = file.Write([]byte("bad"))
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ExtractZIP(root, bytes.NewReader(archive.Bytes()), false); err == nil {
+		t.Fatal("expected zip traversal to be rejected")
+	}
+}
+
+func TestExtractZIPCreatesNestedFiles(t *testing.T) {
+	root := t.TempDir()
+	m, err := NewManager([]string{root}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	file, err := writer.Create("folder/readme.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = file.Write([]byte("hello"))
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	result, err := m.ExtractZIP(root, bytes.NewReader(archive.Bytes()), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Files != 1 {
+		t.Fatalf("files = %d", result.Files)
+	}
+	content, err := os.ReadFile(filepath.Join(root, "folder", "readme.txt"))
+	if err != nil || string(content) != "hello" {
+		t.Fatalf("content=%q err=%v", content, err)
 	}
 }

@@ -29,27 +29,33 @@ import (
 var webAssets embed.FS
 
 type Server struct {
-	cfg        config.Config
-	configPath string
-	version    string
-	configMu   sync.RWMutex
-	http       *http.Server
-	collector  *system.Collector
-	agent      *agent.Client
-	github     *githubhelper.Client
-	sessions   *auth.Store
-	limiter    *auth.LoginLimiter
-	audit      *AuditLog
-	logger     *slog.Logger
-	elevatedMu sync.Mutex
-	elevated   map[string]time.Time
+	cfg            config.Config
+	configPath     string
+	version        string
+	configMu       sync.RWMutex
+	http           *http.Server
+	collector      *system.Collector
+	agent          *agent.Client
+	github         *githubhelper.Client
+	githubImporter *githubhelper.Importer
+	githubMu       sync.Mutex
+	githubTokens   map[string]githubCredential
+	githubFlows    map[string]*githubDeviceFlow
+	sessions       *auth.Store
+	limiter        *auth.LoginLimiter
+	audit          *AuditLog
+	logger         *slog.Logger
+	elevatedMu     sync.Mutex
+	elevated       map[string]time.Time
 }
 
 func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*Server, error) {
+	githubClient := githubhelper.New()
 	s := &Server{
 		cfg: cfg, configPath: configPath, version: version, collector: system.NewCollector(),
-		agent: agent.NewClient(cfg.AgentSocket, cfg.AgentSecret), github: githubhelper.New(), sessions: auth.NewStore(cfg.SessionSecret, 24*time.Hour),
+		agent: agent.NewClient(cfg.AgentSocket, cfg.AgentSecret), github: githubClient, githubImporter: githubhelper.NewImporter(githubClient, cfg.DataDir), sessions: auth.NewStore(cfg.SessionSecret, 24*time.Hour),
 		limiter: auth.NewLoginLimiter(), audit: NewAuditLog(cfg.DataDir), logger: logger, elevated: make(map[string]time.Time),
+		githubTokens: make(map[string]githubCredential), githubFlows: make(map[string]*githubDeviceFlow),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/health", s.health)
@@ -74,6 +80,8 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/docker/containers", s.requireAuth(s.dockerContainers))
 	mux.HandleFunc("/api/v1/docker/action", s.requireAuth(s.dockerAction))
 	mux.HandleFunc("/api/v1/docker/logs", s.requireAuth(s.dockerLogs))
+	mux.HandleFunc("/api/v1/docker/inspect", s.requireAuth(s.dockerInspect))
+	mux.HandleFunc("/api/v1/docker/recreate", s.requireAuth(s.dockerRecreate))
 	mux.HandleFunc("/api/v1/docker/images", s.requireAuth(s.dockerImages))
 	mux.HandleFunc("/api/v1/docker/images/pull", s.requireAuth(s.dockerImagePull))
 	mux.HandleFunc("/api/v1/docker/images/delete", s.requireAuth(s.dockerImageDelete))
@@ -91,6 +99,7 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/files/delete", s.requireAuth(s.fileDelete))
 	mux.HandleFunc("/api/v1/files/download", s.requireAuth(s.fileDownload))
 	mux.HandleFunc("/api/v1/files/upload", s.requireAuth(s.fileUpload))
+	mux.HandleFunc("/api/v1/files/archive/extract", s.requireAuth(s.fileArchiveExtract))
 	mux.HandleFunc("/api/v1/files/copy", s.requireAuth(s.fileCopy))
 	mux.HandleFunc("/api/v1/files/move", s.requireAuth(s.fileMove))
 	mux.HandleFunc("/api/v1/files/chmod", s.requireAuth(s.fileChmod))
@@ -100,6 +109,12 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/ssh/keys", s.requireAuth(s.sshKeys))
 	mux.HandleFunc("/api/v1/ssh/keys/add", s.requireAuth(s.sshKeyAdd))
 	mux.HandleFunc("/api/v1/ssh/keys/delete", s.requireAuth(s.sshKeyDelete))
+	mux.HandleFunc("/api/v1/github/auth/status", s.requireAuth(s.githubAuthStatus))
+	mux.HandleFunc("/api/v1/github/auth/device/start", s.requireAuth(s.githubDeviceStart))
+	mux.HandleFunc("/api/v1/github/auth/device/poll", s.requireAuth(s.githubDevicePoll))
+	mux.HandleFunc("/api/v1/github/auth/disconnect", s.requireAuth(s.githubDisconnect))
+	mux.HandleFunc("/api/v1/github/import/preview", s.requireAuth(s.githubImportPreview))
+	mux.HandleFunc("/api/v1/github/import/commit", s.requireAuth(s.githubImportCommit))
 	mux.HandleFunc("/api/v1/github/summary", s.requireAuth(s.githubSummary))
 	mux.HandleFunc("/api/v1/github/tag", s.requireAuth(s.githubCreateTag))
 	mux.HandleFunc("/api/v1/github/rerun", s.requireAuth(s.githubRerunFailed))
@@ -169,6 +184,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, _ := sessionFromContext(r)
+	s.clearGitHubSession(session.ID)
 	cookie, _ := r.Cookie("lukepanel_session")
 	if cookie != nil {
 		s.sessions.Delete(cookie.Value)
@@ -407,6 +423,31 @@ func (s *Server) dockerContainers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dockerLogs(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/docker/logs", url.Values{"id": {r.URL.Query().Get("id")}, "tail": {r.URL.Query().Get("tail")}}), nil, "")
 }
+func (s *Server) dockerInspect(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/docker/inspect", url.Values{"id": {r.URL.Query().Get("id")}}), nil, "docker.inspect")
+}
+
+func (s *Server) dockerRecreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]any
+	if decodeJSON(w, r, 2<<20, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/docker/recreate", req, &out); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.auditRequest(r, "docker.recreate", fmt.Sprint(req["id"]), "success", fmt.Sprint(out["name"]))
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) dockerAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
@@ -656,6 +697,33 @@ func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+func (s *Server) fileArchiveExtract(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	resp, err := s.agent.Raw(r.Context(), http.MethodPost, "/v1/files/archive/extract", r.Body, r.Header.Get("Content-Type"))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		s.copyAgentError(w, resp)
+		return
+	}
+	var out map[string]any
+	if json.NewDecoder(resp.Body).Decode(&out) != nil {
+		writeError(w, http.StatusBadGateway, "解压响应异常")
+		return
+	}
+	s.auditRequest(r, "files.archive.extract", fmt.Sprint(out["files"]), "success", "zip")
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) sshStatus(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/ssh/status", nil, "")
 }
@@ -711,7 +779,8 @@ func (s *Server) githubSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	owner, repo := r.URL.Query().Get("owner"), r.URL.Query().Get("repo")
-	summary, err := s.github.Summary(r.Context(), owner, repo, "")
+	session, _ := sessionFromContext(r)
+	summary, err := s.github.Summary(r.Context(), owner, repo, s.githubToken(session.ID))
 	if err != nil {
 		status := http.StatusBadRequest
 		if strings.Contains(err.Error(), "无法连接 GitHub API") {
@@ -738,7 +807,12 @@ func (s *Server) githubCreateTag(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "必须通过 HTTPS 使用 GitHub Token")
 		return
 	}
-	if err := s.github.CreateTag(r.Context(), req.Owner, req.Repo, req.Tag, req.TargetSHA, req.Token); err != nil {
+	session, _ := sessionFromContext(r)
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
+		token = s.githubToken(session.ID)
+	}
+	if err := s.github.CreateTag(r.Context(), req.Owner, req.Repo, req.Tag, req.TargetSHA, token); err != nil {
 		status := http.StatusBadRequest
 		if strings.Contains(err.Error(), "无法连接 GitHub API") {
 			status = http.StatusBadGateway
@@ -771,7 +845,12 @@ func (s *Server) githubRerunFailed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "必须通过 HTTPS 使用 GitHub Token")
 		return
 	}
-	if err := s.github.RerunFailedJobs(r.Context(), req.Owner, req.Repo, req.RunID, req.Token); err != nil {
+	session, _ := sessionFromContext(r)
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
+		token = s.githubToken(session.ID)
+	}
+	if err := s.github.RerunFailedJobs(r.Context(), req.Owner, req.Repo, req.RunID, token); err != nil {
 		status := http.StatusBadRequest
 		if strings.Contains(err.Error(), "无法连接 GitHub API") {
 			status = http.StatusBadGateway

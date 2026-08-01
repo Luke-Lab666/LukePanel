@@ -27,13 +27,25 @@
 - [x] GitHub 新手发布助手和 Actions 失败重试
 - [x] GitHub Release 手动运行与幂等附件上传
 
-## v0.4 下一阶段
+## v0.4 Docker 编辑、目录导入与 GitHub 推送
 
-- [ ] 容器实时资源统计和按需终端
+- [x] 概览 Docker 自动低频同步和 Swap 含义修正
+- [x] 网络 AF_NETLINK 修复与 sysfs 降级
+- [x] 非 Compose 容器结构化编辑、安全重建和失败回滚
+- [x] Compose 配置文件编辑引导
+- [x] 文件夹上传与 ZIP 安全解压
+- [x] GitHub OAuth Device Flow 网页登录
+- [x] GitHub ZIP 差异预览、Commit 和非强制 Push
+- [x] 移动端顶部安全区和按钮换行修复
+
+## v0.5 后续
+
+- [ ] 容器实时资源统计和按需诊断终端
 - [ ] Docker 高级清理、镜像构建、网络/卷创建
 - [ ] 安全的计划任务创建与模板化命令
 - [ ] APT 升级前检查、执行进度和可恢复策略
 - [ ] 文件差异对比、备份版本列表和单文件恢复
+- [ ] GitHub 分支创建、PR 创建和简单冲突提示
 - [ ] TOTP、恢复码、Passkey / WebAuthn
 - [ ] IP 白名单、登录告警和通知
 - [ ] SQLite 审计检索、轮转和导出策略

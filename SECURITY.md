@@ -23,15 +23,16 @@ LukePanel 仍处于 Alpha 阶段。不要在没有 HTTPS、强密码、访问控
 - `/etc/shadow`、`/etc/gshadow`、SSH 私钥和常见私钥禁止预览、编辑或下载
 - 在线编辑和 SSH 公钥修改前自动备份
 - 文件删除先进入隔离回收站
-- GitHub 写操作只接受一次性 Token，Token 不持久化、不审计
+- GitHub OAuth Token 仅保存在当前会话内存，不持久化、不审计；退出或重启后清除
+- GitHub ZIP 推送不 Force Push，并在提交前检查远端分支是否变化
 
-## GitHub Token 建议
+## GitHub 授权建议
 
-- 使用 Fine-grained Token，不使用长期 classic PAT。
-- Repository access 只选择需要管理的单个仓库。
-- 发布 Tag 只授予 `Contents: Read and write`。
-- 需要重试 Actions 时才增加 `Actions: Read and write`。
-- 用完后可立即在 GitHub 撤销该 Token。
+- 为 LukePanel 单独创建 GitHub OAuth App，并开启 Device Flow。
+- OAuth 授权只使用当前需要的账号；不在其他人共享的面板上连接 GitHub。
+- 仓库写入需要 `repo` 权限；修改 `.github/workflows` 还需要 `workflow` 权限。
+- LukePanel 断开连接只清除本机内存 Token；需要彻底撤销授权时，在 GitHub Applications 设置中撤销 OAuth App。
+- 上传 ZIP 前先核对目标仓库、分支和差异预览，提交后通过 GitHub Actions 检查结果。
 
 ## 部署建议
 

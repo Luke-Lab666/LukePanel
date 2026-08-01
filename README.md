@@ -2,7 +2,7 @@
 
 面向 Debian 12/13 的轻量系统管理面板。移动端优先、桌面端增强；核心由 Go 单二进制构成，不依赖 Node.js 运行时、Redis、外部数据库、Prometheus 或 Grafana。
 
-> 当前版本：`v0.3.0-alpha`。已经覆盖单机 VPS 的高频日常管理，但仍处于 Alpha 阶段。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
+> 当前版本：`v0.4.0-alpha`。已经覆盖单机 VPS 的高频日常管理，但仍处于 Alpha 阶段。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
 
 ## 设计目标
 
@@ -33,8 +33,11 @@
 
 ### Docker
 
-- Docker Engine 状态和版本
+- Docker Engine 状态和版本，概览页每 10 秒低频同步容器数量
 - 容器列表、状态、镜像、端口、启停、重启、删除和日志
+- 非 Compose 容器结构化编辑：镜像、环境变量、命令、端口、挂载和重启策略
+- 编辑采用安全重建事务；新容器失败时自动恢复旧容器
+- Compose 容器引导编辑对应 YAML，避免面板配置与 Compose 漂移
 - 镜像列表、拉取和删除
 - 网络与存储卷查看、删除
 - 自动识别 Docker Compose 项目
@@ -44,7 +47,8 @@
 
 - 允许目录浏览，默认包含 `/home`、`/root`、`/opt`、`/srv`、`/var/www`、`/etc`、`/usr/local`
 - 可点击面包屑路径与一键复制完整路径
-- 当前目录搜索、多文件顺序上传、下载
+- 当前目录搜索、多文件上传、文件夹上传和下载
+- ZIP 安全解压，支持 iPhone 大批量文件导入，并阻止路径穿越与符号链接
 - 新建文件/文件夹、在线文本编辑（最大 2MB）
 - 重命名、复制、移动、八进制权限修改
 - 删除进入 LukePanel 回收站
@@ -64,14 +68,16 @@
 
 ### GitHub 新手助手
 
+- GitHub OAuth Device Flow 网页登录；不需要在面板保存用户名、密码或 Client Secret
+- 授权 Token 只保存在当前 LukePanel 会话内存，退出或服务重启后清除
 - 检查仓库默认分支、最新提交、Tag、Release 和最近 Actions
-- 复制仓库地址和一键安装命令
-- 引导创建 Fine-grained Token
-- 使用一次性 Token 在 `main` 最新提交上创建版本 Tag
-- Tag 自动触发仓库 Release Actions
-- 失败的 Actions 可一键请求重试失败任务
-- Token 只保存在当前输入框和本次请求内，不写入配置或日志
-- Release 工作流也支持在 GitHub 网页手动输入版本号运行，并可安全覆盖已有附件
+- 上传源码 ZIP，自动去掉外层目录并忽略 `.git`、macOS 元数据
+- 提交前预览新增、修改和未变化文件
+- 使用 Git Trees / Commit / Ref API 直接 Commit + Push，不依赖服务器安装 Git
+- 默认增量覆盖，不删除 ZIP 中缺失的仓库文件，不 Force Push
+- 预览后远端分支发生变化时拒绝提交，避免覆盖新提交
+- 创建版本 Tag、触发 Release、重试失败 Actions
+- 修改 `.github/workflows` 需要 GitHub 授权包含 workflow 权限
 
 ### 安全
 
@@ -162,7 +168,9 @@ make build VERSION=dev
 
 ## 当前限制
 
-- 容器实时资源统计、镜像构建、网络/卷创建和高级清理仍未开放。
+- 容器编辑已开放，但镜像构建、网络/卷创建和高级清理仍未开放。
+- GitHub ZIP 推送是面向更新包的安全增量模式，不是完整的分支合并、冲突解决或历史改写客户端。
+- GitHub 网页登录首次需要用户自己创建 OAuth App 并启用 Device Flow；Client ID 可保存在浏览器本地。
 - 计划任务目前以查看 systemd timer 为主，不提供任意 Shell 定时任务。
 - APT 目前只检查，不直接执行升级；避免面板升级中断 SSH 或网络。
 - TOTP、Passkey、IP 白名单和安全通知仍在后续阶段。

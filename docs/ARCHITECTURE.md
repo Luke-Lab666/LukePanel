@@ -45,10 +45,13 @@ Agent 不监听 TCP，不接收通用 Shell 字符串。Compose 命令只从 Doc
 
 ## GitHub 边界
 
-- 仓库公开信息使用无凭据 GET 请求，仅在用户打开 GitHub 页面时执行。
-- 写操作必须使用用户当次输入的 Fine-grained Token。
-- Token 不写磁盘、不写审计、不写应用日志；请求完成后前端清空输入框。
-- 面板仅开放创建版本 Tag 和重试失败 Actions，不提供任意仓库文件写入。
+- 公开仓库信息可无凭据读取；私有仓库和写操作使用用户主动完成的 OAuth Device Flow。
+- OAuth App Client ID 是公开标识，可保存在浏览器本地；不需要向 LukePanel 提供 Client Secret。
+- GitHub Access Token 只保存在当前 Web 会话对应的内存中，不写磁盘、不写审计、不写应用日志；退出或服务重启后清除。
+- ZIP 导入先解压到 `/var/lib/lukepanel/github-imports` 临时目录，并限制压缩包、展开体积、单文件大小和文件数量。
+- ZIP 中的 `.git`、macOS 元数据、符号链接和越界路径会被忽略或拒绝。
+- 推送通过 GitHub Git Data API 创建 Blob、Tree、Commit，再非强制更新分支 Ref；预览后分支变化会拒绝提交。
+- 默认只新增或覆盖 ZIP 中存在的文件，不删除仓库其他文件，也不开放历史改写或 Force Push。
 
 ## 数据存储
 
@@ -58,4 +61,5 @@ Agent 不监听 TCP，不接收通用 Shell 字符串。Compose 命令只从 Doc
 - `/var/lib/lukepanel/backups/files/`：在线编辑备份。
 - `/var/lib/lukepanel/backups/ssh/`：SSH 公钥文件备份。
 - `/var/lib/lukepanel/recycle/`：回收站对象与元数据。
+- `/var/lib/lukepanel/github-imports/`：GitHub ZIP 预览临时文件，30 分钟过期或会话结束后清理。
 - `/run/lukepanel/agent.sock`：临时 Unix Socket。

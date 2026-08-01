@@ -21,7 +21,9 @@ var (
 )
 
 type Client struct {
-	http *http.Client
+	http    *http.Client
+	apiBase string
+	webBase string
 }
 
 type RepositorySummary struct {
@@ -65,7 +67,7 @@ type WorkflowRun struct {
 }
 
 func New() *Client {
-	return &Client{http: &http.Client{Timeout: 15 * time.Second}}
+	return &Client{http: &http.Client{Timeout: 30 * time.Second}, apiBase: "https://api.github.com", webBase: "https://github.com"}
 }
 
 func (c *Client) Summary(ctx context.Context, owner, repo, token string) (RepositorySummary, error) {
@@ -169,7 +171,7 @@ func (c *Client) requestJSON(ctx context.Context, method, owner, repo, suffix, t
 		}
 		reader = bytes.NewReader(data)
 	}
-	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/%s%s", url.PathEscape(owner), url.PathEscape(repo), suffix)
+	endpoint := fmt.Sprintf("%s/repos/%s/%s%s", strings.TrimRight(c.apiBase, "/"), url.PathEscape(owner), url.PathEscape(repo), suffix)
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
 		return err
@@ -189,26 +191,13 @@ func (c *Client) requestJSON(ctx context.Context, method, owner, repo, suffix, t
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 128<<10))
-		var payload struct {
-			Message string `json:"message"`
-		}
-		if json.Unmarshal(data, &payload) == nil && payload.Message != "" {
-			if resp.StatusCode == http.StatusNotFound {
-				return fmt.Errorf("仓库或资源不存在：%s", payload.Message)
-			}
-			if resp.StatusCode == http.StatusUnprocessableEntity && strings.Contains(strings.ToLower(payload.Message), "reference already exists") {
-				return errors.New("这个版本标签已经存在")
-			}
-			return fmt.Errorf("GitHub：%s", payload.Message)
-		}
-		return fmt.Errorf("GitHub API 返回 %s", resp.Status)
+		return decodeGitHubError(resp)
 	}
 	if out == nil || resp.StatusCode == http.StatusNoContent {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil
 	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(out)
 }
 
 func validateRepo(owner, repo string) error {
@@ -216,4 +205,26 @@ func validateRepo(owner, repo string) error {
 		return errors.New("GitHub 仓库格式不正确")
 	}
 	return nil
+}
+
+func decodeGitHubError(resp *http.Response) error {
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 128<<10))
+	var payload struct {
+		Message string `json:"message"`
+		Errors  any    `json:"errors"`
+	}
+	if json.Unmarshal(data, &payload) == nil && payload.Message != "" {
+		lower := strings.ToLower(payload.Message)
+		if resp.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("仓库或资源不存在：%s", payload.Message)
+		}
+		if resp.StatusCode == http.StatusUnprocessableEntity && strings.Contains(lower, "reference already exists") {
+			return errors.New("这个版本标签已经存在")
+		}
+		if resp.StatusCode == http.StatusForbidden && strings.Contains(lower, "resource not accessible") {
+			return errors.New("GitHub 授权权限不足，请确认已允许 Contents 写入；修改 Actions 工作流还需要 workflow 权限")
+		}
+		return fmt.Errorf("GitHub：%s", payload.Message)
+	}
+	return fmt.Errorf("GitHub API 返回 %s", resp.Status)
 }

@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -462,6 +463,507 @@ func (c *Client) RemoveVolume(ctx context.Context, name string) error {
 		return dockerError(resp)
 	}
 	return nil
+}
+
+type EditPort struct {
+	HostIP        string `json:"host_ip"`
+	HostPort      string `json:"host_port"`
+	ContainerPort string `json:"container_port"`
+	Protocol      string `json:"protocol"`
+}
+
+type EditMount struct {
+	Type     string `json:"type"`
+	Source   string `json:"source"`
+	Target   string `json:"target"`
+	ReadOnly bool   `json:"read_only"`
+}
+
+type ContainerEditSpec struct {
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Image          string            `json:"image"`
+	Env            []string          `json:"env"`
+	Cmd            []string          `json:"cmd"`
+	Entrypoint     []string          `json:"entrypoint"`
+	WorkingDir     string            `json:"working_dir"`
+	User           string            `json:"user"`
+	Hostname       string            `json:"hostname"`
+	RestartPolicy  string            `json:"restart_policy"`
+	RestartMaximum int               `json:"restart_maximum_retry_count"`
+	NetworkMode    string            `json:"network_mode"`
+	Privileged     bool              `json:"privileged"`
+	AutoRemove     bool              `json:"auto_remove"`
+	Running        bool              `json:"running"`
+	ComposeManaged bool              `json:"compose_managed"`
+	ComposeProject string            `json:"compose_project,omitempty"`
+	ComposeService string            `json:"compose_service,omitempty"`
+	ComposeFiles   []string          `json:"compose_files,omitempty"`
+	Ports          []EditPort        `json:"ports"`
+	Mounts         []EditMount       `json:"mounts"`
+	Labels         map[string]string `json:"labels"`
+}
+
+type RecreateRequest struct {
+	ID             string      `json:"id"`
+	Name           string      `json:"name"`
+	Image          string      `json:"image"`
+	Env            []string    `json:"env"`
+	Cmd            []string    `json:"cmd"`
+	Entrypoint     []string    `json:"entrypoint"`
+	WorkingDir     string      `json:"working_dir"`
+	User           string      `json:"user"`
+	Hostname       string      `json:"hostname"`
+	RestartPolicy  string      `json:"restart_policy"`
+	RestartMaximum int         `json:"restart_maximum_retry_count"`
+	Ports          []EditPort  `json:"ports"`
+	Mounts         []EditMount `json:"mounts"`
+	Start          bool        `json:"start"`
+}
+
+type RecreateResult struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Warning string `json:"warning,omitempty"`
+}
+
+type rawContainerInspect struct {
+	ID    string `json:"Id"`
+	Name  string `json:"Name"`
+	State struct {
+		Running bool `json:"Running"`
+	} `json:"State"`
+	Config          map[string]any `json:"Config"`
+	HostConfig      map[string]any `json:"HostConfig"`
+	Mounts          []rawMount     `json:"Mounts"`
+	NetworkSettings struct {
+		Networks map[string]map[string]any `json:"Networks"`
+	} `json:"NetworkSettings"`
+}
+
+type rawMount struct {
+	Type        string `json:"Type"`
+	Name        string `json:"Name"`
+	Source      string `json:"Source"`
+	Destination string `json:"Destination"`
+	Mode        string `json:"Mode"`
+	RW          bool   `json:"RW"`
+}
+
+func (c *Client) InspectContainer(ctx context.Context, id string) (ContainerEditSpec, error) {
+	inspect, err := c.inspectContainer(ctx, id)
+	if err != nil {
+		return ContainerEditSpec{}, err
+	}
+	return editSpecFromInspect(inspect), nil
+}
+
+func (c *Client) inspectContainer(ctx context.Context, id string) (rawContainerInspect, error) {
+	if !validID(id) {
+		return rawContainerInspect{}, errors.New("invalid container id")
+	}
+	var inspect rawContainerInspect
+	if err := c.doJSON(ctx, http.MethodGet, "/containers/"+url.PathEscape(id)+"/json", nil, &inspect); err != nil {
+		return rawContainerInspect{}, err
+	}
+	return inspect, nil
+}
+
+func editSpecFromInspect(inspect rawContainerInspect) ContainerEditSpec {
+	labels := stringMap(inspect.Config["Labels"])
+	restartName, restartMaximum := "no", 0
+	if restart, ok := inspect.HostConfig["RestartPolicy"].(map[string]any); ok {
+		restartName = stringValue(restart["Name"])
+		restartMaximum = intValue(restart["MaximumRetryCount"])
+	}
+	ports := make([]EditPort, 0)
+	if bindings, ok := inspect.HostConfig["PortBindings"].(map[string]any); ok {
+		keys := make([]string, 0, len(bindings))
+		for key := range bindings {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			parts := strings.SplitN(key, "/", 2)
+			protocol := "tcp"
+			if len(parts) == 2 {
+				protocol = parts[1]
+			}
+			values, _ := bindings[key].([]any)
+			if len(values) == 0 {
+				ports = append(ports, EditPort{ContainerPort: parts[0], Protocol: protocol})
+				continue
+			}
+			for _, value := range values {
+				binding, _ := value.(map[string]any)
+				ports = append(ports, EditPort{HostIP: stringValue(binding["HostIp"]), HostPort: stringValue(binding["HostPort"]), ContainerPort: parts[0], Protocol: protocol})
+			}
+		}
+	}
+	mounts := make([]EditMount, 0, len(inspect.Mounts))
+	for _, mount := range inspect.Mounts {
+		if mount.Type != "bind" && mount.Type != "volume" {
+			continue
+		}
+		source := mount.Source
+		if mount.Type == "volume" && mount.Name != "" {
+			source = mount.Name
+		}
+		mounts = append(mounts, EditMount{Type: mount.Type, Source: source, Target: mount.Destination, ReadOnly: !mount.RW})
+	}
+	composeProject := labels["com.docker.compose.project"]
+	return ContainerEditSpec{
+		ID: inspect.ID, Name: strings.TrimPrefix(inspect.Name, "/"), Image: stringValue(inspect.Config["Image"]),
+		Env: stringSlice(inspect.Config["Env"]), Cmd: stringSlice(inspect.Config["Cmd"]), Entrypoint: stringSlice(inspect.Config["Entrypoint"]),
+		WorkingDir: stringValue(inspect.Config["WorkingDir"]), User: stringValue(inspect.Config["User"]), Hostname: stringValue(inspect.Config["Hostname"]),
+		RestartPolicy: restartName, RestartMaximum: restartMaximum, NetworkMode: stringValue(inspect.HostConfig["NetworkMode"]),
+		Privileged: boolValue(inspect.HostConfig["Privileged"]), AutoRemove: boolValue(inspect.HostConfig["AutoRemove"]), Running: inspect.State.Running,
+		ComposeManaged: composeProject != "", ComposeProject: composeProject, ComposeService: labels["com.docker.compose.service"],
+		ComposeFiles: splitComposeFiles(labels["com.docker.compose.project.config_files"]), Ports: ports, Mounts: mounts, Labels: labels,
+	}
+}
+
+func (c *Client) RecreateContainer(ctx context.Context, request RecreateRequest) (RecreateResult, error) {
+	inspect, err := c.inspectContainer(ctx, request.ID)
+	if err != nil {
+		return RecreateResult{}, err
+	}
+	spec := editSpecFromInspect(inspect)
+	if spec.ComposeManaged {
+		return RecreateResult{}, errors.New("这个容器由 Docker Compose 管理，请编辑 Compose YAML 后执行启动/更新")
+	}
+	if spec.AutoRemove {
+		return RecreateResult{}, errors.New("自动删除容器暂不支持安全重建")
+	}
+	if err := validateRecreateRequest(&request); err != nil {
+		return RecreateResult{}, err
+	}
+	configMap := cloneMap(inspect.Config)
+	configMap["Image"] = request.Image
+	configMap["Env"] = request.Env
+	configMap["Cmd"] = nullableSlice(request.Cmd)
+	configMap["Entrypoint"] = nullableSlice(request.Entrypoint)
+	configMap["WorkingDir"] = request.WorkingDir
+	configMap["User"] = request.User
+	configMap["Hostname"] = request.Hostname
+
+	exposed := map[string]any{}
+	bindings := map[string]any{}
+	for _, port := range request.Ports {
+		key := port.ContainerPort + "/" + port.Protocol
+		exposed[key] = map[string]any{}
+		bindings[key] = append(anySlice(bindings[key]), map[string]string{"HostIp": port.HostIP, "HostPort": port.HostPort})
+	}
+	configMap["ExposedPorts"] = exposed
+	hostConfig := cloneMap(inspect.HostConfig)
+	hostConfig["PortBindings"] = bindings
+	hostConfig["RestartPolicy"] = map[string]any{"Name": request.RestartPolicy, "MaximumRetryCount": request.RestartMaximum}
+	mounts := make([]map[string]any, 0, len(request.Mounts))
+	for _, mount := range request.Mounts {
+		mounts = append(mounts, map[string]any{"Type": mount.Type, "Source": mount.Source, "Target": mount.Target, "ReadOnly": mount.ReadOnly})
+	}
+	hostConfig["Mounts"] = mounts
+	delete(hostConfig, "Binds")
+
+	payload := cloneMap(configMap)
+	payload["HostConfig"] = hostConfig
+	if networking := safeNetworkingConfig(inspect, spec.Name); networking != nil {
+		payload["NetworkingConfig"] = networking
+	}
+
+	originalName := spec.Name
+	backupName := fmt.Sprintf("%s.lukepanel-backup-%d", trimName(originalName, 82), time.Now().Unix())
+	if err := c.noContent(ctx, http.MethodPost, "/containers/"+url.PathEscape(inspect.ID)+"/rename?name="+url.QueryEscape(backupName), nil); err != nil {
+		return RecreateResult{}, fmt.Errorf("准备旧容器失败: %w", err)
+	}
+	oldRenamed := true
+	rollback := func(newID string) {
+		if newID != "" {
+			_ = c.noContent(context.Background(), http.MethodDelete, "/containers/"+url.PathEscape(newID)+"?force=1&v=0", nil)
+		}
+		if oldRenamed {
+			_ = c.noContent(context.Background(), http.MethodPost, "/containers/"+url.PathEscape(inspect.ID)+"/rename?name="+url.QueryEscape(originalName), nil)
+			if inspect.State.Running {
+				_ = c.noContent(context.Background(), http.MethodPost, "/containers/"+url.PathEscape(inspect.ID)+"/start", nil)
+			}
+		}
+	}
+	if inspect.State.Running {
+		if err := c.noContent(ctx, http.MethodPost, "/containers/"+url.PathEscape(inspect.ID)+"/stop?t=15", nil); err != nil {
+			rollback("")
+			return RecreateResult{}, fmt.Errorf("停止旧容器失败: %w", err)
+		}
+	}
+	var created struct {
+		ID       string   `json:"Id"`
+		Warnings []string `json:"Warnings"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/containers/create?name="+url.QueryEscape(request.Name), payload, &created); err != nil {
+		rollback("")
+		return RecreateResult{}, fmt.Errorf("创建新容器失败，旧容器已恢复: %w", err)
+	}
+	if request.Start {
+		if err := c.noContent(ctx, http.MethodPost, "/containers/"+url.PathEscape(created.ID)+"/start", nil); err != nil {
+			rollback(created.ID)
+			return RecreateResult{}, fmt.Errorf("新容器启动失败，旧容器已恢复: %w", err)
+		}
+	}
+	warning := strings.Join(created.Warnings, "；")
+	if err := c.noContent(ctx, http.MethodDelete, "/containers/"+url.PathEscape(inspect.ID)+"?force=0&v=0", nil); err != nil {
+		oldRenamed = false
+		if warning != "" {
+			warning += "；"
+		}
+		warning += "新容器已创建，但旧备份容器未自动删除：" + backupName
+	} else {
+		oldRenamed = false
+	}
+	return RecreateResult{ID: created.ID, Name: request.Name, Warning: warning}, nil
+}
+
+func validateRecreateRequest(request *RecreateRequest) error {
+	request.Name = strings.TrimSpace(strings.TrimPrefix(request.Name, "/"))
+	request.Image = strings.TrimSpace(request.Image)
+	request.WorkingDir = strings.TrimSpace(request.WorkingDir)
+	request.User = strings.TrimSpace(request.User)
+	request.Hostname = strings.TrimSpace(request.Hostname)
+	if !validID(request.ID) || !validID(request.Name) {
+		return errors.New("容器名称只能包含字母、数字、点、下划线和短横线")
+	}
+	if request.Image == "" || len(request.Image) > 300 || strings.ContainsAny(request.Image, "\x00\r\n\t ") {
+		return errors.New("镜像名称无效")
+	}
+	allowedRestart := map[string]bool{"no": true, "always": true, "unless-stopped": true, "on-failure": true}
+	if !allowedRestart[request.RestartPolicy] {
+		return errors.New("重启策略无效")
+	}
+	if request.RestartPolicy != "on-failure" {
+		request.RestartMaximum = 0
+	}
+	if request.RestartMaximum < 0 || request.RestartMaximum > 100000 {
+		return errors.New("最大重试次数无效")
+	}
+	if len(request.Env) > 1000 || len(request.Ports) > 256 || len(request.Mounts) > 256 || len(request.Cmd) > 256 || len(request.Entrypoint) > 64 {
+		return errors.New("容器配置项目过多")
+	}
+	for i, value := range request.Env {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			request.Env[i] = ""
+			continue
+		}
+		key, _, ok := strings.Cut(value, "=")
+		if !ok || key == "" || strings.ContainsAny(key, " \t\r\n\x00") {
+			return fmt.Errorf("环境变量格式错误: %s", value)
+		}
+		request.Env[i] = value
+	}
+	request.Env = compactStrings(request.Env)
+	seenPorts := map[string]bool{}
+	for i := range request.Ports {
+		port := &request.Ports[i]
+		port.HostIP = strings.TrimSpace(port.HostIP)
+		port.HostPort = strings.TrimSpace(port.HostPort)
+		port.ContainerPort = strings.TrimSpace(port.ContainerPort)
+		port.Protocol = strings.ToLower(strings.TrimSpace(port.Protocol))
+		if port.Protocol == "" {
+			port.Protocol = "tcp"
+		}
+		if port.Protocol != "tcp" && port.Protocol != "udp" && port.Protocol != "sctp" {
+			return errors.New("端口协议只支持 tcp、udp 或 sctp")
+		}
+		containerPort, err := strconv.Atoi(port.ContainerPort)
+		if err != nil || containerPort < 1 || containerPort > 65535 {
+			return errors.New("容器端口必须是 1-65535")
+		}
+		if port.HostPort != "" {
+			hostPort, err := strconv.Atoi(port.HostPort)
+			if err != nil || hostPort < 1 || hostPort > 65535 {
+				return errors.New("宿主机端口必须是 1-65535")
+			}
+		}
+		if port.HostIP != "" && net.ParseIP(port.HostIP) == nil {
+			return errors.New("宿主机监听 IP 无效")
+		}
+		key := port.HostIP + ":" + port.HostPort + ":" + port.ContainerPort + "/" + port.Protocol
+		if seenPorts[key] {
+			return errors.New("存在重复端口映射")
+		}
+		seenPorts[key] = true
+	}
+	seenTargets := map[string]bool{}
+	for i := range request.Mounts {
+		mount := &request.Mounts[i]
+		mount.Type = strings.ToLower(strings.TrimSpace(mount.Type))
+		mount.Source = filepath.Clean(strings.TrimSpace(mount.Source))
+		mount.Target = filepath.Clean(strings.TrimSpace(mount.Target))
+		if mount.Type != "bind" && mount.Type != "volume" {
+			return errors.New("挂载类型只支持 bind 或 volume")
+		}
+		if !filepath.IsAbs(mount.Target) || mount.Target == "/" || strings.ContainsAny(mount.Target, "\x00\r\n") {
+			return errors.New("容器挂载目标必须是绝对路径")
+		}
+		if mount.Type == "bind" {
+			if !filepath.IsAbs(mount.Source) || strings.ContainsAny(mount.Source, "\x00\r\n") {
+				return errors.New("绑定挂载源必须是宿主机绝对路径")
+			}
+		} else if !validID(mount.Source) {
+			return errors.New("存储卷名称无效")
+		}
+		if seenTargets[mount.Target] {
+			return errors.New("同一个容器目录不能重复挂载")
+		}
+		seenTargets[mount.Target] = true
+	}
+	return nil
+}
+
+func (c *Client) noContent(ctx context.Context, method, endpoint string, body any) error {
+	var reader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(data)
+	}
+	resp, err := c.request(ctx, method, endpoint, reader)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return dockerError(resp)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil
+}
+
+func safeNetworkingConfig(inspect rawContainerInspect, oldName string) map[string]any {
+	if len(inspect.NetworkSettings.Networks) == 0 {
+		return nil
+	}
+	endpoints := map[string]any{}
+	for name, raw := range inspect.NetworkSettings.Networks {
+		endpoint := map[string]any{}
+		for _, key := range []string{"IPAMConfig", "Links", "DriverOpts", "GwPriority"} {
+			if value, exists := raw[key]; exists && value != nil {
+				endpoint[key] = value
+			}
+		}
+		aliases := stringSlice(raw["Aliases"])
+		filtered := make([]string, 0, len(aliases))
+		for _, alias := range aliases {
+			if alias != "" && alias != oldName && alias != inspect.ID && !strings.HasPrefix(inspect.ID, alias) {
+				filtered = append(filtered, alias)
+			}
+		}
+		if len(filtered) > 0 {
+			endpoint["Aliases"] = filtered
+		}
+		endpoints[name] = endpoint
+	}
+	return map[string]any{"EndpointsConfig": endpoints}
+}
+
+func cloneMap(input map[string]any) map[string]any {
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func boolValue(value any) bool {
+	result, _ := value.(bool)
+	return result
+}
+
+func intValue(value any) int {
+	switch number := value.(type) {
+	case float64:
+		return int(number)
+	case int:
+		return number
+	case json.Number:
+		v, _ := number.Int64()
+		return int(v)
+	default:
+		return 0
+	}
+}
+
+func stringSlice(value any) []string {
+	switch list := value.(type) {
+	case []string:
+		return append([]string(nil), list...)
+	case []any:
+		out := make([]string, 0, len(list))
+		for _, item := range list {
+			if text, ok := item.(string); ok {
+				out = append(out, text)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func stringMap(value any) map[string]string {
+	out := map[string]string{}
+	switch labels := value.(type) {
+	case map[string]string:
+		for key, val := range labels {
+			out[key] = val
+		}
+	case map[string]any:
+		for key, val := range labels {
+			if text, ok := val.(string); ok {
+				out[key] = text
+			}
+		}
+	}
+	return out
+}
+
+func anySlice(value any) []any {
+	if value == nil {
+		return nil
+	}
+	if list, ok := value.([]any); ok {
+		return list
+	}
+	return nil
+}
+
+func nullableSlice(values []string) any {
+	if len(values) == 0 {
+		return nil
+	}
+	return values
+}
+
+func compactStrings(values []string) []string {
+	out := values[:0]
+	for _, value := range values {
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func trimName(value string, max int) string {
+	if len(value) <= max {
+		return value
+	}
+	return value[:max]
 }
 
 func (c *Client) doJSON(ctx context.Context, method, endpoint string, body any, out any) error {

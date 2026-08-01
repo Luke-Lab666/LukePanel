@@ -182,21 +182,38 @@ type NetworkInfo struct {
 func Network(ctx context.Context) (NetworkInfo, error) {
 	counters := readNetCounters()
 	interfaces, err := net.Interfaces()
-	if err != nil {
-		return NetworkInfo{}, err
-	}
-	out := make([]Interface, 0, len(interfaces))
-	for _, iface := range interfaces {
-		addrs, _ := iface.Addrs()
-		a := make([]string, 0, len(addrs))
-		for _, addr := range addrs {
-			a = append(a, addr.String())
+	out := make([]Interface, 0, len(counters))
+	if err == nil {
+		for _, iface := range interfaces {
+			addrs, _ := iface.Addrs()
+			a := make([]string, 0, len(addrs))
+			for _, addr := range addrs {
+				a = append(a, addr.String())
+			}
+			c := counters[iface.Name]
+			out = append(out, Interface{Name: iface.Name, MTU: iface.MTU, Flags: iface.Flags.String(), Addresses: a, ReceivedBytes: c[0], SentBytes: c[1]})
 		}
-		c := counters[iface.Name]
-		out = append(out, Interface{Name: iface.Name, MTU: iface.MTU, Flags: iface.Flags.String(), Addresses: a, ReceivedBytes: c[0], SentBytes: c[1]})
+	} else {
+		// Hardened systemd sandboxes can block AF_NETLINK on an older unit file.
+		// Fall back to sysfs so the page still shows interfaces instead of failing
+		// completely; the installer now explicitly allows AF_NETLINK for full data.
+		entries, readErr := os.ReadDir("/sys/class/net")
+		if readErr != nil {
+			return NetworkInfo{}, err
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			mtuRaw, _ := os.ReadFile(filepath.Join("/sys/class/net", name, "mtu"))
+			mtu, _ := strconv.Atoi(strings.TrimSpace(string(mtuRaw)))
+			c := counters[name]
+			out = append(out, Interface{Name: name, MTU: mtu, Flags: "地址读取受限", Addresses: nil, ReceivedBytes: c[0], SentBytes: c[1]})
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	listen, _ := run(ctx, 12*time.Second, "ss", "-lntupH")
+	listen, listenErr := run(ctx, 12*time.Second, "ss", "-lntupH")
+	if listenErr != nil {
+		listen = "监听端口读取失败：" + listenErr.Error()
+	}
 	return NetworkInfo{Interfaces: out, Listening: listen}, nil
 }
 func readNetCounters() map[string][2]uint64 {

@@ -1,6 +1,7 @@
 package files
 
 import (
+	"archive/zip"
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -348,24 +350,53 @@ func (m *Manager) OpenDownload(path string) (*os.File, os.FileInfo, error) {
 }
 
 func (m *Manager) SaveUpload(directory, filename string, source io.Reader, sizeLimit int64) (string, error) {
-	if filename == "" || filepath.Base(filename) != filename || strings.ContainsRune(filename, os.PathSeparator) {
-		return "", errors.New("invalid upload filename")
+	return m.SaveUploadRelative(directory, filename, source, sizeLimit, false)
+}
+
+func (m *Manager) SaveUploadRelative(directory, relativePath string, source io.Reader, sizeLimit int64, overwrite bool) (string, error) {
+	relativePath = strings.ReplaceAll(strings.TrimSpace(relativePath), `\\`, "/")
+	clean := pathpkg.Clean(relativePath)
+	if clean == "." || clean == "" || pathpkg.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") || strings.ContainsRune(clean, '\x00') {
+		return "", errors.New("上传路径无效")
 	}
-	dir, _, err := m.resolveExisting(directory, true)
+	dir, info, err := m.resolveExisting(directory, true)
 	if err != nil {
 		return "", err
 	}
-	destination, err := m.resolveNew(filepath.Join(dir, filename))
+	if !info.IsDir() {
+		return "", errors.New("上传目标不是文件夹")
+	}
+	destination, err := m.resolveNestedNew(dir, clean)
 	if err != nil {
 		return "", err
 	}
 	if sensitivePath(destination) {
 		return "", errors.New("不允许上传敏感文件")
 	}
+	rel, err := filepath.Rel(dir, destination)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", errors.New("上传路径越界")
+	}
 	if sizeLimit <= 0 || sizeLimit > MaxUploadSize {
 		sizeLimit = MaxUploadSize
 	}
-	tmp, err := os.CreateTemp(dir, ".lukepanel-upload-*.tmp")
+	if err := os.MkdirAll(filepath.Dir(destination), 0o750); err != nil {
+		return "", err
+	}
+	if old, statErr := os.Stat(destination); statErr == nil {
+		if old.IsDir() {
+			return "", errors.New("目标位置已有同名文件夹")
+		}
+		if !overwrite {
+			return "", errors.New("目标文件已存在")
+		}
+		if err := m.backup(destination, old); err != nil {
+			return "", fmt.Errorf("覆盖前备份失败: %w", err)
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return "", statErr
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(destination), ".lukepanel-upload-*.tmp")
 	if err != nil {
 		return "", err
 	}
@@ -390,13 +421,143 @@ func (m *Manager) SaveUpload(directory, filename string, source io.Reader, sizeL
 	if err := os.Chmod(tmpName, 0o640); err != nil {
 		return "", err
 	}
-	if _, err := os.Stat(destination); err == nil {
-		return "", errors.New("目标文件已存在")
-	}
 	if err := os.Rename(tmpName, destination); err != nil {
 		return "", err
 	}
 	return destination, nil
+}
+
+type ExtractResult struct {
+	Files int   `json:"files"`
+	Dirs  int   `json:"dirs"`
+	Bytes int64 `json:"bytes"`
+}
+
+func (m *Manager) ExtractZIP(directory string, source io.Reader, overwrite bool) (ExtractResult, error) {
+	dir, info, err := m.resolveExisting(directory, true)
+	if err != nil {
+		return ExtractResult{}, err
+	}
+	if !info.IsDir() {
+		return ExtractResult{}, errors.New("解压目标不是文件夹")
+	}
+	tmp, err := os.CreateTemp(m.dataDir, ".lukepanel-archive-*.zip")
+	if err != nil {
+		return ExtractResult{}, err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	written, err := io.Copy(tmp, io.LimitReader(source, MaxUploadSize+1))
+	if err != nil {
+		tmp.Close()
+		return ExtractResult{}, err
+	}
+	if written > MaxUploadSize {
+		tmp.Close()
+		return ExtractResult{}, errors.New("压缩包超过 512MB")
+	}
+	if err := tmp.Close(); err != nil {
+		return ExtractResult{}, err
+	}
+	archive, err := zip.OpenReader(tmpName)
+	if err != nil {
+		return ExtractResult{}, errors.New("不是有效的 ZIP 压缩包")
+	}
+	defer archive.Close()
+	if len(archive.File) > 5000 {
+		return ExtractResult{}, errors.New("压缩包文件数量超过 5000")
+	}
+	var result ExtractResult
+	const maxExpanded = int64(2 << 30)
+	for _, item := range archive.File {
+		name := strings.ReplaceAll(item.Name, `\\`, "/")
+		clean := pathpkg.Clean(name)
+		if clean == "." || clean == "" {
+			continue
+		}
+		if pathpkg.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") || strings.ContainsRune(clean, '\x00') {
+			return result, errors.New("压缩包包含越界路径")
+		}
+		if item.Mode()&os.ModeSymlink != 0 {
+			return result, errors.New("压缩包包含符号链接，已拒绝")
+		}
+		destination, err := m.resolveNestedNew(dir, clean)
+		if err != nil {
+			return result, err
+		}
+		rel, err := filepath.Rel(dir, destination)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return result, errors.New("解压路径越界")
+		}
+		if sensitivePath(destination) {
+			return result, errors.New("压缩包试图写入敏感文件")
+		}
+		if item.FileInfo().IsDir() {
+			if err := os.MkdirAll(destination, 0o750); err != nil {
+				return result, err
+			}
+			result.Dirs++
+			continue
+		}
+		if item.UncompressedSize64 > uint64(MaxUploadSize) || result.Bytes+int64(item.UncompressedSize64) > maxExpanded {
+			return result, errors.New("压缩包解压后体积超过限制")
+		}
+		if err := os.MkdirAll(filepath.Dir(destination), 0o750); err != nil {
+			return result, err
+		}
+		if old, statErr := os.Stat(destination); statErr == nil {
+			if old.IsDir() {
+				return result, fmt.Errorf("目标位置已有同名文件夹: %s", clean)
+			}
+			if !overwrite {
+				return result, fmt.Errorf("文件已存在: %s", clean)
+			}
+			if err := m.backup(destination, old); err != nil {
+				return result, fmt.Errorf("覆盖前备份失败: %w", err)
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return result, statErr
+		}
+		r, err := item.Open()
+		if err != nil {
+			return result, err
+		}
+		tmpOut, err := os.CreateTemp(filepath.Dir(destination), ".lukepanel-extract-*.tmp")
+		if err != nil {
+			r.Close()
+			return result, err
+		}
+		tmpOutName := tmpOut.Name()
+		copied, copyErr := io.Copy(tmpOut, io.LimitReader(r, MaxUploadSize+1))
+		r.Close()
+		closeErr := tmpOut.Close()
+		if copyErr != nil || closeErr != nil || copied > MaxUploadSize {
+			os.Remove(tmpOutName)
+			if copyErr != nil {
+				return result, copyErr
+			}
+			if closeErr != nil {
+				return result, closeErr
+			}
+			return result, errors.New("压缩包中的单个文件超过限制")
+		}
+		mode := item.Mode().Perm()
+		if mode == 0 {
+			mode = 0o640
+		}
+		mode &= 0o755
+		if err := os.Chmod(tmpOutName, mode); err != nil {
+			os.Remove(tmpOutName)
+			return result, err
+		}
+		if err := os.Rename(tmpOutName, destination); err != nil {
+			os.Remove(tmpOutName)
+			return result, err
+		}
+		result.Files++
+		result.Bytes += copied
+	}
+	return result, nil
 }
 
 func (m *Manager) resolveAny(path string) (string, os.FileInfo, error) {
@@ -607,6 +768,40 @@ func (m *Manager) resolveExisting(path string, wantDir bool) (string, os.FileInf
 		return "", nil, errors.New("path is not a file")
 	}
 	return resolved, info, nil
+}
+
+func (m *Manager) resolveNestedNew(root, relative string) (string, error) {
+	root = filepath.Clean(root)
+	parts := strings.Split(filepath.FromSlash(relative), string(os.PathSeparator))
+	current := root
+	for _, part := range parts[:len(parts)-1] {
+		if part == "" || part == "." || part == ".." {
+			return "", errors.New("nested path is invalid")
+		}
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) {
+			if err := os.Mkdir(current, 0o750); err != nil && !errors.Is(err, os.ErrExist) {
+				return "", err
+			}
+			info, err = os.Lstat(current)
+		}
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return "", errors.New("nested upload path contains a symlink or non-directory")
+		}
+	}
+	destination := filepath.Join(current, parts[len(parts)-1])
+	if !m.allowed(destination) {
+		return "", errors.New("path is outside allowed roots")
+	}
+	rel, err := filepath.Rel(root, destination)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", errors.New("nested path escapes the target directory")
+	}
+	return destination, nil
 }
 
 func (m *Manager) resolveNew(path string) (string, error) {
