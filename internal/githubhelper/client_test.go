@@ -19,7 +19,7 @@ func TestValidateRepoAndTag(t *testing.T) {
 			t.Fatalf("owner %q accepted", value)
 		}
 	}
-	for _, value := range []string{"v0.3.0-alpha", "v1.0.0"} {
+	for _, value := range []string{"v0.6.0-alpha", "v1.0.0"} {
 		if !tagPattern.MatchString(value) {
 			t.Fatalf("tag %q rejected", value)
 		}

@@ -21,6 +21,7 @@ import (
 	"github.com/Luke-Lab666/LukePanel/internal/services"
 	"github.com/Luke-Lab666/LukePanel/internal/sshadmin"
 	"github.com/Luke-Lab666/LukePanel/internal/systemadmin"
+	"github.com/Luke-Lab666/LukePanel/internal/tasks"
 )
 
 type Server struct {
@@ -31,6 +32,7 @@ type Server struct {
 	files     *filemanager.Manager
 	processes *systemadmin.ProcessManager
 	ssh       *sshadmin.Manager
+	tasks     *tasks.Manager
 	http      *http.Server
 }
 
@@ -39,11 +41,12 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, logger: logger, docker: dockerapi.New("/var/run/docker.sock"), services: services.New(), files: fm, processes: systemadmin.NewProcessManager(), ssh: sshadmin.New(cfg.DataDir)}
+	s := &Server{cfg: cfg, logger: logger, docker: dockerapi.New("/var/run/docker.sock"), services: services.New(), files: fm, processes: systemadmin.NewProcessManager(), ssh: sshadmin.New(cfg.DataDir), tasks: tasks.New(cfg.DataDir)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", s.health)
 	mux.HandleFunc("/v1/docker/status", s.dockerStatus)
 	mux.HandleFunc("/v1/docker/containers", s.dockerContainers)
+	mux.HandleFunc("/v1/docker/stats", s.dockerStats)
 	mux.HandleFunc("/v1/docker/action", s.dockerAction)
 	mux.HandleFunc("/v1/docker/logs", s.dockerLogs)
 	mux.HandleFunc("/v1/docker/inspect", s.dockerInspect)
@@ -52,9 +55,13 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.HandleFunc("/v1/docker/images/pull", s.dockerImagePull)
 	mux.HandleFunc("/v1/docker/images/delete", s.dockerImageDelete)
 	mux.HandleFunc("/v1/docker/networks", s.dockerNetworks)
+	mux.HandleFunc("/v1/docker/networks/create", s.dockerNetworkCreate)
 	mux.HandleFunc("/v1/docker/networks/delete", s.dockerNetworkDelete)
 	mux.HandleFunc("/v1/docker/volumes", s.dockerVolumes)
+	mux.HandleFunc("/v1/docker/volumes/create", s.dockerVolumeCreate)
 	mux.HandleFunc("/v1/docker/volumes/delete", s.dockerVolumeDelete)
+	mux.HandleFunc("/v1/docker/cleanup/preview", s.dockerCleanupPreview)
+	mux.HandleFunc("/v1/docker/cleanup", s.dockerCleanup)
 	mux.HandleFunc("/v1/docker/compose", s.dockerCompose)
 	mux.HandleFunc("/v1/docker/compose/action", s.dockerComposeAction)
 	mux.HandleFunc("/v1/services", s.serviceList)
@@ -66,6 +73,9 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.HandleFunc("/v1/network", s.networkInfo)
 	mux.HandleFunc("/v1/storage", s.storageInfo)
 	mux.HandleFunc("/v1/timers", s.timerInfo)
+	mux.HandleFunc("/v1/tasks", s.taskList)
+	mux.HandleFunc("/v1/tasks/create", s.taskCreate)
+	mux.HandleFunc("/v1/tasks/action", s.taskAction)
 	mux.HandleFunc("/v1/updates", s.updateInfo)
 	mux.HandleFunc("/v1/files", s.fileList)
 	mux.HandleFunc("/v1/files/content", s.fileContent)
@@ -80,6 +90,9 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.HandleFunc("/v1/files/move", s.fileMove)
 	mux.HandleFunc("/v1/files/chmod", s.fileChmod)
 	mux.HandleFunc("/v1/files/recycle", s.fileRecycle)
+	mux.HandleFunc("/v1/files/backups", s.fileBackups)
+	mux.HandleFunc("/v1/files/backups/diff", s.fileBackupDiff)
+	mux.HandleFunc("/v1/files/backups/restore", s.fileBackupRestore)
 	mux.HandleFunc("/v1/ssh/status", s.sshStatus)
 	mux.HandleFunc("/v1/ssh/users", s.sshUsers)
 	mux.HandleFunc("/v1/ssh/keys", s.sshKeys)
@@ -142,6 +155,19 @@ func (s *Server) dockerContainers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"containers": items})
+}
+func (s *Server) dockerStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	ids := r.URL.Query()["id"]
+	items, err := s.docker.ContainerStats(r.Context(), ids)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"stats": items})
 }
 func (s *Server) dockerAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -260,6 +286,28 @@ func (s *Server) dockerNetworks(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"networks": items})
 }
+func (s *Server) dockerNetworkCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Name     string `json:"name"`
+		Driver   string `json:"driver"`
+		Subnet   string `json:"subnet"`
+		Gateway  string `json:"gateway"`
+		Internal bool   `json:"internal"`
+	}
+	if decodeJSON(w, r, 32<<10, &req) != nil {
+		return
+	}
+	network, err := s.docker.CreateNetwork(r.Context(), req.Name, req.Driver, req.Subnet, req.Gateway, req.Internal)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, network)
+}
 func (s *Server) dockerNetworkDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
@@ -288,6 +336,58 @@ func (s *Server) dockerVolumes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"volumes": items})
+}
+func (s *Server) dockerVolumeCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Name   string `json:"name"`
+		Driver string `json:"driver"`
+	}
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	volume, err := s.docker.CreateVolume(r.Context(), req.Name, req.Driver)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, volume)
+}
+
+func (s *Server) dockerCleanupPreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	preview, err := s.docker.CleanupPreview(r.Context())
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+func (s *Server) dockerCleanup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Mode           string `json:"mode"`
+		IncludeVolumes bool   `json:"include_volumes"`
+	}
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	result, err := s.docker.Cleanup(r.Context(), req.Mode, req.IncludeVolumes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) dockerVolumeDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -453,6 +553,55 @@ func (s *Server) timerInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"timers": data})
+}
+
+func (s *Server) taskList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	items, err := s.tasks.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": items})
+}
+
+func (s *Server) taskCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req tasks.CreateRequest
+	if decodeJSON(w, r, 32<<10, &req) != nil {
+		return
+	}
+	task, err := s.tasks.Create(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, task)
+}
+
+func (s *Server) taskAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		ID     string `json:"id"`
+		Action string `json:"action"`
+	}
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	if err := s.tasks.Action(r.Context(), req.ID, req.Action); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 func (s *Server) updateInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -641,6 +790,51 @@ func (s *Server) fileRecycle(w http.ResponseWriter, r *http.Request) {
 	default:
 		methodNotAllowed(w)
 	}
+}
+
+func (s *Server) fileBackups(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	versions, err := s.files.ListBackups(r.URL.Query().Get("path"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"versions": versions})
+}
+
+func (s *Server) fileBackupDiff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	diff, err := s.files.BackupDiff(r.URL.Query().Get("path"), r.URL.Query().Get("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, diff)
+}
+
+func (s *Server) fileBackupRestore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Path string `json:"path"`
+		ID   string `json:"id"`
+	}
+	if decodeJSON(w, r, 32<<10, &req) != nil {
+		return
+	}
+	if err := s.files.RestoreBackup(req.Path, req.ID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) fileDownload(w http.ResponseWriter, r *http.Request) {

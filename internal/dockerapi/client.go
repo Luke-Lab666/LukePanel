@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -63,12 +64,13 @@ type Image struct {
 }
 
 type Network struct {
-	ID       string            `json:"id"`
-	Name     string            `json:"name"`
-	Driver   string            `json:"driver"`
-	Scope    string            `json:"scope"`
-	Internal bool              `json:"internal"`
-	Labels   map[string]string `json:"labels"`
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	Driver     string            `json:"driver"`
+	Scope      string            `json:"scope"`
+	Internal   bool              `json:"internal"`
+	Containers int               `json:"containers"`
+	Labels     map[string]string `json:"labels"`
 }
 
 type Volume struct {
@@ -77,6 +79,35 @@ type Volume struct {
 	Mountpoint string            `json:"mountpoint"`
 	Scope      string            `json:"scope"`
 	Labels     map[string]string `json:"labels"`
+}
+
+type ContainerStats struct {
+	ID            string  `json:"id"`
+	CPUPercent    float64 `json:"cpu_percent"`
+	MemoryUsage   uint64  `json:"memory_usage"`
+	MemoryLimit   uint64  `json:"memory_limit"`
+	MemoryPercent float64 `json:"memory_percent"`
+	NetworkRX     uint64  `json:"network_rx"`
+	NetworkTX     uint64  `json:"network_tx"`
+	BlockRead     uint64  `json:"block_read"`
+	BlockWrite    uint64  `json:"block_write"`
+}
+
+type CleanupPreview struct {
+	StoppedContainers int   `json:"stopped_containers"`
+	DanglingImages    int   `json:"dangling_images"`
+	UnusedImages      int   `json:"unused_images"`
+	UnusedNetworks    int   `json:"unused_networks"`
+	UnusedVolumes     int   `json:"unused_volumes"`
+	ReclaimableBytes  int64 `json:"reclaimable_bytes"`
+}
+
+type CleanupResult struct {
+	ContainersDeleted []string `json:"containers_deleted,omitempty"`
+	ImagesDeleted     []string `json:"images_deleted,omitempty"`
+	NetworksDeleted   []string `json:"networks_deleted,omitempty"`
+	VolumesDeleted    []string `json:"volumes_deleted,omitempty"`
+	SpaceReclaimed    uint64   `json:"space_reclaimed"`
 }
 
 type ComposeContainer struct {
@@ -145,6 +176,140 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 		out = append(out, Container{ID: r.ID, Names: r.Names, Image: r.Image, ImageID: r.ImageID, Command: r.Command, Created: r.Created, State: r.State, Status: r.Status, Ports: r.Ports, Labels: r.Labels})
 	}
 	return out, nil
+}
+
+func (c *Client) ContainerStats(ctx context.Context, ids []string) ([]ContainerStats, error) {
+	if len(ids) == 0 {
+		containers, err := c.ListContainers(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, container := range containers {
+			if container.State == "running" {
+				ids = append(ids, container.ID)
+			}
+		}
+	}
+	if len(ids) > 40 {
+		ids = ids[:40]
+	}
+	type result struct {
+		stats ContainerStats
+		err   error
+	}
+	jobs := make(chan string)
+	results := make(chan result, len(ids))
+	workers := min(4, len(ids))
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range jobs {
+				stats, err := c.containerStats(ctx, id)
+				results <- result{stats: stats, err: err}
+			}
+		}()
+	}
+	go func() {
+		for _, id := range ids {
+			if validID(id) {
+				jobs <- id
+			}
+		}
+		close(jobs)
+		wg.Wait()
+		close(results)
+	}()
+	out := make([]ContainerStats, 0, len(ids))
+	for item := range results {
+		if item.err == nil {
+			out = append(out, item.stats)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CPUPercent > out[j].CPUPercent })
+	return out, nil
+}
+
+func (c *Client) containerStats(ctx context.Context, id string) (ContainerStats, error) {
+	if !validID(id) {
+		return ContainerStats{}, errors.New("invalid container id")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var raw struct {
+		CPUStats struct {
+			CPUUsage struct {
+				TotalUsage  uint64   `json:"total_usage"`
+				PercpuUsage []uint64 `json:"percpu_usage"`
+			} `json:"cpu_usage"`
+			SystemCPUUsage uint64 `json:"system_cpu_usage"`
+			OnlineCPUs     uint64 `json:"online_cpus"`
+		} `json:"cpu_stats"`
+		PreCPUStats struct {
+			CPUUsage struct {
+				TotalUsage uint64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemCPUUsage uint64 `json:"system_cpu_usage"`
+		} `json:"precpu_stats"`
+		MemoryStats struct {
+			Usage uint64            `json:"usage"`
+			Limit uint64            `json:"limit"`
+			Stats map[string]uint64 `json:"stats"`
+		} `json:"memory_stats"`
+		Networks map[string]struct {
+			RXBytes uint64 `json:"rx_bytes"`
+			TXBytes uint64 `json:"tx_bytes"`
+		} `json:"networks"`
+		BlockIOStats struct {
+			Entries []struct {
+				Op    string `json:"op"`
+				Value uint64 `json:"value"`
+			} `json:"io_service_bytes_recursive"`
+		} `json:"blkio_stats"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/containers/"+url.PathEscape(id)+"/stats?stream=false&one-shot=true", nil, &raw); err != nil {
+		return ContainerStats{}, err
+	}
+	stats := ContainerStats{ID: id, MemoryLimit: raw.MemoryStats.Limit}
+	var cpuDelta, systemDelta uint64
+	if raw.CPUStats.CPUUsage.TotalUsage >= raw.PreCPUStats.CPUUsage.TotalUsage {
+		cpuDelta = raw.CPUStats.CPUUsage.TotalUsage - raw.PreCPUStats.CPUUsage.TotalUsage
+	}
+	if raw.CPUStats.SystemCPUUsage >= raw.PreCPUStats.SystemCPUUsage {
+		systemDelta = raw.CPUStats.SystemCPUUsage - raw.PreCPUStats.SystemCPUUsage
+	}
+	online := raw.CPUStats.OnlineCPUs
+	if online == 0 {
+		online = uint64(len(raw.CPUStats.CPUUsage.PercpuUsage))
+	}
+	if cpuDelta > 0 && systemDelta > 0 && online > 0 {
+		stats.CPUPercent = float64(cpuDelta) / float64(systemDelta) * float64(online) * 100
+	}
+	cache := raw.MemoryStats.Stats["inactive_file"]
+	if cache == 0 {
+		cache = raw.MemoryStats.Stats["cache"]
+	}
+	stats.MemoryUsage = raw.MemoryStats.Usage
+	if stats.MemoryUsage > cache {
+		stats.MemoryUsage -= cache
+	}
+	if stats.MemoryLimit > 0 {
+		stats.MemoryPercent = float64(stats.MemoryUsage) / float64(stats.MemoryLimit) * 100
+	}
+	for _, network := range raw.Networks {
+		stats.NetworkRX += network.RXBytes
+		stats.NetworkTX += network.TXBytes
+	}
+	for _, entry := range raw.BlockIOStats.Entries {
+		switch strings.ToLower(entry.Op) {
+		case "read":
+			stats.BlockRead += entry.Value
+		case "write":
+			stats.BlockWrite += entry.Value
+		}
+	}
+	return stats, nil
 }
 
 func (c *Client) Action(ctx context.Context, id, action string) error {
@@ -277,19 +442,20 @@ func (c *Client) RemoveImage(ctx context.Context, id string) error {
 }
 func (c *Client) ListNetworks(ctx context.Context) ([]Network, error) {
 	var raw []struct {
-		ID       string            `json:"Id"`
-		Name     string            `json:"Name"`
-		Driver   string            `json:"Driver"`
-		Scope    string            `json:"Scope"`
-		Internal bool              `json:"Internal"`
-		Labels   map[string]string `json:"Labels"`
+		ID         string            `json:"Id"`
+		Name       string            `json:"Name"`
+		Driver     string            `json:"Driver"`
+		Scope      string            `json:"Scope"`
+		Internal   bool              `json:"Internal"`
+		Containers map[string]any    `json:"Containers"`
+		Labels     map[string]string `json:"Labels"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, "/networks", nil, &raw); err != nil {
 		return nil, err
 	}
 	out := make([]Network, 0, len(raw))
 	for _, r := range raw {
-		out = append(out, Network{ID: r.ID, Name: r.Name, Driver: r.Driver, Scope: r.Scope, Internal: r.Internal, Labels: r.Labels})
+		out = append(out, Network{ID: r.ID, Name: r.Name, Driver: r.Driver, Scope: r.Scope, Internal: r.Internal, Containers: len(r.Containers), Labels: r.Labels})
 	}
 	return out, nil
 }
@@ -306,6 +472,49 @@ func (c *Client) RemoveNetwork(ctx context.Context, id string) error {
 		return dockerError(resp)
 	}
 	return nil
+}
+
+func (c *Client) CreateNetwork(ctx context.Context, name, driver, subnet, gateway string, internal bool) (Network, error) {
+	name = strings.TrimSpace(name)
+	driver = strings.TrimSpace(driver)
+	subnet = strings.TrimSpace(subnet)
+	gateway = strings.TrimSpace(gateway)
+	if !validID(name) {
+		return Network{}, errors.New("网络名称只能包含字母、数字、点、下划线和短横线")
+	}
+	if driver == "" {
+		driver = "bridge"
+	}
+	if driver != "bridge" && driver != "macvlan" && driver != "ipvlan" {
+		return Network{}, errors.New("当前只支持 bridge、macvlan 或 ipvlan 驱动")
+	}
+	payload := map[string]any{"Name": name, "Driver": driver, "Internal": internal, "CheckDuplicate": true}
+	if subnet != "" || gateway != "" {
+		if subnet == "" {
+			return Network{}, errors.New("填写网关时必须同时填写子网 CIDR")
+		}
+		_, network, err := net.ParseCIDR(subnet)
+		if err != nil {
+			return Network{}, errors.New("子网必须是有效 CIDR，例如 172.30.0.0/16")
+		}
+		config := map[string]any{"Subnet": subnet}
+		if gateway != "" {
+			ip := net.ParseIP(gateway)
+			if ip == nil || !network.Contains(ip) {
+				return Network{}, errors.New("网关必须是子网范围内的有效 IP")
+			}
+			config["Gateway"] = gateway
+		}
+		payload["IPAM"] = map[string]any{"Driver": "default", "Config": []any{config}}
+	}
+	var created struct {
+		ID      string `json:"Id"`
+		Warning string `json:"Warning"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/networks/create", payload, &created); err != nil {
+		return Network{}, err
+	}
+	return Network{ID: created.ID, Name: name, Driver: driver, Internal: internal, Scope: "local"}, nil
 }
 func (c *Client) ListVolumes(ctx context.Context) ([]Volume, error) {
 	var raw struct {
@@ -325,6 +534,156 @@ func (c *Client) ListVolumes(ctx context.Context) ([]Volume, error) {
 		out = append(out, Volume{Name: r.Name, Driver: r.Driver, Mountpoint: r.Mountpoint, Scope: r.Scope, Labels: r.Labels})
 	}
 	return out, nil
+}
+
+func (c *Client) CreateVolume(ctx context.Context, name, driver string) (Volume, error) {
+	name = strings.TrimSpace(name)
+	driver = strings.TrimSpace(driver)
+	if !validID(name) {
+		return Volume{}, errors.New("存储卷名称只能包含字母、数字、点、下划线和短横线")
+	}
+	if driver == "" {
+		driver = "local"
+	}
+	if !validID(driver) {
+		return Volume{}, errors.New("存储卷驱动名称无效")
+	}
+	var raw struct {
+		Name       string            `json:"Name"`
+		Driver     string            `json:"Driver"`
+		Mountpoint string            `json:"Mountpoint"`
+		Scope      string            `json:"Scope"`
+		Labels     map[string]string `json:"Labels"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/volumes/create", map[string]any{"Name": name, "Driver": driver}, &raw); err != nil {
+		return Volume{}, err
+	}
+	return Volume{Name: raw.Name, Driver: raw.Driver, Mountpoint: raw.Mountpoint, Scope: raw.Scope, Labels: raw.Labels}, nil
+}
+
+func (c *Client) CleanupPreview(ctx context.Context) (CleanupPreview, error) {
+	var raw struct {
+		Containers []struct {
+			State  string `json:"State"`
+			SizeRW int64  `json:"SizeRw"`
+		} `json:"Containers"`
+		Images []struct {
+			Containers int64    `json:"Containers"`
+			RepoTags   []string `json:"RepoTags"`
+			Size       int64    `json:"Size"`
+			SharedSize int64    `json:"SharedSize"`
+		} `json:"Images"`
+		Volumes []struct {
+			UsageData struct {
+				RefCount int64 `json:"RefCount"`
+				Size     int64 `json:"Size"`
+			} `json:"UsageData"`
+		} `json:"Volumes"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/system/df", nil, &raw); err != nil {
+		return CleanupPreview{}, err
+	}
+	preview := CleanupPreview{}
+	for _, container := range raw.Containers {
+		if container.State != "running" {
+			preview.StoppedContainers++
+			if container.SizeRW > 0 {
+				preview.ReclaimableBytes += container.SizeRW
+			}
+		}
+	}
+	for _, image := range raw.Images {
+		if image.Containers <= 0 {
+			preview.UnusedImages++
+			if len(image.RepoTags) == 0 || (len(image.RepoTags) == 1 && image.RepoTags[0] == "<none>:<none>") {
+				preview.DanglingImages++
+			}
+			reclaimable := image.Size - image.SharedSize
+			if reclaimable > 0 {
+				preview.ReclaimableBytes += reclaimable
+			}
+		}
+	}
+	for _, volume := range raw.Volumes {
+		if volume.UsageData.RefCount <= 0 {
+			preview.UnusedVolumes++
+			if volume.UsageData.Size > 0 {
+				preview.ReclaimableBytes += volume.UsageData.Size
+			}
+		}
+	}
+	networks, err := c.ListNetworks(ctx)
+	if err == nil {
+		for _, network := range networks {
+			if !map[string]bool{"bridge": true, "host": true, "none": true}[network.Name] && network.Containers == 0 {
+				preview.UnusedNetworks++
+			}
+		}
+	}
+	return preview, nil
+}
+
+func (c *Client) Cleanup(ctx context.Context, mode string, includeVolumes bool) (CleanupResult, error) {
+	if mode != "safe" && mode != "deep" {
+		return CleanupResult{}, errors.New("清理模式无效")
+	}
+	result := CleanupResult{}
+	if err := c.prune(ctx, "/containers/prune", nil, &result.ContainersDeleted, &result.SpaceReclaimed); err != nil {
+		return result, fmt.Errorf("清理停止容器失败: %w", err)
+	}
+	filters := map[string]any{}
+	if mode == "safe" {
+		filters["dangling"] = []string{"true"}
+	}
+	query := url.Values{}
+	if len(filters) > 0 {
+		data, _ := json.Marshal(filters)
+		query.Set("filters", string(data))
+	}
+	endpoint := "/images/prune"
+	if encoded := query.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
+	if err := c.prune(ctx, endpoint, nil, &result.ImagesDeleted, &result.SpaceReclaimed); err != nil {
+		return result, fmt.Errorf("清理镜像失败: %w", err)
+	}
+	if err := c.prune(ctx, "/networks/prune", nil, &result.NetworksDeleted, &result.SpaceReclaimed); err != nil {
+		return result, fmt.Errorf("清理网络失败: %w", err)
+	}
+	if includeVolumes {
+		if err := c.prune(ctx, "/volumes/prune", nil, &result.VolumesDeleted, &result.SpaceReclaimed); err != nil {
+			return result, fmt.Errorf("清理存储卷失败: %w", err)
+		}
+	}
+	return result, nil
+}
+
+func (c *Client) prune(ctx context.Context, endpoint string, body any, deleted *[]string, reclaimed *uint64) error {
+	var raw struct {
+		ContainersDeleted []string `json:"ContainersDeleted"`
+		ImagesDeleted     []struct {
+			Deleted  string `json:"Deleted"`
+			Untagged string `json:"Untagged"`
+		} `json:"ImagesDeleted"`
+		NetworksDeleted []string `json:"NetworksDeleted"`
+		VolumesDeleted  []string `json:"VolumesDeleted"`
+		SpaceReclaimed  uint64   `json:"SpaceReclaimed"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, endpoint, body, &raw); err != nil {
+		return err
+	}
+	*deleted = append(*deleted, raw.ContainersDeleted...)
+	*deleted = append(*deleted, raw.NetworksDeleted...)
+	*deleted = append(*deleted, raw.VolumesDeleted...)
+	for _, image := range raw.ImagesDeleted {
+		if image.Deleted != "" {
+			*deleted = append(*deleted, image.Deleted)
+		} else if image.Untagged != "" {
+			*deleted = append(*deleted, image.Untagged)
+		}
+	}
+	*reclaimed += raw.SpaceReclaimed
+	return nil
 }
 func (c *Client) ComposeProjects(ctx context.Context) ([]ComposeProject, error) {
 	containers, err := c.ListContainers(ctx)

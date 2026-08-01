@@ -15,9 +15,10 @@ import (
 )
 
 var (
-	ownerPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$`)
-	repoPattern  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
-	tagPattern   = regexp.MustCompile(`^v[0-9][A-Za-z0-9._-]{0,63}$`)
+	ownerPattern  = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$`)
+	repoPattern   = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
+	tagPattern    = regexp.MustCompile(`^v[0-9][A-Za-z0-9._-]{0,63}$`)
+	branchPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$`)
 )
 
 type Client struct {
@@ -36,6 +37,7 @@ type RepositorySummary struct {
 	UpdatedAt     string        `json:"updated_at"`
 	MainSHA       string        `json:"main_sha"`
 	Tags          []Tag         `json:"tags"`
+	Branches      []Branch      `json:"branches"`
 	LatestRelease *Release      `json:"latest_release,omitempty"`
 	WorkflowRuns  []WorkflowRun `json:"workflow_runs"`
 }
@@ -43,6 +45,21 @@ type RepositorySummary struct {
 type Tag struct {
 	Name string `json:"name"`
 	SHA  string `json:"sha"`
+}
+
+type Branch struct {
+	Name      string `json:"name"`
+	SHA       string `json:"sha"`
+	Protected bool   `json:"protected"`
+}
+
+type PullRequest struct {
+	Number  int    `json:"number"`
+	Title   string `json:"title"`
+	State   string `json:"state"`
+	HTMLURL string `json:"html_url"`
+	Head    string `json:"head"`
+	Base    string `json:"base"`
 }
 
 type Release struct {
@@ -109,6 +126,18 @@ func (c *Client) Summary(ctx context.Context, owner, repo, token string) (Reposi
 	for _, item := range rawTags {
 		tags = append(tags, Tag{Name: item.Name, SHA: item.Commit.SHA})
 	}
+	var rawBranches []struct {
+		Name      string `json:"name"`
+		Protected bool   `json:"protected"`
+		Commit    struct {
+			SHA string `json:"sha"`
+		} `json:"commit"`
+	}
+	_ = c.get(ctx, owner, repo, "/branches?per_page=20", token, &rawBranches)
+	branches := make([]Branch, 0, len(rawBranches))
+	for _, item := range rawBranches {
+		branches = append(branches, Branch{Name: item.Name, SHA: item.Commit.SHA, Protected: item.Protected})
+	}
 	var latest Release
 	var latestPtr *Release
 	if err := c.get(ctx, owner, repo, "/releases/latest", token, &latest); err == nil {
@@ -118,7 +147,87 @@ func (c *Client) Summary(ctx context.Context, owner, repo, token string) (Reposi
 		WorkflowRuns []WorkflowRun `json:"workflow_runs"`
 	}
 	_ = c.get(ctx, owner, repo, "/actions/runs?per_page=10", token, &runs)
-	return RepositorySummary{Owner: owner, Name: repo, FullName: metadata.FullName, Description: metadata.Description, Visibility: metadata.Visibility, DefaultBranch: metadata.DefaultBranch, UpdatedAt: metadata.UpdatedAt, MainSHA: branch.Commit.SHA, Tags: tags, LatestRelease: latestPtr, WorkflowRuns: runs.WorkflowRuns}, nil
+	return RepositorySummary{Owner: owner, Name: repo, FullName: metadata.FullName, Description: metadata.Description, Visibility: metadata.Visibility, DefaultBranch: metadata.DefaultBranch, UpdatedAt: metadata.UpdatedAt, MainSHA: branch.Commit.SHA, Tags: tags, Branches: branches, LatestRelease: latestPtr, WorkflowRuns: runs.WorkflowRuns}, nil
+}
+
+func (c *Client) CreateBranch(ctx context.Context, owner, repo, name, source, token string) (Branch, error) {
+	if err := validateRepo(owner, repo); err != nil {
+		return Branch{}, err
+	}
+	if err := validateBranchName(name); err != nil {
+		return Branch{}, err
+	}
+	if strings.TrimSpace(token) == "" {
+		return Branch{}, errors.New("请先连接 GitHub")
+	}
+	source = strings.TrimSpace(source)
+	if source == "" {
+		summary, err := c.Summary(ctx, owner, repo, token)
+		if err != nil {
+			return Branch{}, err
+		}
+		source = summary.DefaultBranch
+	}
+	if err := validateBranchName(source); err != nil {
+		return Branch{}, errors.New("源分支名称无效")
+	}
+	var sourceBranch struct {
+		Name   string `json:"name"`
+		Commit struct {
+			SHA string `json:"sha"`
+		} `json:"commit"`
+	}
+	if err := c.get(ctx, owner, repo, "/branches/"+url.PathEscape(source), token, &sourceBranch); err != nil {
+		return Branch{}, err
+	}
+	payload := map[string]string{"ref": "refs/heads/" + name, "sha": sourceBranch.Commit.SHA}
+	if err := c.requestJSON(ctx, http.MethodPost, owner, repo, "/git/refs", token, payload, nil); err != nil {
+		return Branch{}, err
+	}
+	return Branch{Name: name, SHA: sourceBranch.Commit.SHA}, nil
+}
+
+func (c *Client) CreatePullRequest(ctx context.Context, owner, repo, title, body, head, base, token string) (PullRequest, error) {
+	if err := validateRepo(owner, repo); err != nil {
+		return PullRequest{}, err
+	}
+	if err := validateBranchName(head); err != nil {
+		return PullRequest{}, errors.New("提交分支名称无效")
+	}
+	if err := validateBranchName(base); err != nil {
+		return PullRequest{}, errors.New("目标分支名称无效")
+	}
+	title = strings.TrimSpace(title)
+	body = strings.TrimSpace(body)
+	if title == "" || len(title) > 200 {
+		return PullRequest{}, errors.New("PR 标题必须是 1-200 个字符")
+	}
+	if len(body) > 20000 {
+		return PullRequest{}, errors.New("PR 说明过长")
+	}
+	if head == base {
+		return PullRequest{}, errors.New("提交分支和目标分支不能相同")
+	}
+	if strings.TrimSpace(token) == "" {
+		return PullRequest{}, errors.New("请先连接 GitHub")
+	}
+	payload := map[string]any{"title": title, "body": body, "head": head, "base": base, "draft": false}
+	var raw struct {
+		Number  int    `json:"number"`
+		Title   string `json:"title"`
+		State   string `json:"state"`
+		HTMLURL string `json:"html_url"`
+		Head    struct {
+			Ref string `json:"ref"`
+		} `json:"head"`
+		Base struct {
+			Ref string `json:"ref"`
+		} `json:"base"`
+	}
+	if err := c.requestJSON(ctx, http.MethodPost, owner, repo, "/pulls", token, payload, &raw); err != nil {
+		return PullRequest{}, err
+	}
+	return PullRequest{Number: raw.Number, Title: raw.Title, State: raw.State, HTMLURL: raw.HTMLURL, Head: raw.Head.Ref, Base: raw.Base.Ref}, nil
 }
 
 func (c *Client) CreateTag(ctx context.Context, owner, repo, tag, targetSHA, token string) error {
@@ -126,7 +235,7 @@ func (c *Client) CreateTag(ctx context.Context, owner, repo, tag, targetSHA, tok
 		return err
 	}
 	if !tagPattern.MatchString(tag) {
-		return errors.New("版本号必须以小写 v 开头，例如 v0.3.0-alpha")
+		return errors.New("版本号必须以小写 v 开头，例如 v0.6.0-alpha")
 	}
 	if strings.TrimSpace(token) == "" {
 		return errors.New("需要一次性 GitHub Token")
@@ -203,6 +312,14 @@ func (c *Client) requestJSON(ctx context.Context, method, owner, repo, suffix, t
 func validateRepo(owner, repo string) error {
 	if !ownerPattern.MatchString(owner) || !repoPattern.MatchString(repo) {
 		return errors.New("GitHub 仓库格式不正确")
+	}
+	return nil
+}
+
+func validateBranchName(branch string) error {
+	branch = strings.TrimSpace(branch)
+	if !branchPattern.MatchString(branch) || strings.Contains(branch, "..") || strings.Contains(branch, "//") || strings.Contains(branch, "@{") || strings.HasSuffix(branch, "/") || strings.HasSuffix(branch, ".") || strings.HasSuffix(strings.ToLower(branch), ".lock") {
+		return errors.New("分支名称只能包含字母、数字、点、短横线、下划线和斜杠")
 	}
 	return nil
 }

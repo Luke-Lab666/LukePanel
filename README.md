@@ -2,7 +2,7 @@
 
 面向 Debian 12/13 的轻量系统管理面板。移动端优先、桌面端增强；核心由 Go 单二进制构成，不依赖 Node.js 运行时、Redis、外部数据库、Prometheus 或 Grafana。
 
-> 当前版本：`v0.5.0-alpha`。已经覆盖单机 VPS 的高频日常管理，但仍处于 Alpha 阶段。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
+> 当前版本：`v0.6.0-alpha`。已经覆盖单机 VPS 的高频日常管理，但仍处于 Alpha 阶段。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
 
 ## 设计目标
 
@@ -27,19 +27,22 @@
 - 进程 CPU/内存排行，支持 SIGTERM / SIGKILL
 - 网络接口、地址、累计流量和监听端口
 - 存储分区与空间占用；默认隐藏 overlay、netns、BPF、重复绑定挂载等虚拟项目
-- systemd timer 查看
+- 安全计划任务：重启 systemd 服务、重启 Docker 容器、安全清理 Docker；不接受任意 Shell
+- 原生 systemd timer 查看
 - APT 可升级软件包模拟检查
 - SSH Server 状态、可登录用户与 `authorized_keys` 公钥管理
 
 ### Docker
 
 - Docker Engine 状态和版本，概览页每 10 秒低频同步容器数量
+- 运行容器 CPU、内存、网络和块设备 I/O 按需实时统计
 - 容器列表、状态、镜像、端口、启停、重启、删除和日志
 - 非 Compose 容器结构化编辑：镜像、环境变量、命令、端口、挂载和重启策略
 - 编辑采用安全重建事务；新容器失败时自动恢复旧容器
 - Compose 容器引导编辑对应 YAML，避免面板配置与 Compose 漂移
 - 镜像列表、拉取和删除
-- 网络与存储卷查看、删除
+- 网络与存储卷查看、创建和删除
+- 安全/深度清理预览，按需清理停止容器、未使用镜像、网络和存储卷
 - 自动识别 Docker Compose 项目
 - Compose 拉取、启动、停止、重启和下线
 
@@ -55,6 +58,7 @@
 - 回收站查看、恢复到原位置/新位置、永久清理
 - 跨文件系统复制、移动和回收
 - 编辑前自动备份；文件备份总量自动限制为 500MB / 500 份
+- 单文件历史版本列表、差异对比和一键恢复；恢复前再次备份当前版本
 - 授权根目录保护、符号链接越界防护
 - 系统密码文件、SSH 私钥和常见私钥文件禁止在线读取或下载
 
@@ -76,6 +80,7 @@
 - 使用 Git Trees / Commit / Ref API 直接 Commit + Push，不依赖服务器安装 Git
 - 默认增量覆盖，不删除 ZIP 中缺失的仓库文件，不 Force Push
 - 预览后远端分支发生变化时拒绝提交，避免覆盖新提交
+- 创建分支和 Pull Request，支持“新建分支 → ZIP 推送 → PR 合并”的小白流程
 - 创建版本 Tag、触发 Release、重试失败 Actions
 - 修改 `.github/workflows` 需要 GitHub 授权包含 workflow 权限
 
@@ -93,6 +98,7 @@
 - HttpOnly、SameSite=Strict、Secure Cookie
 - CSRF 防护与登录失败限速
 - 会话查看和退出其他设备
+- TOTP 身份验证器与一次性恢复码；恢复码只保存哈希并在使用后立即作废
 - 高风险操作二次验证，授权窗口 5 分钟
 - Web 普通用户与 root Agent 通过本地 Unix Socket 隔离
 - Agent Secret 固定时序比较，Agent 不监听 TCP
@@ -192,10 +198,9 @@ make build VERSION=dev
 
 ## 当前限制
 
-- 容器编辑已开放，但镜像构建、网络/卷创建和高级清理仍未开放。
-- GitHub ZIP 推送是面向更新包的安全增量模式，不是完整的分支合并、冲突解决或历史改写客户端。
+- Docker 镜像构建和交互式容器终端仍未开放；浏览器任意 WebShell 不在项目范围内。
+- GitHub ZIP 推送支持分支和 PR，但不执行自动 Rebase、复杂冲突解决或历史改写；检测到远端变化会停止推送。
 - GitHub 网页登录首次需要用户自己创建 OAuth App 并启用 Device Flow；Client ID 可保存在浏览器本地。
-- 计划任务目前以查看 systemd timer 为主，不提供任意 Shell 定时任务。
-- APT 目前只检查，不直接执行升级；避免面板升级中断 SSH 或网络。
-- TOTP、Passkey、IP 白名单和安全通知仍在后续阶段。
-- 审计仍使用追加式 JSONL；大规模检索和留存策略后续迁移 SQLite。
+- 计划任务只提供经过参数校验的固定模板，不允许用户输入任意 Shell。
+- APT 目前只检查，不直接执行升级；后续会先实现下载、快照提示和可恢复升级流程。
+- Passkey、IP 白名单、安全通知与 SQLite 大规模审计检索仍在后续阶段。

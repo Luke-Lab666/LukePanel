@@ -25,6 +25,8 @@ type Config struct {
 	SecureCookie       bool     `json:"secure_cookie"`
 	AllowedRoots       []string `json:"allowed_roots"`
 	AutoRefreshSeconds int      `json:"auto_refresh_seconds"`
+	TOTPSecret         string   `json:"totp_secret,omitempty"`
+	RecoveryCodeHashes []string `json:"recovery_code_hashes,omitempty"`
 }
 
 func Default() Config {

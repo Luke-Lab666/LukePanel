@@ -47,6 +47,8 @@ type Server struct {
 	logger         *slog.Logger
 	elevatedMu     sync.Mutex
 	elevated       map[string]time.Time
+	totpMu         sync.Mutex
+	totpPending    map[string]totpPendingSetup
 }
 
 func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*Server, error) {
@@ -56,6 +58,7 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 		agent: agent.NewClient(cfg.AgentSocket, cfg.AgentSecret), github: githubClient, githubImporter: githubhelper.NewImporter(githubClient, cfg.DataDir), sessions: auth.NewStore(cfg.SessionSecret, 24*time.Hour),
 		limiter: auth.NewLoginLimiter(), audit: NewAuditLog(cfg.DataDir), logger: logger, elevated: make(map[string]time.Time),
 		githubTokens: make(map[string]githubCredential), githubFlows: make(map[string]*githubDeviceFlow),
+		totpPending: make(map[string]totpPendingSetup),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/health", s.health)
@@ -65,6 +68,11 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/auth/elevate", s.requireAuth(s.elevate))
 	mux.HandleFunc("/api/v1/auth/me", s.requireAuth(s.me))
 	mux.HandleFunc("/api/v1/auth/sessions", s.requireAuth(s.sessionManagement))
+	mux.HandleFunc("/api/v1/auth/totp/status", s.requireAuth(s.totpStatus))
+	mux.HandleFunc("/api/v1/auth/totp/setup", s.requireAuth(s.totpSetup))
+	mux.HandleFunc("/api/v1/auth/totp/confirm", s.requireAuth(s.totpConfirm))
+	mux.HandleFunc("/api/v1/auth/totp/disable", s.requireAuth(s.totpDisable))
+	mux.HandleFunc("/api/v1/auth/totp/recovery", s.requireAuth(s.totpRegenerateRecovery))
 	mux.HandleFunc("/api/v1/system/overview", s.requireAuth(s.overview))
 	mux.HandleFunc("/api/v1/system/overview/stream", s.requireAuth(s.overviewStream))
 	mux.HandleFunc("/api/v1/system/services", s.requireAuth(s.serviceList))
@@ -75,9 +83,13 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/system/network", s.requireAuth(s.networkInfo))
 	mux.HandleFunc("/api/v1/system/storage", s.requireAuth(s.storageInfo))
 	mux.HandleFunc("/api/v1/system/timers", s.requireAuth(s.timerInfo))
+	mux.HandleFunc("/api/v1/system/tasks", s.requireAuth(s.taskList))
+	mux.HandleFunc("/api/v1/system/tasks/create", s.requireAuth(s.taskCreate))
+	mux.HandleFunc("/api/v1/system/tasks/action", s.requireAuth(s.taskAction))
 	mux.HandleFunc("/api/v1/system/updates", s.requireAuth(s.updateInfo))
 	mux.HandleFunc("/api/v1/docker/status", s.requireAuth(s.dockerStatus))
 	mux.HandleFunc("/api/v1/docker/containers", s.requireAuth(s.dockerContainers))
+	mux.HandleFunc("/api/v1/docker/stats", s.requireAuth(s.dockerStats))
 	mux.HandleFunc("/api/v1/docker/action", s.requireAuth(s.dockerAction))
 	mux.HandleFunc("/api/v1/docker/logs", s.requireAuth(s.dockerLogs))
 	mux.HandleFunc("/api/v1/docker/inspect", s.requireAuth(s.dockerInspect))
@@ -86,9 +98,13 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/docker/images/pull", s.requireAuth(s.dockerImagePull))
 	mux.HandleFunc("/api/v1/docker/images/delete", s.requireAuth(s.dockerImageDelete))
 	mux.HandleFunc("/api/v1/docker/networks", s.requireAuth(s.dockerNetworks))
+	mux.HandleFunc("/api/v1/docker/networks/create", s.requireAuth(s.dockerNetworkCreate))
 	mux.HandleFunc("/api/v1/docker/networks/delete", s.requireAuth(s.dockerNetworkDelete))
 	mux.HandleFunc("/api/v1/docker/volumes", s.requireAuth(s.dockerVolumes))
+	mux.HandleFunc("/api/v1/docker/volumes/create", s.requireAuth(s.dockerVolumeCreate))
 	mux.HandleFunc("/api/v1/docker/volumes/delete", s.requireAuth(s.dockerVolumeDelete))
+	mux.HandleFunc("/api/v1/docker/cleanup/preview", s.requireAuth(s.dockerCleanupPreview))
+	mux.HandleFunc("/api/v1/docker/cleanup", s.requireAuth(s.dockerCleanup))
 	mux.HandleFunc("/api/v1/docker/compose", s.requireAuth(s.dockerCompose))
 	mux.HandleFunc("/api/v1/docker/compose/action", s.requireAuth(s.dockerComposeAction))
 	mux.HandleFunc("/api/v1/files", s.requireAuth(s.files))
@@ -104,6 +120,9 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/files/move", s.requireAuth(s.fileMove))
 	mux.HandleFunc("/api/v1/files/chmod", s.requireAuth(s.fileChmod))
 	mux.HandleFunc("/api/v1/files/recycle", s.requireAuth(s.fileRecycle))
+	mux.HandleFunc("/api/v1/files/backups", s.requireAuth(s.fileBackups))
+	mux.HandleFunc("/api/v1/files/backups/diff", s.requireAuth(s.fileBackupDiff))
+	mux.HandleFunc("/api/v1/files/backups/restore", s.requireAuth(s.fileBackupRestore))
 	mux.HandleFunc("/api/v1/ssh/status", s.requireAuth(s.sshStatus))
 	mux.HandleFunc("/api/v1/ssh/users", s.requireAuth(s.sshUsers))
 	mux.HandleFunc("/api/v1/ssh/keys", s.requireAuth(s.sshKeys))
@@ -117,6 +136,8 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/github/import/commit", s.requireAuth(s.githubImportCommit))
 	mux.HandleFunc("/api/v1/github/summary", s.requireAuth(s.githubSummary))
 	mux.HandleFunc("/api/v1/github/tag", s.requireAuth(s.githubCreateTag))
+	mux.HandleFunc("/api/v1/github/branch", s.requireAuth(s.githubCreateBranch))
+	mux.HandleFunc("/api/v1/github/pull", s.requireAuth(s.githubCreatePullRequest))
 	mux.HandleFunc("/api/v1/github/rerun", s.requireAuth(s.githubRerunFailed))
 	mux.HandleFunc("/api/v1/logs/system", s.requireAuth(s.systemLogs))
 	mux.HandleFunc("/api/v1/audit", s.requireAuth(s.auditEvents))
@@ -156,16 +177,39 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusTooManyRequests, "登录尝试过多，请稍后再试")
 		return
 	}
-	var req struct{ Username, Password string }
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		OTP      string `json:"otp"`
+	}
 	if decodeJSON(w, r, 4096, &req) != nil {
 		return
 	}
-	valid, err := auth.VerifyPassword(req.Password, s.cfg.PasswordHash)
-	if err != nil || req.Username != s.cfg.AdminUser || !valid {
+	s.configMu.RLock()
+	passwordHash, adminUser, totpEnabled := s.cfg.PasswordHash, s.cfg.AdminUser, s.cfg.TOTPSecret != ""
+	s.configMu.RUnlock()
+	valid, err := auth.VerifyPassword(req.Password, passwordHash)
+	if err != nil || req.Username != adminUser || !valid {
 		s.limiter.Fail(ip)
 		s.audit.Write(AuditEvent{IP: ip, User: req.Username, Action: "auth.login", Result: "failed"})
 		writeError(w, http.StatusUnauthorized, "用户名或密码错误")
 		return
+	}
+	if totpEnabled {
+		if isSecondFactorMissing(req.OTP) {
+			writeErrorCode(w, http.StatusUnauthorized, "请输入身份验证器验证码或恢复码", "totp_required")
+			return
+		}
+		ok, recoveryUsed, verifyErr := s.verifySecondFactor(req.OTP, true)
+		if verifyErr != nil || !ok {
+			s.limiter.Fail(ip)
+			s.audit.Write(AuditEvent{IP: ip, User: req.Username, Action: "auth.login.totp", Result: "failed"})
+			writeErrorCode(w, http.StatusUnauthorized, "验证码或恢复码不正确", "totp_invalid")
+			return
+		}
+		if recoveryUsed {
+			s.audit.Write(AuditEvent{IP: ip, User: req.Username, Action: "auth.login.recovery", Result: "success"})
+		}
 	}
 	s.limiter.Success(ip)
 	token, session, err := s.sessions.Create(req.Username)
@@ -411,6 +455,15 @@ func (s *Server) storageInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) timerInfo(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/timers", nil, "")
 }
+func (s *Server) taskList(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/tasks", nil, "")
+}
+func (s *Server) taskCreate(w http.ResponseWriter, r *http.Request) {
+	s.dockerJSONMutation(w, r, "/v1/tasks/create", "tasks.create", "name", 32<<10)
+}
+func (s *Server) taskAction(w http.ResponseWriter, r *http.Request) {
+	s.dockerJSONMutation(w, r, "/v1/tasks/action", "tasks.action", "id", 16<<10)
+}
 func (s *Server) updateInfo(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/updates", nil, "")
 }
@@ -419,6 +472,13 @@ func (s *Server) dockerStatus(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) dockerContainers(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/docker/containers", nil, "")
+}
+func (s *Server) dockerStats(w http.ResponseWriter, r *http.Request) {
+	query := url.Values{}
+	for _, id := range r.URL.Query()["id"] {
+		query.Add("id", id)
+	}
+	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/docker/stats", query), nil, "")
 }
 func (s *Server) dockerLogs(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/docker/logs", url.Values{"id": {r.URL.Query().Get("id")}, "tail": {r.URL.Query().Get("tail")}}), nil, "")
@@ -498,8 +558,20 @@ func (s *Server) dockerImages(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dockerNetworks(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/docker/networks", nil, "")
 }
+func (s *Server) dockerNetworkCreate(w http.ResponseWriter, r *http.Request) {
+	s.dockerJSONMutation(w, r, "/v1/docker/networks/create", "docker.network.create", "name", 32<<10)
+}
 func (s *Server) dockerVolumes(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/docker/volumes", nil, "")
+}
+func (s *Server) dockerVolumeCreate(w http.ResponseWriter, r *http.Request) {
+	s.dockerJSONMutation(w, r, "/v1/docker/volumes/create", "docker.volume.create", "name", 16<<10)
+}
+func (s *Server) dockerCleanupPreview(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/docker/cleanup/preview", nil, "")
+}
+func (s *Server) dockerCleanup(w http.ResponseWriter, r *http.Request) {
+	s.dockerJSONMutation(w, r, "/v1/docker/cleanup", "docker.cleanup", "mode", 16<<10)
 }
 func (s *Server) dockerImagePull(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -548,6 +620,27 @@ func (s *Server) dockerResourceMutation(w http.ResponseWriter, r *http.Request, 
 	}
 	s.auditRequest(r, action, req[key], "success", "")
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) dockerJSONMutation(w http.ResponseWriter, r *http.Request, endpoint, action, key string, limit int64) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]any
+	if decodeJSON(w, r, limit, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, endpoint, req, &out); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.auditRequest(r, action, fmt.Sprint(req[key]), "success", "")
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) files(w http.ResponseWriter, r *http.Request) {
@@ -643,6 +736,34 @@ func (s *Server) fileRecycle(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditRequest(r, "files.recycle."+req["action"], req["id"], "success", "")
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) fileBackups(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/files/backups", url.Values{"path": {r.URL.Query().Get("path")}}), nil, "files.backups.list")
+}
+
+func (s *Server) fileBackupDiff(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/files/backups/diff", url.Values{"path": {r.URL.Query().Get("path")}, "id": {r.URL.Query().Get("id")}}), nil, "files.backups.diff")
+}
+
+func (s *Server) fileBackupRestore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]string
+	if decodeJSON(w, r, 32<<10, &req) != nil {
+		return
+	}
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/files/backups/restore", req, nil); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.auditRequest(r, "files.backups.restore", req["path"], "success", req["id"])
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) fileDownload(w http.ResponseWriter, r *http.Request) {
@@ -822,6 +943,62 @@ func (s *Server) githubCreateTag(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditRequest(r, "github.tag.create", req.Owner+"/"+req.Repo+":"+req.Tag, "success", "token not stored")
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) githubCreateBranch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req struct {
+		Owner  string `json:"owner"`
+		Repo   string `json:"repo"`
+		Name   string `json:"name"`
+		Source string `json:"source"`
+	}
+	if decodeJSON(w, r, 32<<10, &req) != nil {
+		return
+	}
+	session, _ := sessionFromContext(r)
+	branch, err := s.github.CreateBranch(r.Context(), req.Owner, req.Repo, req.Name, req.Source, s.githubToken(session.ID))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.auditRequest(r, "github.branch.create", req.Owner+"/"+req.Repo+":"+branch.Name, "success", branch.SHA)
+	writeJSON(w, http.StatusOK, branch)
+}
+
+func (s *Server) githubCreatePullRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req struct {
+		Owner string `json:"owner"`
+		Repo  string `json:"repo"`
+		Title string `json:"title"`
+		Body  string `json:"body"`
+		Head  string `json:"head"`
+		Base  string `json:"base"`
+	}
+	if decodeJSON(w, r, 64<<10, &req) != nil {
+		return
+	}
+	session, _ := sessionFromContext(r)
+	pull, err := s.github.CreatePullRequest(r.Context(), req.Owner, req.Repo, req.Title, req.Body, req.Head, req.Base, s.githubToken(session.ID))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.auditRequest(r, "github.pull.create", fmt.Sprintf("%s/%s#%d", req.Owner, req.Repo, pull.Number), "success", pull.Head+" -> "+pull.Base)
+	writeJSON(w, http.StatusOK, pull)
 }
 
 func (s *Server) githubRerunFailed(w http.ResponseWriter, r *http.Request) {
@@ -1071,6 +1248,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+func writeErrorCode(w http.ResponseWriter, status int, message, code string) {
+	writeJSON(w, status, map[string]string{"error": message, "code": code})
 }
 func methodNotAllowed(w http.ResponseWriter) {
 	writeError(w, http.StatusMethodNotAllowed, "方法不允许")
