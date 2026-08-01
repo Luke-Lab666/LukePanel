@@ -73,6 +73,22 @@ func (s *Store) Delete(token string) {
 	delete(s.sessions, id)
 	s.mu.Unlock()
 }
+func (s *Store) RenameCurrentAndDeleteOthers(sessionID, username string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	revoked := 0
+	for id, session := range s.sessions {
+		if session.ID == sessionID {
+			session.Username = username
+			s.sessions[id] = session
+			continue
+		}
+		delete(s.sessions, id)
+		revoked++
+	}
+	return revoked
+}
+
 func (s *Store) DeleteAllExcept(sessionID string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

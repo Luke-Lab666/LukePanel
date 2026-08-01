@@ -875,6 +875,8 @@ type RecreateRequest struct {
 	Hostname       string      `json:"hostname"`
 	RestartPolicy  string      `json:"restart_policy"`
 	RestartMaximum int         `json:"restart_maximum_retry_count"`
+	NetworkMode    string      `json:"network_mode"`
+	Privileged     bool        `json:"privileged"`
 	Ports          []EditPort  `json:"ports"`
 	Mounts         []EditMount `json:"mounts"`
 	Start          bool        `json:"start"`
@@ -1017,6 +1019,8 @@ func (c *Client) RecreateContainer(ctx context.Context, request RecreateRequest)
 	hostConfig := cloneMap(inspect.HostConfig)
 	hostConfig["PortBindings"] = bindings
 	hostConfig["RestartPolicy"] = map[string]any{"Name": request.RestartPolicy, "MaximumRetryCount": request.RestartMaximum}
+	hostConfig["NetworkMode"] = request.NetworkMode
+	hostConfig["Privileged"] = request.Privileged
 	mounts := make([]map[string]any, 0, len(request.Mounts))
 	for _, mount := range request.Mounts {
 		mounts = append(mounts, map[string]any{"Type": mount.Type, "Source": mount.Source, "Target": mount.Target, "ReadOnly": mount.ReadOnly})
@@ -1026,8 +1030,10 @@ func (c *Client) RecreateContainer(ctx context.Context, request RecreateRequest)
 
 	payload := cloneMap(configMap)
 	payload["HostConfig"] = hostConfig
-	if networking := safeNetworkingConfig(inspect, spec.Name); networking != nil {
-		payload["NetworkingConfig"] = networking
+	if request.NetworkMode == spec.NetworkMode {
+		if networking := safeNetworkingConfig(inspect, spec.Name); networking != nil {
+			payload["NetworkingConfig"] = networking
+		}
 	}
 
 	originalName := spec.Name
@@ -1086,6 +1092,10 @@ func validateRecreateRequest(request *RecreateRequest) error {
 	request.WorkingDir = strings.TrimSpace(request.WorkingDir)
 	request.User = strings.TrimSpace(request.User)
 	request.Hostname = strings.TrimSpace(request.Hostname)
+	request.NetworkMode = strings.TrimSpace(request.NetworkMode)
+	if request.NetworkMode == "" {
+		request.NetworkMode = "default"
+	}
 	if !validID(request.ID) || !validID(request.Name) {
 		return errors.New("容器名称只能包含字母、数字、点、下划线和短横线")
 	}
@@ -1101,6 +1111,12 @@ func validateRecreateRequest(request *RecreateRequest) error {
 	}
 	if request.RestartMaximum < 0 || request.RestartMaximum > 100000 {
 		return errors.New("最大重试次数无效")
+	}
+	if request.NetworkMode != "default" && request.NetworkMode != "bridge" && request.NetworkMode != "host" && request.NetworkMode != "none" && !validID(request.NetworkMode) {
+		return errors.New("网络模式无效")
+	}
+	if request.NetworkMode == "host" && len(request.Ports) > 0 {
+		return errors.New("Host 网络模式不能同时配置端口映射")
 	}
 	if len(request.Env) > 1000 || len(request.Ports) > 256 || len(request.Mounts) > 256 || len(request.Cmd) > 256 || len(request.Entrypoint) > 64 {
 		return errors.New("容器配置项目过多")

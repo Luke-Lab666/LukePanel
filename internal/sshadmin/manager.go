@@ -44,6 +44,14 @@ type Key struct {
 	Preview     string `json:"preview"`
 }
 
+type GeneratedKey struct {
+	Filename    string `json:"filename"`
+	PrivateKey  string `json:"private_key"`
+	PublicKey   string `json:"public_key"`
+	Fingerprint string `json:"fingerprint"`
+	Comment     string `json:"comment"`
+}
+
 type Manager struct{ dataDir string }
 
 func New(dataDir string) *Manager { return &Manager{dataDir: dataDir} }
@@ -201,6 +209,174 @@ func (m *Manager) DeleteKey(username, id string) error {
 		return errors.New("未找到这把公钥")
 	}
 	return m.writeKeys(path, kept, user)
+}
+
+func (m *Manager) SetPasswordAuthentication(ctx context.Context, enabled bool) error {
+	if os.Geteuid() != 0 {
+		return errors.New("需要 root 权限修改 SSH 配置")
+	}
+	if _, err := exec.LookPath("sshd"); err != nil {
+		return errors.New("未安装 OpenSSH Server")
+	}
+	if !enabled {
+		users, err := m.Users()
+		if err != nil {
+			return err
+		}
+		totalKeys := 0
+		for _, user := range users {
+			totalKeys += user.KeyCount
+		}
+		if totalKeys == 0 {
+			return errors.New("至少先添加并测试一把 SSH 公钥，才能关闭密码登录")
+		}
+		status := m.Status(ctx)
+		if !status.Available || strings.ToLower(status.PubkeyAuthentication) != "yes" {
+			return errors.New("SSH 公钥登录尚未启用，不能关闭密码登录")
+		}
+	}
+	const path = "/etc/ssh/sshd_config.d/90-lukepanel-hardening.conf"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	old, oldErr := os.ReadFile(path)
+	value := "no"
+	interactive := "no"
+	if enabled {
+		value = "yes"
+		interactive = "yes"
+	}
+	content := []byte("# Managed by LukePanel. Edit from the panel or remove this file.\n" +
+		"PasswordAuthentication " + value + "\n" +
+		"KbdInteractiveAuthentication " + interactive + "\n" +
+		"ChallengeResponseAuthentication " + interactive + "\n")
+	backupDir := filepath.Join(m.dataDir, "backups", "ssh")
+	_ = os.MkdirAll(backupDir, 0o700)
+	if oldErr == nil {
+		_ = os.WriteFile(filepath.Join(backupDir, time.Now().UTC().Format("20060102T150405.000000000")+"-sshd-hardening.conf.bak"), old, 0o600)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".lukepanel-sshd-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(content); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	rollback := func() {
+		if oldErr == nil {
+			_ = os.WriteFile(path, old, 0o644)
+		} else {
+			_ = os.Remove(path)
+		}
+	}
+	reloadOldConfig := func(service string) string {
+		rollback()
+		rollbackCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		if output, err := exec.CommandContext(rollbackCtx, "sshd", "-t").CombinedOutput(); err != nil {
+			return "；恢复后的 SSH 配置校验失败，请保持当前连接并立即检查：" + strings.TrimSpace(string(output))
+		}
+		if service != "" {
+			if output, err := exec.CommandContext(rollbackCtx, "systemctl", "reload", service).CombinedOutput(); err != nil {
+				return "；旧配置已写回，但重新加载失败，请保持当前连接并立即检查：" + strings.TrimSpace(string(output))
+			}
+		}
+		return ""
+	}
+	sshd, _ := exec.LookPath("sshd")
+	test := exec.CommandContext(ctx, sshd, "-t")
+	if output, err := test.CombinedOutput(); err != nil {
+		note := reloadOldConfig("")
+		return fmt.Errorf("SSH 配置校验失败，已自动恢复: %s%s", strings.TrimSpace(string(output)), note)
+	}
+	service := detectService(ctx)
+	if service == "" {
+		reloadOldConfig("")
+		return errors.New("未找到 SSH systemd 服务，配置已自动恢复")
+	}
+	reload := exec.CommandContext(ctx, "systemctl", "reload", service)
+	if output, err := reload.CombinedOutput(); err != nil {
+		note := reloadOldConfig(service)
+		return fmt.Errorf("SSH 重载失败，配置已自动恢复: %s%s", strings.TrimSpace(string(output)), note)
+	}
+
+	// Do not trust a successful reload alone. Some distributions do not include
+	// sshd_config.d by default, in which case the drop-in exists but has no effect.
+	status := m.Status(ctx)
+	expected := strings.ToLower(value)
+	if !status.Available || strings.ToLower(status.PasswordAuthentication) != expected {
+		note := reloadOldConfig(service)
+		actual := status.PasswordAuthentication
+		if actual == "" {
+			actual = "无法读取"
+		}
+		return fmt.Errorf("SSH 返回的实际 PasswordAuthentication=%s，目标值=%s；系统可能没有加载 sshd_config.d，已自动恢复%s", actual, expected, note)
+	}
+	_ = pruneBackups(backupDir, 100)
+	return nil
+}
+
+func (m *Manager) GenerateKey(ctx context.Context, username, comment, passphrase string) (GeneratedKey, error) {
+	if os.Geteuid() != 0 {
+		return GeneratedKey{}, errors.New("需要 root 权限生成 SSH 密钥")
+	}
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		return GeneratedKey{}, errors.New("未找到 ssh-keygen")
+	}
+	if _, err := m.lookupUser(username); err != nil {
+		return GeneratedKey{}, err
+	}
+	comment = strings.TrimSpace(comment)
+	if comment == "" {
+		comment = "lukepanel-" + username + "-" + time.Now().Format("20060102")
+	}
+	if len(comment) > 120 || strings.ContainsAny(comment, "\r\n\x00") {
+		return GeneratedKey{}, errors.New("密钥备注过长或包含非法字符")
+	}
+	if len(passphrase) > 256 || strings.ContainsRune(passphrase, '\x00') {
+		return GeneratedKey{}, errors.New("私钥口令过长或包含非法字符")
+	}
+	dir, err := os.MkdirTemp("", "lukepanel-key-*")
+	if err != nil {
+		return GeneratedKey{}, err
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "id_ed25519")
+	cmd := exec.CommandContext(ctx, "ssh-keygen", "-q", "-t", "ed25519", "-a", "100", "-N", passphrase, "-C", comment, "-f", path)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return GeneratedKey{}, fmt.Errorf("生成密钥失败: %s", strings.TrimSpace(string(output)))
+	}
+	privateKey, err := os.ReadFile(path)
+	if err != nil {
+		return GeneratedKey{}, err
+	}
+	publicKey, err := os.ReadFile(path + ".pub")
+	if err != nil {
+		return GeneratedKey{}, err
+	}
+	key, err := m.AddKey(username, string(publicKey))
+	if err != nil {
+		return GeneratedKey{}, err
+	}
+	filename := fmt.Sprintf("%s-lukepanel-%s-ed25519", username, time.Now().Format("20060102-150405"))
+	return GeneratedKey{Filename: filename, PrivateKey: string(privateKey), PublicKey: strings.TrimSpace(string(publicKey)), Fingerprint: key.Fingerprint, Comment: key.Comment}, nil
 }
 
 func (m *Manager) writeKeys(path string, lines []string, user User) error {

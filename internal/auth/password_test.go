@@ -19,3 +19,14 @@ func TestPasswordRoundTrip(t *testing.T) {
 		t.Fatal("wrong password verified")
 	}
 }
+
+func TestWeakPasswordsRejected(t *testing.T) {
+	for _, password := range []string{"short", "aaaaaaaaaaaa", "password1234", "lowercaseonly"} {
+		if err := ValidatePasswordStrength(password, "admin"); err == nil {
+			t.Fatalf("expected weak password %q to be rejected", password)
+		}
+	}
+	if err := ValidatePasswordStrength("A much-better passphrase 2026!", "admin"); err != nil {
+		t.Fatalf("expected strong passphrase: %v", err)
+	}
+}

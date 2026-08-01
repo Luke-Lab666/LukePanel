@@ -17,6 +17,16 @@ func TestValidateRecreateRequest(t *testing.T) {
 	if err := validateRecreateRequest(&bad); err == nil {
 		t.Fatal("expected invalid host port")
 	}
+	hostMode := req
+	hostMode.NetworkMode = "host"
+	if err := validateRecreateRequest(&hostMode); err == nil {
+		t.Fatal("expected host network with port mappings to be rejected")
+	}
+	customNetwork := req
+	customNetwork.NetworkMode = "app-network"
+	if err := validateRecreateRequest(&customNetwork); err != nil {
+		t.Fatalf("custom network should be accepted: %v", err)
+	}
 }
 
 func TestEditSpecDetectsCompose(t *testing.T) {

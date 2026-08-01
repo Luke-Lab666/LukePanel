@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,6 +66,7 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/auth/login", s.login)
 	mux.HandleFunc("/api/v1/auth/logout", s.requireAuth(s.logout))
 	mux.HandleFunc("/api/v1/auth/password", s.requireAuth(s.changePassword))
+	mux.HandleFunc("/api/v1/auth/account", s.requireAuth(s.changeAccount))
 	mux.HandleFunc("/api/v1/auth/elevate", s.requireAuth(s.elevate))
 	mux.HandleFunc("/api/v1/auth/me", s.requireAuth(s.me))
 	mux.HandleFunc("/api/v1/auth/sessions", s.requireAuth(s.sessionManagement))
@@ -88,6 +90,7 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/system/tasks/action", s.requireAuth(s.taskAction))
 	mux.HandleFunc("/api/v1/system/updates", s.requireAuth(s.updateInfo))
 	mux.HandleFunc("/api/v1/docker/status", s.requireAuth(s.dockerStatus))
+	mux.HandleFunc("/api/v1/docker/install", s.requireAuth(s.dockerInstall))
 	mux.HandleFunc("/api/v1/docker/containers", s.requireAuth(s.dockerContainers))
 	mux.HandleFunc("/api/v1/docker/stats", s.requireAuth(s.dockerStats))
 	mux.HandleFunc("/api/v1/docker/action", s.requireAuth(s.dockerAction))
@@ -128,6 +131,11 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/ssh/keys", s.requireAuth(s.sshKeys))
 	mux.HandleFunc("/api/v1/ssh/keys/add", s.requireAuth(s.sshKeyAdd))
 	mux.HandleFunc("/api/v1/ssh/keys/delete", s.requireAuth(s.sshKeyDelete))
+	mux.HandleFunc("/api/v1/ssh/keys/generate", s.requireAuth(s.sshKeyGenerate))
+	mux.HandleFunc("/api/v1/ssh/password", s.requireAuth(s.sshPassword))
+	mux.HandleFunc("/api/v1/security/status", s.requireAuth(s.securityStatus))
+	mux.HandleFunc("/api/v1/security/fail2ban/install", s.requireAuth(s.fail2banInstall))
+	mux.HandleFunc("/api/v1/security/auto-updates/enable", s.requireAuth(s.autoUpdatesEnable))
 	mux.HandleFunc("/api/v1/github/auth/status", s.requireAuth(s.githubAuthStatus))
 	mux.HandleFunc("/api/v1/github/auth/device/start", s.requireAuth(s.githubDeviceStart))
 	mux.HandleFunc("/api/v1/github/auth/device/poll", s.requireAuth(s.githubDevicePoll))
@@ -258,9 +266,16 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "当前密码错误")
 		return
 	}
+	s.configMu.RLock()
+	adminUser := s.cfg.AdminUser
+	s.configMu.RUnlock()
+	if err := auth.ValidatePasswordStrength(req.NewPassword, adminUser); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	newHash, err := auth.HashPassword(req.NewPassword)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "新密码至少需要 12 个字符")
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	s.configMu.Lock()
@@ -279,6 +294,58 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	s.sessions.DeleteAllExcept(session.ID)
 	s.audit.Write(AuditEvent{IP: ip, User: session.Username, Action: "auth.password.change", Result: "success"})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+var accountNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{2,31}$`)
+
+func (s *Server) changeAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		Username        string `json:"username"`
+	}
+	if decodeJSON(w, r, 4096, &req) != nil {
+		return
+	}
+	req.Username = strings.TrimSpace(req.Username)
+	if !accountNamePattern.MatchString(req.Username) {
+		writeError(w, http.StatusBadRequest, "用户名需以字母开头，长度 3–32，只能包含字母、数字、点、下划线或短横线")
+		return
+	}
+	s.configMu.RLock()
+	passwordHash, oldUser := s.cfg.PasswordHash, s.cfg.AdminUser
+	s.configMu.RUnlock()
+	valid, err := auth.VerifyPassword(req.CurrentPassword, passwordHash)
+	if err != nil || !valid {
+		writeError(w, http.StatusUnauthorized, "当前密码错误")
+		return
+	}
+	if req.Username == oldUser {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": oldUser, "revoked": 0})
+		return
+	}
+	s.configMu.Lock()
+	updated := s.cfg
+	updated.AdminUser = req.Username
+	err = config.Save(s.configPath, updated)
+	if err == nil {
+		s.cfg = updated
+	}
+	s.configMu.Unlock()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "用户名保存失败")
+		return
+	}
+	session, _ := sessionFromContext(r)
+	revoked := s.sessions.RenameCurrentAndDeleteOthers(session.ID, req.Username)
+	s.configMu.RLock()
+	trustedProxy := s.cfg.TrustedProxy
+	s.configMu.RUnlock()
+	s.audit.Write(AuditEvent{IP: clientIP(r, trustedProxy), User: oldUser, Action: "auth.username.change", Target: req.Username, Result: "success", Detail: fmt.Sprintf("revoked=%d", revoked)})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": req.Username, "revoked": revoked})
 }
 
 func (s *Server) elevate(w http.ResponseWriter, r *http.Request) {
@@ -470,6 +537,23 @@ func (s *Server) updateInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dockerStatus(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/docker/status", nil, "")
 }
+func (s *Server) dockerInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/docker/install", map[string]any{}, &out); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.auditRequest(r, "docker.install", "docker.io", "success", "")
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) dockerContainers(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/docker/containers", nil, "")
 }
@@ -894,6 +978,107 @@ func (s *Server) sshKeyDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (s *Server) sshKeyGenerate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]string
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/ssh/keys/generate", req, &out); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.auditRequest(r, "ssh.key.generate", req["user"], "success", "private key returned once")
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) sshPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if decodeJSON(w, r, 4096, &req) != nil {
+		return
+	}
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/ssh/password", req, nil); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	action := "disable"
+	if req.Enabled {
+		action = "enable"
+	}
+	s.auditRequest(r, "ssh.password."+action, "sshd", "success", "")
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) securityStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	s.configMu.RLock()
+	payload := map[string]any{"listen": s.cfg.Listen, "secure_cookie": s.cfg.SecureCookie, "totp_enabled": s.cfg.TOTPSecret != ""}
+	s.configMu.RUnlock()
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/security/status", payload, &out); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) autoUpdatesEnable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/security/auto-updates/enable", map[string]any{}, &out); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.auditRequest(r, "security.auto_updates.enable", "apt", "success", "no automatic reboot")
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) fail2banInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	s.configMu.RLock()
+	trustedProxy := s.cfg.TrustedProxy
+	s.configMu.RUnlock()
+	payload := map[string]string{"current_ip": clientIP(r, trustedProxy)}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/security/fail2ban/install", payload, &out); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.auditRequest(r, "security.fail2ban.install", payload["current_ip"], "success", "current IP ignored")
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) githubSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -1086,7 +1271,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		s.configMu.RLock()
 		cfg := s.cfg
 		s.configMu.RUnlock()
-		writeJSON(w, http.StatusOK, map[string]any{"version": s.version, "listen": cfg.Listen, "secure_cookie": cfg.SecureCookie, "auto_refresh_seconds": cfg.AutoRefreshSeconds, "allowed_roots": cfg.AllowedRoots, "agent_socket": cfg.AgentSocket})
+		writeJSON(w, http.StatusOK, map[string]any{"version": s.version, "listen": cfg.Listen, "secure_cookie": cfg.SecureCookie, "auto_refresh_seconds": cfg.AutoRefreshSeconds, "allowed_roots": cfg.AllowedRoots, "agent_socket": cfg.AgentSocket, "admin_user": cfg.AdminUser})
 	case http.MethodPatch:
 		var req struct {
 			AutoRefreshSeconds int `json:"auto_refresh_seconds"`
@@ -1144,7 +1329,10 @@ func (s *Server) copyAgentError(w http.ResponseWriter, resp *http.Response) {
 }
 func (s *Server) auditRequest(r *http.Request, action, target, result, detail string) {
 	session, _ := sessionFromContext(r)
-	s.audit.Write(AuditEvent{IP: clientIP(r, s.cfg.TrustedProxy), User: session.Username, Action: action, Target: target, Result: result, Detail: detail})
+	s.configMu.RLock()
+	trustedProxy := s.cfg.TrustedProxy
+	s.configMu.RUnlock()
+	s.audit.Write(AuditEvent{IP: clientIP(r, trustedProxy), User: session.Username, Action: action, Target: target, Result: result, Detail: detail})
 }
 
 func (s *Server) requireElevation(w http.ResponseWriter, r *http.Request) bool {
@@ -1173,6 +1361,10 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		session, ok := s.sessions.Get(cookie.Value)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "会话已过期")
+			return
+		}
+		if site := strings.ToLower(r.Header.Get("Sec-Fetch-Site")); site == "cross-site" {
+			writeError(w, http.StatusForbidden, "拒绝跨站请求")
 			return
 		}
 		if r.Method != http.MethodGet && r.Header.Get("X-CSRF-Token") != session.CSRFToken {
@@ -1213,8 +1405,16 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'")
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Pragma", "no-cache")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"syscall"
 
 	"github.com/Luke-Lab666/LukePanel/internal/auth"
 )
+
+var adminUserPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{2,31}$`)
 
 type Config struct {
 	Listen             string   `json:"listen"`
@@ -163,6 +166,9 @@ func Save(path string, cfg Config) error {
 func (c Config) Validate() error {
 	if c.Listen == "" || c.DataDir == "" || c.AdminUser == "" || c.PasswordHash == "" || c.SessionSecret == "" || c.AgentSecret == "" || c.AgentSocket == "" {
 		return errors.New("config contains empty required fields")
+	}
+	if !adminUserPattern.MatchString(c.AdminUser) {
+		return errors.New("admin_user must start with a letter and contain 3-32 letters, digits, dots, underscores or hyphens")
 	}
 	if len(c.AllowedRoots) == 0 {
 		return errors.New("allowed_roots must not be empty")

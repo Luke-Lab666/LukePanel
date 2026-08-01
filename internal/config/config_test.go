@@ -60,3 +60,14 @@ func TestLegacyDefaultRootsMigration(t *testing.T) {
 		t.Fatalf("allowed roots = %#v, want %#v", loaded.AllowedRoots, want)
 	}
 }
+
+func TestValidateRejectsUnsafeAdminUsername(t *testing.T) {
+	cfg := Default()
+	cfg.AdminUser = "../root"
+	cfg.PasswordHash, _ = auth.HashPassword("valid-long-password-2026")
+	cfg.SessionSecret = "session-secret"
+	cfg.AgentSecret = "agent-secret"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected unsafe admin username to be rejected")
+	}
+}

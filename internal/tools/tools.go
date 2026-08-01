@@ -29,8 +29,11 @@ type Result struct {
 
 func Run(ctx context.Context, tool, target string, port int) (Result, error) {
 	target = strings.TrimSpace(target)
-	if target == "" {
+	if target == "" && tool != "diagnostic" {
 		return Result{}, errors.New("目标不能为空")
+	}
+	if tool == "diagnostic" {
+		target = "本机"
 	}
 	started := time.Now()
 	result := Result{Tool: tool, Target: target}
@@ -48,12 +51,58 @@ func Run(ctx context.Context, tool, target string, port int) (Result, error) {
 		result.Output, err = tcp(ctx, target, port)
 	case "http":
 		result.Output, err = httpCheck(ctx, target)
+	case "diagnostic":
+		result.Output, err = diagnostic(ctx)
 	default:
 		return Result{}, errors.New("不支持的工具")
 	}
 	result.DurationMS = time.Since(started).Milliseconds()
 	result.Success = err == nil
 	return result, err
+}
+
+func diagnostic(parent context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, 18*time.Second)
+	defer cancel()
+	type command struct {
+		title string
+		name  string
+		args  []string
+	}
+	commands := []command{
+		{title: "运行状态", name: "uptime"},
+		{title: "内存与 Swap", name: "free", args: []string{"-h"}},
+		{title: "磁盘", name: "df", args: []string{"-hT", "-x", "overlay", "-x", "tmpfs", "-x", "devtmpfs"}},
+		{title: "异常服务", name: "systemctl", args: []string{"--failed", "--no-pager", "--no-legend"}},
+		{title: "监听端口", name: "ss", args: []string{"-lntup"}},
+	}
+	var out strings.Builder
+	for _, item := range commands {
+		out.WriteString("===== " + item.title + " =====\n")
+		path, err := exec.LookPath(item.name)
+		if err != nil {
+			out.WriteString("工具未安装：" + item.name + "\n\n")
+			continue
+		}
+		cmd := exec.CommandContext(ctx, path, item.args...)
+		data, err := cmd.CombinedOutput()
+		if len(data) > 32000 {
+			data = append([]byte("…输出过长，已截断…\n"), data[len(data)-32000:]...)
+		}
+		out.Write(data)
+		if len(data) == 0 {
+			if err == nil {
+				out.WriteString("正常，无额外输出\n")
+			} else {
+				out.WriteString(err.Error() + "\n")
+			}
+		}
+		out.WriteString("\n")
+	}
+	if ctx.Err() != nil {
+		return out.String(), errors.New("诊断超时")
+	}
+	return out.String(), nil
 }
 
 func ping(parent context.Context, host string) (string, error) {

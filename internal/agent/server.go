@@ -18,6 +18,7 @@ import (
 	"github.com/Luke-Lab666/LukePanel/internal/config"
 	"github.com/Luke-Lab666/LukePanel/internal/dockerapi"
 	filemanager "github.com/Luke-Lab666/LukePanel/internal/files"
+	"github.com/Luke-Lab666/LukePanel/internal/hostadmin"
 	"github.com/Luke-Lab666/LukePanel/internal/services"
 	"github.com/Luke-Lab666/LukePanel/internal/sshadmin"
 	"github.com/Luke-Lab666/LukePanel/internal/systemadmin"
@@ -45,6 +46,7 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", s.health)
 	mux.HandleFunc("/v1/docker/status", s.dockerStatus)
+	mux.HandleFunc("/v1/docker/install", s.dockerInstall)
 	mux.HandleFunc("/v1/docker/containers", s.dockerContainers)
 	mux.HandleFunc("/v1/docker/stats", s.dockerStats)
 	mux.HandleFunc("/v1/docker/action", s.dockerAction)
@@ -98,6 +100,11 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.HandleFunc("/v1/ssh/keys", s.sshKeys)
 	mux.HandleFunc("/v1/ssh/keys/add", s.sshKeyAdd)
 	mux.HandleFunc("/v1/ssh/keys/delete", s.sshKeyDelete)
+	mux.HandleFunc("/v1/ssh/keys/generate", s.sshKeyGenerate)
+	mux.HandleFunc("/v1/ssh/password", s.sshPassword)
+	mux.HandleFunc("/v1/security/status", s.securityStatus)
+	mux.HandleFunc("/v1/security/fail2ban/install", s.fail2banInstall)
+	mux.HandleFunc("/v1/security/auto-updates/enable", s.autoUpdatesEnable)
 	s.http = &http.Server{Handler: s.authenticate(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Minute, WriteTimeout: 10 * time.Minute, IdleTimeout: 60 * time.Second}
 	return s, nil
 }
@@ -144,6 +151,19 @@ func (s *Server) dockerStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, s.docker.Status(r.Context()))
 }
+func (s *Server) dockerInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	result, err := hostadmin.InstallDocker(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "output": result.Output})
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) dockerContainers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -968,6 +988,101 @@ func (s *Server) sshKeyDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) sshKeyGenerate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		User       string `json:"user"`
+		Comment    string `json:"comment"`
+		Passphrase string `json:"passphrase"`
+	}
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	key, err := s.ssh.GenerateKey(r.Context(), req.User, req.Comment, req.Passphrase)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, key)
+}
+
+func (s *Server) sshPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if decodeJSON(w, r, 4096, &req) != nil {
+		return
+	}
+	if err := s.ssh.SetPasswordAuthentication(r.Context(), req.Enabled); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) securityStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Listen       string `json:"listen"`
+		SecureCookie bool   `json:"secure_cookie"`
+		TOTPEnabled  bool   `json:"totp_enabled"`
+	}
+	if decodeJSON(w, r, 4096, &req) != nil {
+		return
+	}
+	cfg := s.cfg
+	cfg.Listen = req.Listen
+	cfg.SecureCookie = req.SecureCookie
+	if req.TOTPEnabled {
+		cfg.TOTPSecret = "enabled"
+	} else {
+		cfg.TOTPSecret = ""
+	}
+	writeJSON(w, http.StatusOK, hostadmin.SecurityStatus(r.Context(), cfg, s.ssh.Status(r.Context())))
+}
+
+func (s *Server) autoUpdatesEnable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	result, err := hostadmin.EnableAutomaticUpdates(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "output": result.Output})
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) fail2banInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		CurrentIP string `json:"current_ip"`
+	}
+	if decodeJSON(w, r, 4096, &req) != nil {
+		return
+	}
+	result, err := hostadmin.InstallFail2Ban(r.Context(), req.CurrentIP)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "output": result.Output})
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, max int64, out any) error {
