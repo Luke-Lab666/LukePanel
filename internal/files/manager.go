@@ -950,3 +950,8 @@ func statGID(info os.FileInfo) int {
 	}
 	return -1
 }
+
+// ResolveExisting validates a path against the configured roots for other trusted modules.
+func (m *Manager) ResolveExisting(path string, wantDir bool) (string, os.FileInfo, error) {
+	return m.resolveExisting(path, wantDir)
+}

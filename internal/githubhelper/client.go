@@ -345,3 +345,37 @@ func decodeGitHubError(resp *http.Response) error {
 	}
 	return fmt.Errorf("GitHub API 返回 %s", resp.Status)
 }
+
+type CreateReleaseRequest struct {
+	Tag        string `json:"tag"`
+	Name       string `json:"name"`
+	Body       string `json:"body"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
+}
+
+func (c *Client) CreateRelease(ctx context.Context, owner, repo string, request CreateReleaseRequest, token string) (Release, error) {
+	if err := validateRepo(owner, repo); err != nil {
+		return Release{}, err
+	}
+	if !tagPattern.MatchString(strings.TrimSpace(request.Tag)) {
+		return Release{}, errors.New("Release 标签格式不正确")
+	}
+	if strings.TrimSpace(token) == "" {
+		return Release{}, errors.New("请先连接 GitHub")
+	}
+	request.Name = strings.TrimSpace(request.Name)
+	request.Body = strings.TrimSpace(request.Body)
+	if request.Name == "" {
+		request.Name = request.Tag
+	}
+	if len(request.Name) > 200 || len(request.Body) > 50000 {
+		return Release{}, errors.New("Release 标题或说明过长")
+	}
+	payload := map[string]any{"tag_name": request.Tag, "name": request.Name, "body": request.Body, "draft": request.Draft, "prerelease": request.Prerelease, "generate_release_notes": request.Body == ""}
+	var release Release
+	if err := c.requestJSON(ctx, http.MethodPost, owner, repo, "/releases", token, payload, &release); err != nil {
+		return Release{}, err
+	}
+	return release, nil
+}

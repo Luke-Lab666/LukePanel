@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -24,6 +25,11 @@ type Status struct {
 	PermitRootLogin        string `json:"permit_root_login,omitempty"`
 	PasswordAuthentication string `json:"password_authentication,omitempty"`
 	PubkeyAuthentication   string `json:"pubkey_authentication,omitempty"`
+	AllowTcpForwarding     string `json:"allow_tcp_forwarding,omitempty"`
+	AllowAgentForwarding   string `json:"allow_agent_forwarding,omitempty"`
+	X11Forwarding          string `json:"x11_forwarding,omitempty"`
+	PendingOldPort         string `json:"pending_old_port,omitempty"`
+	PendingNewPort         string `json:"pending_new_port,omitempty"`
 	Error                  string `json:"error,omitempty"`
 }
 
@@ -81,14 +87,22 @@ func (m *Manager) Status(ctx context.Context) Status {
 			values[strings.ToLower(fields[0])] = strings.Join(fields[1:], " ")
 		}
 	}
-	return Status{
+	status := Status{
 		Available:              true,
 		Service:                detectService(ctx),
 		Port:                   values["port"],
 		PermitRootLogin:        values["permitrootlogin"],
 		PasswordAuthentication: values["passwordauthentication"],
 		PubkeyAuthentication:   values["pubkeyauthentication"],
+		AllowTcpForwarding:     values["allowtcpforwarding"],
+		AllowAgentForwarding:   values["allowagentforwarding"],
+		X11Forwarding:          values["x11forwarding"],
 	}
+	if pending, err := m.loadPendingPort(); err == nil {
+		status.PendingOldPort = pending.OldPort
+		status.PendingNewPort = pending.NewPort
+	}
+	return status
 }
 
 func (m *Manager) Users() ([]User, error) {
@@ -524,4 +538,220 @@ func detectService(ctx context.Context) string {
 		}
 	}
 	return ""
+}
+
+type SettingsRequest struct {
+	Port                 int    `json:"port"`
+	PermitRootLogin      string `json:"permit_root_login"`
+	AllowTcpForwarding   bool   `json:"allow_tcp_forwarding"`
+	AllowAgentForwarding bool   `json:"allow_agent_forwarding"`
+	X11Forwarding        bool   `json:"x11_forwarding"`
+}
+
+type SettingsResult struct {
+	PendingPortConfirmation bool   `json:"pending_port_confirmation"`
+	OldPort                 string `json:"old_port,omitempty"`
+	NewPort                 string `json:"new_port,omitempty"`
+	Message                 string `json:"message"`
+}
+
+type pendingPort struct {
+	OldPort   string    `json:"old_port"`
+	NewPort   string    `json:"new_port"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (m *Manager) ApplySettings(ctx context.Context, request SettingsRequest) (SettingsResult, error) {
+	if os.Geteuid() != 0 {
+		return SettingsResult{}, errors.New("需要 root 权限修改 SSH 配置")
+	}
+	if request.Port < 1 || request.Port > 65535 {
+		return SettingsResult{}, errors.New("SSH 端口必须是 1-65535")
+	}
+	root := strings.ToLower(strings.TrimSpace(request.PermitRootLogin))
+	allowedRoot := map[string]bool{"yes": true, "prohibit-password": true, "forced-commands-only": true, "no": true}
+	if !allowedRoot[root] {
+		return SettingsResult{}, errors.New("Root 登录策略无效")
+	}
+	status := m.Status(ctx)
+	if !status.Available {
+		return SettingsResult{}, errors.New(status.Error)
+	}
+	oldPort := strings.Fields(status.Port)
+	currentPort := "22"
+	if len(oldPort) > 0 {
+		currentPort = oldPort[0]
+	}
+	newPort := strconv.Itoa(request.Port)
+	lines := []string{"# Managed by LukePanel. Changes are validated before reload."}
+	if newPort != currentPort {
+		// Keep the previous port until the user confirms the new port works.
+		lines = append(lines, "Port "+currentPort, "Port "+newPort)
+	} else {
+		lines = append(lines, "Port "+newPort)
+	}
+	lines = append(lines,
+		"PermitRootLogin "+root,
+		"AllowTcpForwarding "+yesNo(request.AllowTcpForwarding),
+		"AllowAgentForwarding "+yesNo(request.AllowAgentForwarding),
+		"X11Forwarding "+yesNo(request.X11Forwarding),
+	)
+	const path = "/etc/ssh/sshd_config.d/91-lukepanel-settings.conf"
+	old, oldErr := os.ReadFile(path)
+	if err := m.writeAndReload(ctx, path, []byte(strings.Join(lines, "\n")+"\n"), old, oldErr); err != nil {
+		return SettingsResult{}, err
+	}
+	if newPort != currentPort {
+		pending := pendingPort{OldPort: currentPort, NewPort: newPort, CreatedAt: time.Now().UTC()}
+		if err := m.savePendingPort(pending); err != nil {
+			return SettingsResult{}, err
+		}
+		if !listeningPort(ctx, newPort) {
+			_ = m.restoreConfig(ctx, path, old, oldErr)
+			_ = os.Remove(m.pendingPortPath())
+			return SettingsResult{}, errors.New("SSH 重载后没有监听新端口，已自动恢复旧配置")
+		}
+		return SettingsResult{PendingPortConfirmation: true, OldPort: currentPort, NewPort: newPort, Message: "新旧端口会暂时同时监听。请从另一个终端测试新端口，成功后再确认切换。"}, nil
+	}
+	_ = os.Remove(m.pendingPortPath())
+	return SettingsResult{Message: "SSH 高级设置已生效"}, nil
+}
+
+func (m *Manager) ConfirmPort(ctx context.Context, keepNew bool) (SettingsResult, error) {
+	pending, err := m.loadPendingPort()
+	if err != nil {
+		return SettingsResult{}, errors.New("没有等待确认的 SSH 端口变更")
+	}
+	const path = "/etc/ssh/sshd_config.d/91-lukepanel-settings.conf"
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return SettingsResult{}, err
+	}
+	lines := []string{}
+	for _, line := range strings.Split(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if keepNew && trimmed == "Port "+pending.OldPort {
+			continue
+		}
+		if !keepNew && trimmed == "Port "+pending.NewPort {
+			continue
+		}
+		if trimmed != "" {
+			lines = append(lines, line)
+		}
+	}
+	old := append([]byte(nil), content...)
+	if err := m.writeAndReload(ctx, path, []byte(strings.Join(lines, "\n")+"\n"), old, nil); err != nil {
+		return SettingsResult{}, err
+	}
+	_ = os.Remove(m.pendingPortPath())
+	if keepNew {
+		return SettingsResult{NewPort: pending.NewPort, Message: "已确认新 SSH 端口，旧端口已停止监听"}, nil
+	}
+	return SettingsResult{OldPort: pending.OldPort, Message: "已取消端口切换，继续使用旧端口"}, nil
+}
+
+func (m *Manager) writeAndReload(ctx context.Context, path string, content, old []byte, oldErr error) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	backupDir := filepath.Join(m.dataDir, "backups", "ssh")
+	_ = os.MkdirAll(backupDir, 0o700)
+	if oldErr == nil {
+		_ = os.WriteFile(filepath.Join(backupDir, time.Now().UTC().Format("20060102T150405.000000000")+"-sshd-settings.conf.bak"), old, 0o600)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".lukepanel-sshd-settings-*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(content); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		return err
+	}
+	if output, err := exec.CommandContext(ctx, "sshd", "-t").CombinedOutput(); err != nil {
+		_ = m.restoreConfig(ctx, path, old, oldErr)
+		return fmt.Errorf("SSH 配置校验失败，已自动恢复: %s", strings.TrimSpace(string(output)))
+	}
+	service := detectService(ctx)
+	if service == "" {
+		_ = m.restoreConfig(ctx, path, old, oldErr)
+		return errors.New("未找到 SSH 服务，已自动恢复")
+	}
+	if output, err := exec.CommandContext(ctx, "systemctl", "reload", service).CombinedOutput(); err != nil {
+		_ = m.restoreConfig(ctx, path, old, oldErr)
+		return fmt.Errorf("SSH 重载失败，已自动恢复: %s", strings.TrimSpace(string(output)))
+	}
+	_ = pruneBackups(backupDir, 100)
+	return nil
+}
+
+func (m *Manager) restoreConfig(ctx context.Context, path string, old []byte, oldErr error) error {
+	if oldErr == nil {
+		_ = os.WriteFile(path, old, 0o644)
+	} else {
+		_ = os.Remove(path)
+	}
+	if output, err := exec.CommandContext(ctx, "sshd", "-t").CombinedOutput(); err != nil {
+		return fmt.Errorf("恢复后校验失败: %s", strings.TrimSpace(string(output)))
+	}
+	if service := detectService(ctx); service != "" {
+		_, _ = exec.CommandContext(ctx, "systemctl", "reload", service).CombinedOutput()
+	}
+	return nil
+}
+
+func (m *Manager) pendingPortPath() string { return filepath.Join(m.dataDir, "ssh-pending-port.json") }
+func (m *Manager) savePendingPort(value pendingPort) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(m.pendingPortPath(), data, 0o600)
+}
+func (m *Manager) loadPendingPort() (pendingPort, error) {
+	var value pendingPort
+	data, err := os.ReadFile(m.pendingPortPath())
+	if err != nil {
+		return value, err
+	}
+	err = json.Unmarshal(data, &value)
+	return value, err
+}
+func yesNo(value bool) string {
+	if value {
+		return "yes"
+	}
+	return "no"
+}
+func listeningPort(ctx context.Context, port string) bool {
+	output, err := exec.CommandContext(ctx, "ss", "-lntH").Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		if strings.HasSuffix(strings.Trim(fields[3], "[]"), ":"+port) {
+			return true
+		}
+	}
+	return false
 }

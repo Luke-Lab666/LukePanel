@@ -21,7 +21,7 @@ func NewClient(socketPath, secret string) *Client {
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "unix", socketPath)
 	}}
-	return &Client{http: &http.Client{Transport: transport, Timeout: 11 * time.Minute}, secret: secret}
+	return &Client{http: &http.Client{Transport: transport, Timeout: 36 * time.Minute}, secret: secret}
 }
 
 func (c *Client) JSON(ctx context.Context, method, endpoint string, body, output any) error {

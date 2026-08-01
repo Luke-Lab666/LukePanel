@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -1417,4 +1418,243 @@ func decodeStream(data []byte) string {
 		out.Write(payload)
 	}
 	return out.String()
+}
+
+// ComposeFile exposes one file that belongs to a detected Docker Compose project.
+type ComposeFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+	Size    int64  `json:"size"`
+}
+
+type ComposeConfig struct {
+	Project    string        `json:"project"`
+	WorkingDir string        `json:"working_dir"`
+	Files      []ComposeFile `json:"files"`
+}
+
+type ComposeSaveRequest struct {
+	Project string            `json:"project"`
+	Files   map[string]string `json:"files"`
+	Deploy  bool              `json:"deploy"`
+}
+
+type ImageBuildRequest struct {
+	ContextDir string `json:"context_dir"`
+	Dockerfile string `json:"dockerfile"`
+	Tag        string `json:"tag"`
+	NoCache    bool   `json:"no_cache"`
+	Pull       bool   `json:"pull"`
+}
+
+type ImageBuildResult struct {
+	Tag    string `json:"tag"`
+	Output string `json:"output"`
+}
+
+var imageTagPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]{0,180}(?::[A-Za-z0-9][A-Za-z0-9_.-]{0,127})?$`)
+
+func (c *Client) ComposeProject(ctx context.Context, projectName string) (ComposeProject, error) {
+	if !composeProjectPattern.MatchString(projectName) {
+		return ComposeProject{}, errors.New("Compose 项目名称无效")
+	}
+	projects, err := c.ComposeProjects(ctx)
+	if err != nil {
+		return ComposeProject{}, err
+	}
+	for _, project := range projects {
+		if project.Name == projectName {
+			return project, nil
+		}
+	}
+	return ComposeProject{}, errors.New("Compose 项目不存在")
+}
+
+func (c *Client) ReadComposeConfig(ctx context.Context, projectName string) (ComposeConfig, error) {
+	project, err := c.ComposeProject(ctx, projectName)
+	if err != nil {
+		return ComposeConfig{}, err
+	}
+	if len(project.ConfigFiles) == 0 {
+		return ComposeConfig{}, errors.New("没有读取到 Compose 配置文件")
+	}
+	result := ComposeConfig{Project: project.Name, WorkingDir: project.WorkingDir}
+	var total int64
+	for _, path := range project.ConfigFiles {
+		if !filepath.IsAbs(path) || strings.ContainsAny(path, "\x00\r\n") {
+			return ComposeConfig{}, errors.New("Compose 配置路径无效")
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return ComposeConfig{}, fmt.Errorf("读取 Compose 配置失败: %w", err)
+		}
+		if !info.Mode().IsRegular() || info.Size() > 2<<20 {
+			return ComposeConfig{}, fmt.Errorf("Compose 配置文件过大或不是普通文件: %s", path)
+		}
+		total += info.Size()
+		if total > 4<<20 {
+			return ComposeConfig{}, errors.New("Compose 配置总大小超过 4MB")
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return ComposeConfig{}, err
+		}
+		result.Files = append(result.Files, ComposeFile{Path: path, Content: string(data), Size: info.Size()})
+	}
+	return result, nil
+}
+
+func (c *Client) WriteComposeConfig(ctx context.Context, request ComposeSaveRequest) (string, error) {
+	project, err := c.ComposeProject(ctx, request.Project)
+	if err != nil {
+		return "", err
+	}
+	if len(request.Files) == 0 || len(request.Files) != len(project.ConfigFiles) {
+		return "", errors.New("必须提交项目的全部 Compose 配置文件")
+	}
+	allowed := map[string]bool{}
+	for _, path := range project.ConfigFiles {
+		allowed[filepath.Clean(path)] = true
+	}
+	var total int
+	for rawPath, content := range request.Files {
+		path := filepath.Clean(rawPath)
+		if !allowed[path] {
+			return "", fmt.Errorf("不允许修改项目之外的文件: %s", rawPath)
+		}
+		if len(content) > 2<<20 {
+			return "", fmt.Errorf("Compose 文件超过 2MB: %s", rawPath)
+		}
+		total += len(content)
+	}
+	if total > 4<<20 {
+		return "", errors.New("Compose 配置总大小超过 4MB")
+	}
+	for _, path := range project.ConfigFiles {
+		info, err := os.Stat(path)
+		if err != nil {
+			return "", err
+		}
+		tmp, err := os.CreateTemp(filepath.Dir(path), ".lukepanel-compose-*.tmp")
+		if err != nil {
+			return "", err
+		}
+		name := tmp.Name()
+		if err := tmp.Chmod(info.Mode().Perm()); err != nil {
+			tmp.Close()
+			_ = os.Remove(name)
+			return "", err
+		}
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+			if err := tmp.Chown(int(stat.Uid), int(stat.Gid)); err != nil {
+				tmp.Close()
+				_ = os.Remove(name)
+				return "", err
+			}
+		}
+		if _, err := tmp.WriteString(request.Files[filepath.Clean(path)]); err != nil {
+			tmp.Close()
+			_ = os.Remove(name)
+			return "", err
+		}
+		if err := tmp.Sync(); err != nil {
+			tmp.Close()
+			_ = os.Remove(name)
+			return "", err
+		}
+		if err := tmp.Close(); err != nil {
+			_ = os.Remove(name)
+			return "", err
+		}
+		if err := os.Rename(name, path); err != nil {
+			_ = os.Remove(name)
+			return "", err
+		}
+	}
+	output, err := c.composeCommand(ctx, project, "config", "-q")
+	if err != nil {
+		return output, fmt.Errorf("Compose 配置校验失败: %w", err)
+	}
+	if request.Deploy {
+		deployOutput, deployErr := c.composeCommand(ctx, project, "up", "-d", "--remove-orphans")
+		output = strings.TrimSpace(output + "\n" + deployOutput)
+		if deployErr != nil {
+			return output, fmt.Errorf("配置已保存，但重新部署失败: %w", deployErr)
+		}
+	}
+	return output, nil
+}
+
+func (c *Client) composeCommand(ctx context.Context, project ComposeProject, subcommand ...string) (string, error) {
+	if _, err := exec.LookPath("docker"); err != nil {
+		return "", errors.New("未找到 docker 命令")
+	}
+	args := []string{"compose", "--project-directory", project.WorkingDir, "-p", project.Name}
+	for _, file := range project.ConfigFiles {
+		args = append(args, "-f", file)
+	}
+	args = append(args, subcommand...)
+	commandCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(commandCtx, "docker", args...)
+	cmd.Dir = project.WorkingDir
+	data, err := cmd.CombinedOutput()
+	output := strings.TrimSpace(string(data))
+	if err != nil {
+		if output == "" {
+			output = err.Error()
+		}
+		return output, errors.New(output)
+	}
+	return output, nil
+}
+
+func (c *Client) BuildImage(ctx context.Context, request ImageBuildRequest) (ImageBuildResult, error) {
+	contextDir := filepath.Clean(strings.TrimSpace(request.ContextDir))
+	if !filepath.IsAbs(contextDir) || strings.ContainsAny(contextDir, "\x00\r\n") {
+		return ImageBuildResult{}, errors.New("构建目录必须是绝对路径")
+	}
+	info, err := os.Stat(contextDir)
+	if err != nil || !info.IsDir() {
+		return ImageBuildResult{}, errors.New("构建目录不存在")
+	}
+	dockerfile := strings.TrimSpace(request.Dockerfile)
+	if dockerfile == "" {
+		dockerfile = "Dockerfile"
+	}
+	if filepath.IsAbs(dockerfile) || strings.Contains(dockerfile, "..") || strings.ContainsAny(dockerfile, "\x00\r\n") {
+		return ImageBuildResult{}, errors.New("Dockerfile 路径无效")
+	}
+	dockerfilePath := filepath.Join(contextDir, filepath.Clean(dockerfile))
+	if !strings.HasPrefix(dockerfilePath+string(os.PathSeparator), contextDir+string(os.PathSeparator)) {
+		return ImageBuildResult{}, errors.New("Dockerfile 必须位于构建目录内")
+	}
+	if stat, err := os.Stat(dockerfilePath); err != nil || !stat.Mode().IsRegular() {
+		return ImageBuildResult{}, errors.New("Dockerfile 不存在")
+	}
+	tag := strings.TrimSpace(request.Tag)
+	if !imageTagPattern.MatchString(tag) {
+		return ImageBuildResult{}, errors.New("镜像标签格式不正确，例如 myapp:latest")
+	}
+	args := []string{"build", "--progress=plain", "-f", dockerfilePath, "-t", tag}
+	if request.NoCache {
+		args = append(args, "--no-cache")
+	}
+	if request.Pull {
+		args = append(args, "--pull")
+	}
+	args = append(args, contextDir)
+	buildCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(buildCtx, "docker", args...)
+	cmd.Dir = contextDir
+	data, err := cmd.CombinedOutput()
+	output := string(data)
+	if len(output) > 128<<10 {
+		output = "…输出已截断…\n" + output[len(output)-(128<<10):]
+	}
+	if err != nil {
+		return ImageBuildResult{Tag: tag, Output: output}, fmt.Errorf("镜像构建失败: %w", err)
+	}
+	return ImageBuildResult{Tag: tag, Output: output}, nil
 }

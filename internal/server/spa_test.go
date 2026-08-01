@@ -9,7 +9,7 @@ import (
 
 func TestSPADeepRoutesServeIndexWithoutRedirect(t *testing.T) {
 	handler := (&Server{}).spaHandler()
-	for _, route := range []string{"/", "/files", "/docker", "/security", "/github", "/services"} {
+	for _, route := range []string{"/", "/files", "/docker", "/security", "/github", "/services", "/updates", "/host", "/snapshots"} {
 		t.Run(route, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, route, nil)
 			recorder := httptest.NewRecorder()

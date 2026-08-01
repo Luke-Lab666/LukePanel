@@ -15,11 +15,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Luke-Lab666/LukePanel/internal/aptadmin"
 	"github.com/Luke-Lab666/LukePanel/internal/config"
 	"github.com/Luke-Lab666/LukePanel/internal/dockerapi"
 	filemanager "github.com/Luke-Lab666/LukePanel/internal/files"
 	"github.com/Luke-Lab666/LukePanel/internal/hostadmin"
 	"github.com/Luke-Lab666/LukePanel/internal/services"
+	"github.com/Luke-Lab666/LukePanel/internal/snapshots"
 	"github.com/Luke-Lab666/LukePanel/internal/sshadmin"
 	"github.com/Luke-Lab666/LukePanel/internal/systemadmin"
 	"github.com/Luke-Lab666/LukePanel/internal/tasks"
@@ -34,6 +36,8 @@ type Server struct {
 	processes *systemadmin.ProcessManager
 	ssh       *sshadmin.Manager
 	tasks     *tasks.Manager
+	snapshots *snapshots.Manager
+	apt       *aptadmin.Manager
 	http      *http.Server
 }
 
@@ -42,7 +46,8 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, logger: logger, docker: dockerapi.New("/var/run/docker.sock"), services: services.New(), files: fm, processes: systemadmin.NewProcessManager(), ssh: sshadmin.New(cfg.DataDir), tasks: tasks.New(cfg.DataDir)}
+	snapshotManager := snapshots.New(cfg.DataDir)
+	s := &Server{cfg: cfg, logger: logger, docker: dockerapi.New("/var/run/docker.sock"), services: services.New(), files: fm, processes: systemadmin.NewProcessManager(), ssh: sshadmin.New(cfg.DataDir), tasks: tasks.New(cfg.DataDir), snapshots: snapshotManager, apt: aptadmin.New(cfg.DataDir, snapshotManager)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", s.health)
 	mux.HandleFunc("/v1/docker/status", s.dockerStatus)
@@ -105,7 +110,28 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	mux.HandleFunc("/v1/security/status", s.securityStatus)
 	mux.HandleFunc("/v1/security/fail2ban/install", s.fail2banInstall)
 	mux.HandleFunc("/v1/security/auto-updates/enable", s.autoUpdatesEnable)
-	s.http = &http.Server{Handler: s.authenticate(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Minute, WriteTimeout: 10 * time.Minute, IdleTimeout: 60 * time.Second}
+	mux.HandleFunc("/v1/snapshots", s.snapshotHandler)
+	mux.HandleFunc("/v1/apt/preflight", s.aptPreflight)
+	mux.HandleFunc("/v1/apt/search", s.aptSearch)
+	mux.HandleFunc("/v1/apt/download", s.aptDownload)
+	mux.HandleFunc("/v1/apt/upgrade", s.aptUpgrade)
+	mux.HandleFunc("/v1/apt/package", s.aptPackage)
+	mux.HandleFunc("/v1/docker/compose/config", s.dockerComposeConfig)
+	mux.HandleFunc("/v1/docker/images/build", s.dockerImageBuild)
+	mux.HandleFunc("/v1/files/search", s.fileSearch)
+	mux.HandleFunc("/v1/files/preview", s.filePreview)
+	mux.HandleFunc("/v1/files/preview/raw", s.filePreviewRaw)
+	mux.HandleFunc("/v1/files/archive/list", s.fileArchiveList)
+	mux.HandleFunc("/v1/files/archive/create", s.fileArchiveCreate)
+	mux.HandleFunc("/v1/ssh/settings", s.sshSettings)
+	mux.HandleFunc("/v1/ssh/port/confirm", s.sshPortConfirm)
+	mux.HandleFunc("/v1/host/settings", s.hostSettings)
+	mux.HandleFunc("/v1/host/hostname", s.hostHostname)
+	mux.HandleFunc("/v1/host/timezone", s.hostTimezone)
+	mux.HandleFunc("/v1/host/dns", s.hostDNS)
+	mux.HandleFunc("/v1/host/swap", s.hostSwap)
+	mux.HandleFunc("/v1/host/sysctl", s.hostSysctl)
+	s.http = &http.Server{Handler: s.authenticate(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 35 * time.Minute, WriteTimeout: 35 * time.Minute, IdleTimeout: 60 * time.Second}
 	return s, nil
 }
 
@@ -1109,4 +1135,385 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 func methodNotAllowed(w http.ResponseWriter) {
 	writeError(w, http.StatusMethodNotAllowed, "方法不允许")
+}
+
+func (s *Server) snapshotHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		items, err := s.snapshots.List()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]any{"snapshots": items})
+	case http.MethodPost:
+		var req struct{ Action, ID string }
+		if decodeJSON(w, r, 16<<10, &req) != nil {
+			return
+		}
+		switch req.Action {
+		case "restore":
+			item, err := s.snapshots.Restore(req.ID)
+			if err != nil {
+				writeError(w, 400, err.Error())
+				return
+			}
+			writeJSON(w, 200, item)
+		case "delete":
+			if err := s.snapshots.Delete(req.ID); err != nil {
+				writeError(w, 400, err.Error())
+				return
+			}
+			writeJSON(w, 200, map[string]bool{"ok": true})
+		default:
+			writeError(w, 400, "不支持的快照操作")
+		}
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (s *Server) aptPreflight(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	data, err := s.apt.Preflight(r.Context())
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, data)
+}
+func (s *Server) aptSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	items, err := s.apt.Search(r.Context(), r.URL.Query().Get("q"))
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"packages": items})
+}
+func (s *Server) aptDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	result, err := s.apt.Download(r.Context())
+	if err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error(), "result": result})
+		return
+	}
+	writeJSON(w, 200, result)
+}
+func (s *Server) aptUpgrade(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	result, err := s.apt.Upgrade(r.Context())
+	if err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error(), "result": result})
+		return
+	}
+	writeJSON(w, 200, result)
+}
+func (s *Server) aptPackage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Action   string   `json:"action"`
+		Packages []string `json:"packages"`
+	}
+	if decodeJSON(w, r, 64<<10, &req) != nil {
+		return
+	}
+	var result aptadmin.Result
+	var err error
+	if req.Action == "install" {
+		result, err = s.apt.Install(r.Context(), req.Packages)
+	} else if req.Action == "remove" {
+		result, err = s.apt.Remove(r.Context(), req.Packages)
+	} else {
+		writeError(w, 400, "不支持的软件包操作")
+		return
+	}
+	if err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error(), "result": result})
+		return
+	}
+	writeJSON(w, 200, result)
+}
+
+func (s *Server) dockerComposeConfig(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		config, err := s.docker.ReadComposeConfig(r.Context(), r.URL.Query().Get("project"))
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, config)
+	case http.MethodPut:
+		var req dockerapi.ComposeSaveRequest
+		if decodeJSON(w, r, 5<<20, &req) != nil {
+			return
+		}
+		project, err := s.docker.ComposeProject(r.Context(), req.Project)
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		snapshot, err := s.snapshots.Create("compose", "Compose 保存前: "+project.Name, "", project.ConfigFiles)
+		if err != nil {
+			writeError(w, 400, "创建快照失败: "+err.Error())
+			return
+		}
+		output, err := s.docker.WriteComposeConfig(r.Context(), req)
+		if err != nil {
+			_, _ = s.snapshots.Restore(snapshot.ID)
+			writeJSON(w, 400, map[string]any{"error": err.Error(), "output": output, "snapshot_id": snapshot.ID})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "output": output, "snapshot_id": snapshot.ID})
+	default:
+		methodNotAllowed(w)
+	}
+}
+func (s *Server) dockerImageBuild(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req dockerapi.ImageBuildRequest
+	if decodeJSON(w, r, 64<<10, &req) != nil {
+		return
+	}
+	if _, _, err := s.files.ResolveExisting(req.ContextDir, true); err != nil {
+		writeError(w, 400, "构建目录不在文件管理授权范围内: "+err.Error())
+		return
+	}
+	result, err := s.docker.BuildImage(r.Context(), req)
+	if err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error(), "result": result})
+		return
+	}
+	writeJSON(w, 200, result)
+}
+
+func (s *Server) fileSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	result, err := s.files.Search(r.URL.Query().Get("root"), r.URL.Query().Get("q"))
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, result)
+}
+func (s *Server) filePreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	result, err := s.files.PreviewInfo(r.URL.Query().Get("path"))
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, result)
+}
+func (s *Server) filePreviewRaw(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	file, info, mimeType, err := s.files.OpenPreview(r.URL.Query().Get("path"))
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	defer file.Close()
+	w.Header().Set("Content-Type", mimeType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename=%q`, info.Name()))
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	_, _ = io.Copy(w, file)
+}
+func (s *Server) fileArchiveList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	result, err := s.files.ListZIP(r.URL.Query().Get("path"))
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, result)
+}
+func (s *Server) fileArchiveCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req filemanager.ArchiveCreateRequest
+	if decodeJSON(w, r, 128<<10, &req) != nil {
+		return
+	}
+	result, err := s.files.CreateArchive(req)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, result)
+}
+
+func (s *Server) sshSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req sshadmin.SettingsRequest
+	if decodeJSON(w, r, 32<<10, &req) != nil {
+		return
+	}
+	_, _ = s.snapshots.Create("ssh", "SSH 高级设置前", "", []string{"/etc/ssh/sshd_config", "/etc/ssh/sshd_config.d"})
+	result, err := s.ssh.ApplySettings(r.Context(), req)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, result)
+}
+func (s *Server) sshPortConfirm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		KeepNew bool `json:"keep_new"`
+	}
+	if decodeJSON(w, r, 8<<10, &req) != nil {
+		return
+	}
+	result, err := s.ssh.ConfirmPort(r.Context(), req.KeepNew)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, result)
+}
+
+func (s *Server) hostSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	writeJSON(w, 200, hostadmin.ReadHostSettings(r.Context()))
+}
+func (s *Server) hostHostname(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Hostname string `json:"hostname"`
+	}
+	if decodeJSON(w, r, 8<<10, &req) != nil {
+		return
+	}
+	_, _ = s.snapshots.Create("system", "修改主机名前", "", []string{"/etc/hostname", "/etc/hosts"})
+	if err := hostadmin.SetHostname(r.Context(), req.Hostname); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+func (s *Server) hostTimezone(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Timezone string `json:"timezone"`
+	}
+	if decodeJSON(w, r, 8<<10, &req) != nil {
+		return
+	}
+	_, _ = s.snapshots.Create("system", "修改时区前", "", []string{"/etc/timezone", "/etc/localtime"})
+	if err := hostadmin.SetTimezone(r.Context(), req.Timezone); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+func (s *Server) hostDNS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req hostadmin.DNSRequest
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	snapshot, _ := s.snapshots.Create("network", "修改 DNS 前", "", []string{"/etc/systemd/resolved.conf.d", "/etc/resolv.conf"})
+	if err := hostadmin.SetDNS(r.Context(), req); err != nil {
+		if snapshot.ID != "" {
+			_, _ = s.snapshots.Restore(snapshot.ID)
+		}
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+func (s *Server) hostSwap(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		var req hostadmin.SwapRequest
+		if decodeJSON(w, r, 8<<10, &req) != nil {
+			return
+		}
+		_, _ = s.snapshots.Create("system", "创建 Swap 前", "", []string{"/etc/fstab"})
+		status, err := hostadmin.CreateSwap(r.Context(), req)
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, status)
+	case http.MethodDelete:
+		_, _ = s.snapshots.Create("system", "删除 Swap 前", "", []string{"/etc/fstab"})
+		if err := hostadmin.DeleteManagedSwap(r.Context()); err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	default:
+		methodNotAllowed(w)
+	}
+}
+func (s *Server) hostSysctl(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var req hostadmin.SysctlRequest
+	if decodeJSON(w, r, 8<<10, &req) != nil {
+		return
+	}
+	snapshot, _ := s.snapshots.Create("system", "应用 sysctl 前", "", []string{"/etc/sysctl.d/99-lukepanel.conf"})
+	if err := hostadmin.ApplySysctlPreset(r.Context(), req); err != nil {
+		if snapshot.ID != "" {
+			_, _ = s.snapshots.Restore(snapshot.ID)
+		}
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
 }

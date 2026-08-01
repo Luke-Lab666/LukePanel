@@ -89,6 +89,18 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/system/tasks/create", s.requireAuth(s.taskCreate))
 	mux.HandleFunc("/api/v1/system/tasks/action", s.requireAuth(s.taskAction))
 	mux.HandleFunc("/api/v1/system/updates", s.requireAuth(s.updateInfo))
+	mux.HandleFunc("/api/v1/system/apt/preflight", s.requireAuth(s.aptPreflight))
+	mux.HandleFunc("/api/v1/system/apt/search", s.requireAuth(s.aptSearch))
+	mux.HandleFunc("/api/v1/system/apt/download", s.requireAuth(s.aptDownload))
+	mux.HandleFunc("/api/v1/system/apt/upgrade", s.requireAuth(s.aptUpgrade))
+	mux.HandleFunc("/api/v1/system/apt/package", s.requireAuth(s.aptPackage))
+	mux.HandleFunc("/api/v1/system/host", s.requireAuth(s.hostSettings))
+	mux.HandleFunc("/api/v1/system/host/hostname", s.requireAuth(s.hostHostname))
+	mux.HandleFunc("/api/v1/system/host/timezone", s.requireAuth(s.hostTimezone))
+	mux.HandleFunc("/api/v1/system/host/dns", s.requireAuth(s.hostDNS))
+	mux.HandleFunc("/api/v1/system/host/swap", s.requireAuth(s.hostSwap))
+	mux.HandleFunc("/api/v1/system/host/sysctl", s.requireAuth(s.hostSysctl))
+	mux.HandleFunc("/api/v1/system/snapshots", s.requireAuth(s.snapshots))
 	mux.HandleFunc("/api/v1/docker/status", s.requireAuth(s.dockerStatus))
 	mux.HandleFunc("/api/v1/docker/install", s.requireAuth(s.dockerInstall))
 	mux.HandleFunc("/api/v1/docker/containers", s.requireAuth(s.dockerContainers))
@@ -110,6 +122,8 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/docker/cleanup", s.requireAuth(s.dockerCleanup))
 	mux.HandleFunc("/api/v1/docker/compose", s.requireAuth(s.dockerCompose))
 	mux.HandleFunc("/api/v1/docker/compose/action", s.requireAuth(s.dockerComposeAction))
+	mux.HandleFunc("/api/v1/docker/compose/config", s.requireAuth(s.dockerComposeConfig))
+	mux.HandleFunc("/api/v1/docker/images/build", s.requireAuth(s.dockerImageBuild))
 	mux.HandleFunc("/api/v1/files", s.requireAuth(s.files))
 	mux.HandleFunc("/api/v1/files/content", s.requireAuth(s.fileContent))
 	mux.HandleFunc("/api/v1/files/create", s.requireAuth(s.fileCreate))
@@ -119,6 +133,11 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/files/download", s.requireAuth(s.fileDownload))
 	mux.HandleFunc("/api/v1/files/upload", s.requireAuth(s.fileUpload))
 	mux.HandleFunc("/api/v1/files/archive/extract", s.requireAuth(s.fileArchiveExtract))
+	mux.HandleFunc("/api/v1/files/search", s.requireAuth(s.fileSearch))
+	mux.HandleFunc("/api/v1/files/preview", s.requireAuth(s.filePreview))
+	mux.HandleFunc("/api/v1/files/preview/raw", s.requireAuth(s.filePreviewRaw))
+	mux.HandleFunc("/api/v1/files/archive/list", s.requireAuth(s.fileArchiveList))
+	mux.HandleFunc("/api/v1/files/archive/create", s.requireAuth(s.fileArchiveCreate))
 	mux.HandleFunc("/api/v1/files/copy", s.requireAuth(s.fileCopy))
 	mux.HandleFunc("/api/v1/files/move", s.requireAuth(s.fileMove))
 	mux.HandleFunc("/api/v1/files/chmod", s.requireAuth(s.fileChmod))
@@ -133,6 +152,8 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/ssh/keys/delete", s.requireAuth(s.sshKeyDelete))
 	mux.HandleFunc("/api/v1/ssh/keys/generate", s.requireAuth(s.sshKeyGenerate))
 	mux.HandleFunc("/api/v1/ssh/password", s.requireAuth(s.sshPassword))
+	mux.HandleFunc("/api/v1/ssh/settings", s.requireAuth(s.sshSettings))
+	mux.HandleFunc("/api/v1/ssh/port/confirm", s.requireAuth(s.sshPortConfirm))
 	mux.HandleFunc("/api/v1/security/status", s.requireAuth(s.securityStatus))
 	mux.HandleFunc("/api/v1/security/fail2ban/install", s.requireAuth(s.fail2banInstall))
 	mux.HandleFunc("/api/v1/security/auto-updates/enable", s.requireAuth(s.autoUpdatesEnable))
@@ -147,12 +168,13 @@ func New(cfg config.Config, configPath, version string, logger *slog.Logger) (*S
 	mux.HandleFunc("/api/v1/github/branch", s.requireAuth(s.githubCreateBranch))
 	mux.HandleFunc("/api/v1/github/pull", s.requireAuth(s.githubCreatePullRequest))
 	mux.HandleFunc("/api/v1/github/rerun", s.requireAuth(s.githubRerunFailed))
+	mux.HandleFunc("/api/v1/github/release", s.requireAuth(s.githubCreateRelease))
 	mux.HandleFunc("/api/v1/logs/system", s.requireAuth(s.systemLogs))
 	mux.HandleFunc("/api/v1/audit", s.requireAuth(s.auditEvents))
 	mux.HandleFunc("/api/v1/tools/run", s.requireAuth(s.runTool))
 	mux.HandleFunc("/api/v1/settings", s.requireAuth(s.settings))
 	mux.Handle("/", s.spaHandler())
-	s.http = &http.Server{Addr: cfg.Listen, Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Minute, WriteTimeout: 10 * time.Minute, IdleTimeout: 60 * time.Second}
+	s.http = &http.Server{Addr: cfg.Listen, Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 35 * time.Minute, WriteTimeout: 35 * time.Minute, IdleTimeout: 60 * time.Second}
 	return s, nil
 }
 
@@ -1454,4 +1476,303 @@ func writeErrorCode(w http.ResponseWriter, status int, message, code string) {
 }
 func methodNotAllowed(w http.ResponseWriter) {
 	writeError(w, http.StatusMethodNotAllowed, "方法不允许")
+}
+
+func (s *Server) aptPreflight(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/apt/preflight", nil, "apt.preflight")
+}
+func (s *Server) aptSearch(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/apt/search", url.Values{"q": {r.URL.Query().Get("q")}}), nil, "apt.search")
+}
+func (s *Server) aptDownload(w http.ResponseWriter, r *http.Request) {
+	s.elevatedAgentAction(w, r, "/v1/apt/download", "apt.download", nil)
+}
+func (s *Server) aptUpgrade(w http.ResponseWriter, r *http.Request) {
+	s.elevatedAgentAction(w, r, "/v1/apt/upgrade", "apt.upgrade", nil)
+}
+func (s *Server) aptPackage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]any
+	if decodeJSON(w, r, 64<<10, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/apt/package", req, &out); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	s.auditRequest(r, "apt.package", fmt.Sprint(req["packages"]), "success", fmt.Sprint(req["action"]))
+	writeJSON(w, 200, out)
+}
+func (s *Server) elevatedAgentAction(w http.ResponseWriter, r *http.Request, endpoint, action string, body any) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, endpoint, body, &out); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	s.auditRequest(r, action, "system", "success", "")
+	writeJSON(w, 200, out)
+}
+func (s *Server) hostSettings(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, "/v1/host/settings", nil, "")
+}
+func (s *Server) hostHostname(w http.ResponseWriter, r *http.Request) {
+	s.systemMutation(w, r, "/v1/host/hostname", "host.hostname")
+}
+func (s *Server) hostTimezone(w http.ResponseWriter, r *http.Request) {
+	s.systemMutation(w, r, "/v1/host/timezone", "host.timezone")
+}
+func (s *Server) hostDNS(w http.ResponseWriter, r *http.Request) {
+	s.systemMutation(w, r, "/v1/host/dns", "host.dns")
+}
+func (s *Server) hostSysctl(w http.ResponseWriter, r *http.Request) {
+	s.systemMutation(w, r, "/v1/host/sysctl", "host.sysctl")
+}
+func (s *Server) hostSwap(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var body any
+	if r.Method == http.MethodPost {
+		var req map[string]any
+		if decodeJSON(w, r, 16<<10, &req) != nil {
+			return
+		}
+		body = req
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), r.Method, "/v1/host/swap", body, &out); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	s.auditRequest(r, "host.swap", r.Method, "success", "")
+	writeJSON(w, 200, out)
+}
+func (s *Server) systemMutation(w http.ResponseWriter, r *http.Request, endpoint, action string) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]any
+	if decodeJSON(w, r, 64<<10, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, endpoint, req, &out); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	s.auditRequest(r, action, "system", "success", "")
+	writeJSON(w, 200, out)
+}
+func (s *Server) snapshots(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		s.proxyAgentJSON(w, r, http.MethodGet, "/v1/snapshots", nil, "")
+		return
+	}
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]string
+	if decodeJSON(w, r, 16<<10, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/snapshots", req, &out); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	s.auditRequest(r, "snapshot."+req["action"], req["id"], "success", "")
+	writeJSON(w, 200, out)
+}
+
+func (s *Server) dockerComposeConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/docker/compose/config", url.Values{"project": {r.URL.Query().Get("project")}}), nil, "")
+		return
+	}
+	if r.Method != http.MethodPut {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]any
+	if decodeJSON(w, r, 5<<20, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPut, "/v1/docker/compose/config", req, &out); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	s.auditRequest(r, "docker.compose.config", fmt.Sprint(req["project"]), "success", "")
+	writeJSON(w, 200, out)
+}
+func (s *Server) dockerImageBuild(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]any
+	if decodeJSON(w, r, 64<<10, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/docker/images/build", req, &out); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	s.auditRequest(r, "docker.image.build", fmt.Sprint(req["tag"]), "success", "")
+	writeJSON(w, 200, out)
+}
+
+func (s *Server) fileSearch(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/files/search", url.Values{"root": {r.URL.Query().Get("root")}, "q": {r.URL.Query().Get("q")}}), nil, "files.search")
+}
+func (s *Server) filePreview(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/files/preview", url.Values{"path": {r.URL.Query().Get("path")}}), nil, "files.preview")
+}
+func (s *Server) filePreviewRaw(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	endpoint := agent.Query("/v1/files/preview/raw", url.Values{"path": {r.URL.Query().Get("path")}})
+	resp, err := s.agent.Raw(r.Context(), http.MethodGet, endpoint, nil, "")
+	if err != nil {
+		writeError(w, 502, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		s.copyAgentError(w, resp)
+		return
+	}
+	for _, name := range []string{"Content-Type", "Content-Disposition", "Content-Length"} {
+		if value := resp.Header.Get(name); value != "" {
+			w.Header().Set(name, value)
+		}
+	}
+	w.Header().Set("Cache-Control", "private, max-age=60")
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+func (s *Server) fileArchiveList(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/files/archive/list", url.Values{"path": {r.URL.Query().Get("path")}}), nil, "files.archive.list")
+}
+func (s *Server) fileArchiveCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]any
+	if decodeJSON(w, r, 128<<10, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/files/archive/create", req, &out); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	s.auditRequest(r, "files.archive.create", fmt.Sprint(req["destination"]), "success", "")
+	writeJSON(w, 200, out)
+}
+
+func (s *Server) sshSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]any
+	if decodeJSON(w, r, 32<<10, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/ssh/settings", req, &out); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	s.auditRequest(r, "ssh.settings", "sshd", "success", "")
+	writeJSON(w, 200, out)
+}
+func (s *Server) sshPortConfirm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req map[string]bool
+	if decodeJSON(w, r, 8<<10, &req) != nil {
+		return
+	}
+	var out map[string]any
+	if err := s.agent.JSON(r.Context(), http.MethodPost, "/v1/ssh/port/confirm", req, &out); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	s.auditRequest(r, "ssh.port.confirm", "sshd", "success", fmt.Sprint(req["keep_new"]))
+	writeJSON(w, 200, out)
+}
+
+func (s *Server) githubCreateRelease(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !s.requireElevation(w, r) {
+		return
+	}
+	var req struct {
+		Owner string `json:"owner"`
+		Repo  string `json:"repo"`
+		githubhelper.CreateReleaseRequest
+	}
+	if decodeJSON(w, r, 64<<10, &req) != nil {
+		return
+	}
+	session, _ := sessionFromContext(r)
+	release, err := s.github.CreateRelease(r.Context(), req.Owner, req.Repo, req.CreateReleaseRequest, s.githubToken(session.ID))
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	s.auditRequest(r, "github.release.create", req.Owner+"/"+req.Repo+":"+release.TagName, "success", "")
+	writeJSON(w, 200, release)
 }
