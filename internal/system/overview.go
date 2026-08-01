@@ -2,11 +2,11 @@ package system
 
 import (
 	"bufio"
-	"errors"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -16,6 +16,7 @@ type Overview struct {
 	OS           string  `json:"os"`
 	Kernel       string  `json:"kernel"`
 	Architecture string  `json:"architecture"`
+	CPUCores     int     `json:"cpu_cores"`
 	Uptime       uint64  `json:"uptime_seconds"`
 	Load1        float64 `json:"load_1"`
 	Load5        float64 `json:"load_5"`
@@ -29,17 +30,32 @@ type Overview struct {
 
 type Memory struct{ Total, Used, Available, SwapTotal, SwapUsed uint64 }
 type Disk struct{ Total, Used, Available uint64 }
-type Network struct{ ReceivedBytes, SentBytes uint64 }
+type Network struct {
+	ReceivedBytes uint64  `json:"received_bytes"`
+	SentBytes     uint64  `json:"sent_bytes"`
+	DownloadBPS   float64 `json:"download_bps"`
+	UploadBPS     float64 `json:"upload_bps"`
+}
 
-type Collector struct{ previousCPU cpuSample }
+type Collector struct {
+	mu              sync.Mutex
+	previousCPU     cpuSample
+	previousNetwork networkSample
+}
 type cpuSample struct {
 	total, idle uint64
 	at          time.Time
+}
+type networkSample struct {
+	received, sent uint64
+	at             time.Time
 }
 
 func NewCollector() *Collector { return &Collector{} }
 
 func (c *Collector) Collect() (Overview, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	hostname, _ := os.Hostname()
 	osName := readOSName()
 	kernel := readKernel()
@@ -47,9 +63,9 @@ func (c *Collector) Collect() (Overview, error) {
 	loads := readLoad()
 	memory := readMemory()
 	disk := readDisk("/")
-	network := readNetwork()
+	network := c.readNetworkRates()
 	cpu := c.readCPUPercent()
-	return Overview{Hostname: hostname, OS: osName, Kernel: kernel, Architecture: runtime.GOARCH, Uptime: uptime,
+	return Overview{Hostname: hostname, OS: osName, Kernel: kernel, Architecture: runtime.GOARCH, CPUCores: runtime.NumCPU(), Uptime: uptime,
 		Load1: loads[0], Load5: loads[1], Load15: loads[2], CPUPercent: cpu, Memory: memory, Disk: disk, Network: network,
 		CollectedAt: time.Now().UTC().Format(time.RFC3339)}, nil
 }
@@ -80,7 +96,11 @@ func readUptime() uint64 {
 	if err != nil {
 		return 0
 	}
-	v, _ := strconv.ParseFloat(strings.Fields(string(b))[0], 64)
+	f := strings.Fields(string(b))
+	if len(f) == 0 {
+		return 0
+	}
+	v, _ := strconv.ParseFloat(f[0], 64)
 	return uint64(v)
 }
 func readLoad() [3]float64 {
@@ -123,13 +143,13 @@ func readDisk(path string) Disk {
 	available := st.Bavail * uint64(st.Bsize)
 	return Disk{total, total - available, available}
 }
-func readNetwork() Network {
+func readNetworkTotals() (uint64, uint64) {
 	f, err := os.Open("/proc/net/dev")
 	if err != nil {
-		return Network{}
+		return 0, 0
 	}
 	defer f.Close()
-	var n Network
+	var received, sent uint64
 	s := bufio.NewScanner(f)
 	for s.Scan() {
 		line := strings.TrimSpace(s.Text())
@@ -142,8 +162,29 @@ func readNetwork() Network {
 		}
 		rx, _ := strconv.ParseUint(parts[1], 10, 64)
 		tx, _ := strconv.ParseUint(parts[9], 10, 64)
-		n.ReceivedBytes += rx
-		n.SentBytes += tx
+		received += rx
+		sent += tx
+	}
+	return received, sent
+}
+func (c *Collector) readNetworkRates() Network {
+	received, sent := readNetworkTotals()
+	now := time.Now()
+	previous := c.previousNetwork
+	c.previousNetwork = networkSample{received: received, sent: sent, at: now}
+	n := Network{ReceivedBytes: received, SentBytes: sent}
+	if previous.at.IsZero() {
+		return n
+	}
+	seconds := now.Sub(previous.at).Seconds()
+	if seconds <= 0 {
+		return n
+	}
+	if received >= previous.received {
+		n.DownloadBPS = float64(received-previous.received) / seconds
+	}
+	if sent >= previous.sent {
+		n.UploadBPS = float64(sent-previous.sent) / seconds
 	}
 	return n
 }
@@ -190,5 +231,3 @@ func (c *Collector) readCPUPercent() float64 {
 	}
 	return float64(deltaTotal-deltaIdle) / float64(deltaTotal) * 100
 }
-
-var _ = errors.New

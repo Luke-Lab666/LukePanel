@@ -5,7 +5,8 @@ REPO="Luke-Lab666/LukePanel"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/lukepanel"
 DATA_DIR="/var/lib/lukepanel"
-SERVICE_FILE="/etc/systemd/system/lukepanel.service"
+WEB_SERVICE="/etc/systemd/system/lukepanel.service"
+AGENT_SERVICE="/etc/systemd/system/lukepanel-agent.service"
 
 log() { printf '[LukePanel] %s\n' "$*"; }
 die() { printf '[LukePanel] 错误：%s\n' "$*" >&2; exit 1; }
@@ -34,17 +35,51 @@ curl -fL --retry 3 --connect-timeout 15 "${BASE_URL}/SHA256SUMS" -o "${TMP_DIR}/
   grep "  ${BINARY}$" SHA256SUMS | sha256sum -c -
 ) || die "二进制校验失败"
 
-if ! id lukepanel >/dev/null 2>&1; then
-  useradd --system --home-dir "$DATA_DIR" --shell /usr/sbin/nologin lukepanel
+if ! getent group lukepanel >/dev/null 2>&1; then
+  groupadd --system lukepanel
 fi
-install -m 0755 "${TMP_DIR}/${BINARY}" "${INSTALL_DIR}/lukepanel"
+if ! id lukepanel >/dev/null 2>&1; then
+  useradd --system --gid lukepanel --home-dir "$DATA_DIR" --shell /usr/sbin/nologin lukepanel
+else
+  usermod --gid lukepanel lukepanel
+fi
 install -d -o lukepanel -g lukepanel -m 0750 "$CONFIG_DIR" "$DATA_DIR"
+systemctl stop lukepanel.service lukepanel-agent.service 2>/dev/null || true
+install -m 0755 "${TMP_DIR}/${BINARY}" "${INSTALL_DIR}/lukepanel"
 
-cat > "$SERVICE_FILE" <<'UNIT'
+cat > "$AGENT_SERVICE" <<'UNIT'
+[Unit]
+Description=LukePanel privileged local agent
+After=local-fs.target docker.service
+Before=lukepanel.service
+
+[Service]
+Type=simple
+User=root
+Group=lukepanel
+RuntimeDirectory=lukepanel
+RuntimeDirectoryMode=0750
+ExecStart=/usr/local/bin/lukepanel --agent --config /etc/lukepanel/config.json
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+cat > "$WEB_SERVICE" <<'UNIT'
 [Unit]
 Description=LukePanel lightweight system management panel
-After=network-online.target
+After=network-online.target lukepanel-agent.service
 Wants=network-online.target
+Requires=lukepanel-agent.service
 
 [Service]
 Type=simple
@@ -55,7 +90,7 @@ Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectHome=read-only
+ProtectHome=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/lukepanel /etc/lukepanel
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
@@ -66,18 +101,20 @@ MemoryDenyWriteExecute=true
 WantedBy=multi-user.target
 UNIT
 
-INITIAL_OUTPUT=""
-if [[ ! -f "${CONFIG_DIR}/config.json" ]]; then
-  INITIAL_OUTPUT="$(runuser -u lukepanel -- /usr/local/bin/lukepanel --init --config "${CONFIG_DIR}/config.json")"
-fi
+# 首次安装生成凭据；升级时完成配置迁移，避免 Web 与 Agent 并发迁移。
+INITIAL_OUTPUT="$(runuser -u lukepanel -- /usr/local/bin/lukepanel --init --config "${CONFIG_DIR}/config.json")"
+chown -R lukepanel:lukepanel "$CONFIG_DIR" "$DATA_DIR"
+chmod 0750 "$CONFIG_DIR" "$DATA_DIR"
+chmod 0600 "${CONFIG_DIR}/config.json" "${CONFIG_DIR}/config.json.lock" 2>/dev/null || true
 
 systemctl daemon-reload
-systemctl enable --now lukepanel.service
+systemctl enable --now lukepanel-agent.service lukepanel.service
 
-log "安装完成"
+log "安装或升级完成"
 printf '监听地址：127.0.0.1:6767\n'
 printf '配置文件：%s/config.json\n' "$CONFIG_DIR"
+printf 'Agent：/run/lukepanel/agent.sock\n'
 printf '请通过 Nginx Proxy Manager 使用 HTTPS 反向代理。\n'
-if [[ -n "$INITIAL_OUTPUT" ]]; then
+if [[ "$INITIAL_OUTPUT" == *"initial credentials"* ]]; then
   printf '\n%s\n' "$INITIAL_OUTPUT"
 fi

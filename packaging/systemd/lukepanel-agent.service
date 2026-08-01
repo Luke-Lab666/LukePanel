@@ -1,0 +1,24 @@
+[Unit]
+Description=LukePanel privileged local agent
+After=local-fs.target docker.service
+Before=lukepanel.service
+
+[Service]
+Type=simple
+User=root
+Group=lukepanel
+RuntimeDirectory=lukepanel
+RuntimeDirectoryMode=0750
+ExecStart=/usr/local/bin/lukepanel --agent --config /etc/lukepanel/config.json
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

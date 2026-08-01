@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/Luke-Lab666/LukePanel/internal/agent"
 	"github.com/Luke-Lab666/LukePanel/internal/config"
 	"github.com/Luke-Lab666/LukePanel/internal/server"
 )
@@ -15,6 +16,7 @@ var version = "dev"
 func main() {
 	configPath := flag.String("config", envOr("LUKEPANEL_CONFIG", "/etc/lukepanel/config.json"), "configuration file")
 	initOnly := flag.Bool("init", false, "initialize configuration and exit")
+	agentMode := flag.Bool("agent", false, "run privileged local agent")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 	if *showVersion {
@@ -36,7 +38,19 @@ func main() {
 		}
 		return
 	}
-	srv, err := server.New(cfg, *configPath, logger)
+	if *agentMode {
+		srv, err := agent.NewServer(cfg, logger)
+		if err != nil {
+			logger.Error("agent initialization failed", "error", err)
+			os.Exit(1)
+		}
+		if err := srv.ListenAndServe(); err != nil {
+			logger.Error("agent stopped", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+	srv, err := server.New(cfg, *configPath, version, logger)
 	if err != nil {
 		logger.Error("server initialization failed", "error", err)
 		os.Exit(1)

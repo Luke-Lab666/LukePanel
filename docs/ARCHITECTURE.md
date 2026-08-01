@@ -1,55 +1,42 @@
 # 架构设计
 
-## 当前阶段
-
-LukePanel v0.1 使用单进程 Go 服务：
+## 进程模型
 
 ```text
 Browser / PWA
       │ HTTPS（NPM）
       ▼
-127.0.0.1:6767
-      │
-      ├── Auth / Session / CSRF
-      ├── /proc 系统指标
-      ├── 受限文件目录浏览
-      ├── JSONL 审计日志
+lukepanel.service（普通用户）
+      ├── 登录、会话、CSRF、限速
+      ├── /proc 系统概览
+      ├── 工具调用与审计
       └── 嵌入式 HTML / CSS / ES Module
-```
-
-没有 Node.js 运行时、外部数据库、Redis、Prometheus 或独立前端服务。
-
-## 权限边界
-
-当前 Web 服务以 `lukepanel` 普通系统用户运行。首版文件管理只读，是刻意限制，不是功能遗漏。
-
-后续写入型操作使用独立 root agent：
-
-```text
-lukepanel-web（普通用户）
+      │
       │ /run/lukepanel/agent.sock
       ▼
-lukepanel-agent（root）
-      ├── 固定 Action 白名单
-      ├── 参数验证
-      ├── 二次验证授权
-      └── 全量审计
+lukepanel-agent.service（root）
+      ├── Docker Engine Unix Socket
+      ├── systemctl / journalctl
+      ├── 进程信号
+      ├── 文件写入、备份与回收站
+      └── 网络、存储、timer、APT 检查
 ```
 
-Agent 不接受 Shell 字符串，不提供通用 `sh -c` 接口。
+Agent 不监听 TCP，不接受任意命令字符串，只开放固定方法和参数白名单。
 
 ## 数据存储
 
-- `/etc/lukepanel/config.json`：0600，原子替换写入。
-- `/var/lib/lukepanel/audit.jsonl`：0600，追加写入。
-- 会话当前保存在内存，服务重启后全部失效。
+- `/etc/lukepanel/config.json`：配置、密码哈希、会话签名密钥和 Agent Secret。
+- `/etc/lukepanel/config.json.lock`：配置迁移和并发写入锁。
+- `/var/lib/lukepanel/audit.jsonl`：操作审计。
+- `/var/lib/lukepanel/backups/files/`：在线编辑前备份。
+- `/var/lib/lukepanel/recycle/`：文件回收站。
+- `/run/lukepanel/agent.sock`：临时 Unix Socket。
 
-SQLite 会在审计查询、持久会话和配置版本功能接入时再引入，避免首版提前增加复杂度。
+## 前端刷新策略
 
-## 前端原则
-
-- 移动端优先，桌面端增强。
-- 手机常用操作不依赖 hover 或右键。
-- 手机采用底部导航，桌面采用固定侧栏。
-- 无第三方前端运行依赖，静态资源嵌入 Go 二进制。
-- 页面不可见时停止周期刷新。
+- 系统概览默认 5 秒刷新。
+- 只在概览路由且页面可见时轮询。
+- 页面进入后台立即停止定时器。
+- 回到前台立即刷新一次。
+- 更新指标时只修改 DOM 数值，不重建整个页面。
