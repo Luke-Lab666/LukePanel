@@ -113,7 +113,7 @@ func LoadOrCreateWithOptions(path string, options InitOptions) (Config, string, 
 			cfg.AutoRefreshSeconds = Default().AutoRefreshSeconds
 			changed = true
 		}
-		// v0.9.6 removes the file-manager root allowlist. Existing installations
+		// The file manager no longer uses a configurable root allowlist. Existing installations
 		// are migrated to the real filesystem root while sensitive reads remain
 		// protected by secondary authentication.
 		if len(cfg.AllowedRoots) != 1 || filepath.Clean(cfg.AllowedRoots[0]) != "/" {

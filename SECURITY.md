@@ -1,6 +1,6 @@
 # Security Policy
 
-LukePanel 当前处于 Beta 阶段。不要在没有 HTTPS、强密码、访问控制和可信反向代理的情况下暴露到公网。
+LukePanel v1.0.0 已进入稳定维护阶段。即使如此，也不要在没有 HTTPS、强密码、访问控制和可信反向代理的情况下暴露到公网。
 
 ## 权限模型
 
@@ -8,7 +8,7 @@ LukePanel 当前处于 Beta 阶段。不要在没有 HTTPS、强密码、访问�
 - `lukepanel-agent.service` 以 root 运行，仅监听本地 Unix Socket。
 - Web 与 Agent 使用随机 Agent Secret 和固定时序比较认证。
 - Agent 只接受固定 API，不提供任意 Shell 或 `sh -c`。
-- 文件访问受 `allowed_roots`、符号链接解析和授权根保护三层限制。
+- 文件访问经过路径规范化、符号链接解析、虚拟文件系统写保护和敏感文件二次验证。
 
 ## 默认安全措施
 
