@@ -73,6 +73,54 @@ func TestExtractGitHubArchiveStripsRootAndSkipsGit(t *testing.T) {
 	}
 }
 
+func TestExtractGitHubArchiveKeepsRepositoryTopLevelDirectory(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	for name, content := range map[string]string{
+		"internal/server/audit.go":      "package server",
+		"internal/server/audit_test.go": "package server",
+	} {
+		file, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = file.Write([]byte(content))
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	files, _, _, err := extractGitHubArchive(bytes.NewReader(archive.Bytes()), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := files["internal/server/audit.go"]; !ok {
+		t.Fatalf("repository directory was stripped: %#v", files)
+	}
+	if _, ok := files["server/audit.go"]; ok {
+		t.Fatalf("internal root was incorrectly removed: %#v", files)
+	}
+}
+
+func TestExtractGitHubArchiveKeepsDotDirectory(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	file, err := writer.Create(".github/workflows/build.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = file.Write([]byte("name: Build"))
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	files, _, _, err := extractGitHubArchive(bytes.NewReader(archive.Bytes()), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := files[".github/workflows/build.yml"]; !ok {
+		t.Fatalf("dot directory was stripped: %#v", files)
+	}
+}
+
 func TestNormalizeArchivePathRejectsTraversal(t *testing.T) {
 	if _, _, err := normalizeArchivePath("../secret", ""); err == nil {
 		t.Fatal("expected traversal error")

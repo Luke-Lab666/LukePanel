@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -48,13 +49,15 @@ type AuditQueryResult struct {
 }
 
 type AuditLog struct {
-	mu        sync.Mutex
-	indexMu   sync.Mutex
-	path      string
-	dbPath    string
-	sqlite    string
-	indexCh   chan AuditEvent
-	closeOnce sync.Once
+	mu           sync.Mutex
+	indexMu      sync.Mutex
+	path         string
+	dbPath       string
+	sqlite       string
+	indexCh      chan AuditEvent
+	indexPending atomic.Int64
+	indexReady   atomic.Bool
+	closeOnce    sync.Once
 }
 
 func NewAuditLog(dataDir string) *AuditLog {
@@ -62,9 +65,16 @@ func NewAuditLog(dataDir string) *AuditLog {
 	if binary, err := exec.LookPath("sqlite3"); err == nil {
 		a.sqlite = binary
 		if a.initDB() == nil {
-			a.indexCh = make(chan AuditEvent, 512)
-			go a.indexWorker()
-			go a.rebuildIfNeeded()
+			// JSONL files are the source of truth. Build the optional index before
+			// allowing indexed reads so startup cannot expose a partially rebuilt DB.
+			a.indexReady.Store(false)
+			if err := a.rebuildIfNeeded(); err == nil {
+				a.indexReady.Store(true)
+				a.indexCh = make(chan AuditEvent, 512)
+				go a.indexWorker()
+			} else {
+				a.sqlite = ""
+			}
 		} else {
 			a.sqlite = ""
 		}
@@ -84,31 +94,52 @@ func (a *AuditLog) Write(event AuditEvent) {
 	}
 	a.mu.Unlock()
 	if err == nil && a.indexCh != nil {
+		a.indexPending.Add(1)
 		select {
 		case a.indexCh <- event:
 		default:
+			// Keep the audit write non-blocking. If the queue is saturated,
+			// synchronously index this one event; on failure, indexed queries
+			// are disabled and transparently fall back to JSONL.
+			if err := a.insertBatch([]AuditEvent{event}); err != nil {
+				a.indexReady.Store(false)
+			}
+			a.indexPending.Add(-1)
 		}
 	}
 }
 
 func (a *AuditLog) Read(limit int) ([]AuditEvent, error) {
-	result, err := a.Query(AuditQuery{Limit: limit})
+	query := AuditQuery{Limit: limit}
+	normalizeAuditQuery(&query)
+	// Read is intentionally backed by JSONL, which is the durable source of
+	// truth. This guarantees read-after-write consistency even while the
+	// optional SQLite index is flushing in the background.
+	result, err := a.queryFiles(query)
 	return result.Events, err
 }
 
 func (a *AuditLog) Query(query AuditQuery) (AuditQueryResult, error) {
+	normalizeAuditQuery(&query)
+	// SQLite is only an acceleration index. Never use it while a rebuild or
+	// queued write is pending, otherwise a successful query may still return
+	// stale or incomplete data.
+	if a.sqlite != "" && a.indexReady.Load() && a.indexPending.Load() == 0 {
+		if result, err := a.querySQLite(query); err == nil {
+			return result, nil
+		}
+		a.indexReady.Store(false)
+	}
+	return a.queryFiles(query)
+}
+
+func normalizeAuditQuery(query *AuditQuery) {
 	if query.Limit < 1 || query.Limit > 2000 {
 		query.Limit = 300
 	}
 	if query.Offset < 0 || query.Offset > 1000000 {
 		query.Offset = 0
 	}
-	if a.sqlite != "" {
-		if result, err := a.querySQLite(query); err == nil {
-			return result, nil
-		}
-	}
-	return a.queryFiles(query)
 }
 
 func (a *AuditLog) initDB() error {
@@ -148,17 +179,11 @@ func (a *AuditLog) indexWorker() {
 		if len(batch) == 0 {
 			return
 		}
-		var sql strings.Builder
-		sql.WriteString("BEGIN IMMEDIATE;\n")
-		for _, event := range batch {
-			sql.WriteString(auditInsertSQL(event))
+		count := int64(len(batch))
+		if err := a.insertBatch(batch); err != nil {
+			a.indexReady.Store(false)
 		}
-		sql.WriteString("COMMIT;\n")
-		a.indexMu.Lock()
-		cmd := exec.Command(a.sqlite, a.dbPath)
-		cmd.Stdin = strings.NewReader(sql.String())
-		_ = cmd.Run()
-		a.indexMu.Unlock()
+		a.indexPending.Add(-count)
 		batch = batch[:0]
 	}
 	for {
@@ -178,18 +203,21 @@ func (a *AuditLog) indexWorker() {
 	}
 }
 
-func (a *AuditLog) rebuildIfNeeded() {
+func (a *AuditLog) rebuildIfNeeded() error {
 	a.indexMu.Lock()
 	defer a.indexMu.Unlock()
 	cmd := exec.Command(a.sqlite, "-noheader", a.dbPath, "SELECT COUNT(*) FROM audit_events;")
 	out, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(out)) != "0" {
-		return
+	if err != nil {
+		return err
 	}
-	a.rebuildFromFilesLocked()
+	if strings.TrimSpace(string(out)) != "0" {
+		return nil
+	}
+	return a.rebuildFromFilesLocked()
 }
 
-func (a *AuditLog) rebuildFromFilesLocked() {
+func (a *AuditLog) rebuildFromFilesLocked() error {
 	paths := []string{}
 	for i := auditRotateFiles; i >= 1; i-- {
 		paths = append(paths, a.rotatedPath(i))
@@ -198,34 +226,49 @@ func (a *AuditLog) rebuildFromFilesLocked() {
 	var batch []AuditEvent
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
-		if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
+		if err != nil {
+			return err
+		}
 		for _, line := range bytes.Split(data, []byte{'\n'}) {
+			line = bytes.TrimSpace(line)
+			if len(line) == 0 {
+				continue
+			}
 			var event AuditEvent
-			if json.Unmarshal(bytes.TrimSpace(line), &event) == nil && event.Time != "" {
+			if json.Unmarshal(line, &event) == nil {
+				// Older audit records may not contain a timestamp. SQLite accepts
+				// the empty string and sorts it after RFC3339 timestamps, preserving
+				// the same newest-first behavior as the JSONL reader.
 				batch = append(batch, event)
 				if len(batch) >= 500 {
-					a.insertBatchLocked(batch)
+					if err := a.insertBatchLocked(batch); err != nil {
+						return err
+					}
 					batch = batch[:0]
 				}
 			}
 		}
 	}
 	if len(batch) > 0 {
-		a.insertBatchLocked(batch)
+		if err := a.insertBatchLocked(batch); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (a *AuditLog) insertBatch(events []AuditEvent) {
+func (a *AuditLog) insertBatch(events []AuditEvent) error {
 	a.indexMu.Lock()
 	defer a.indexMu.Unlock()
-	a.insertBatchLocked(events)
+	return a.insertBatchLocked(events)
 }
 
-func (a *AuditLog) insertBatchLocked(events []AuditEvent) {
+func (a *AuditLog) insertBatchLocked(events []AuditEvent) error {
 	if a.sqlite == "" || len(events) == 0 {
-		return
+		return nil
 	}
 	var sql strings.Builder
 	sql.WriteString("BEGIN IMMEDIATE;\n")
@@ -235,7 +278,10 @@ func (a *AuditLog) insertBatchLocked(events []AuditEvent) {
 	sql.WriteString("COMMIT;\n")
 	cmd := exec.Command(a.sqlite, a.dbPath)
 	cmd.Stdin = strings.NewReader(sql.String())
-	_ = cmd.Run()
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("sqlite index: %s", strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 // ResetIndex rebuilds the optional SQLite index from the JSONL source after a backup restore.
@@ -252,10 +298,14 @@ func (a *AuditLog) ResetIndex() error {
 			return err
 		}
 	}
+	a.indexReady.Store(false)
 	if err := a.initDB(); err != nil {
 		return err
 	}
-	a.rebuildFromFilesLocked()
+	if err := a.rebuildFromFilesLocked(); err != nil {
+		return err
+	}
+	a.indexReady.Store(true)
 	return nil
 }
 

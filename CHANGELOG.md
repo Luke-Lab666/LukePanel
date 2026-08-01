@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.9.5-beta - 2026-08-01
+
+- 修复 JSONL 审计日志与可选 SQLite 索引之间的即时一致性，写入后立即读取不再返回空结果。
+- 启动时同步完成审计索引检查与必要重建，轮转日志和旧版无时间字段记录均可读取。
+- 修复 GitHub ZIP 助手误剥离 `internal/`、`.github/` 等合法仓库顶层目录的问题。
+- 增加 focused ZIP 与 dot-directory 导入回归测试，避免 Hotfix 被上传到错误路径。
+- GitHub Actions 在无外部 Go Module 依赖时关闭无效缓存，消除缺少 `go.sum` 的警告。
+- 临时兼容并隔离错误上传到仓库根目录的 `server/audit*.go`，不再参与 Go 构建。
+
 ## v0.9.0-beta - 2026-08-01
 
 - 核心单机管理功能进入 Beta 冻结阶段，后续 v0.9.x 主要修复真实环境兼容性。

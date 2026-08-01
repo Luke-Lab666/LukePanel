@@ -426,10 +426,27 @@ func commonArchiveRoot(files []*zip.File) string {
 			return ""
 		}
 	}
-	if seen {
-		return root
+	if !seen || isRepositoryTopLevelDirectory(root) {
+		return ""
 	}
-	return ""
+	return root
+}
+
+// isRepositoryTopLevelDirectory prevents a focused update ZIP such as
+// internal/server/audit.go or .github/workflows/build.yml from being mistaken
+// for a repository-export wrapper directory. Wrapper folders such as
+// LukePanel-main are still stripped for convenience.
+func isRepositoryTopLevelDirectory(value string) bool {
+	name := strings.ToLower(strings.TrimSpace(value))
+	if strings.HasPrefix(name, ".") {
+		return true
+	}
+	switch name {
+	case "api", "assets", "build", "client", "cmd", "config", "configs", "deploy", "docker", "docs", "examples", "internal", "packaging", "pkg", "scripts", "server", "src", "static", "test", "tests", "tools", "ui", "web":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeArchivePath(value, root string) (string, bool, error) {
