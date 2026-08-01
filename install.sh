@@ -7,6 +7,7 @@ CONFIG_DIR="/etc/lukepanel"
 DATA_DIR="/var/lib/lukepanel"
 WEB_SERVICE="/etc/systemd/system/lukepanel.service"
 AGENT_SERVICE="/etc/systemd/system/lukepanel-agent.service"
+UNINSTALL_COMMAND="/usr/local/sbin/lukepanel-uninstall"
 
 log() { printf '[LukePanel] %s\n' "$*"; }
 die() { printf '[LukePanel] 错误：%s\n' "$*" >&2; exit 1; }
@@ -30,9 +31,11 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 log "下载最新版本（${ARCH}）"
 curl -fL --retry 3 --connect-timeout 15 "${BASE_URL}/${BINARY}" -o "${TMP_DIR}/${BINARY}"
 curl -fL --retry 3 --connect-timeout 15 "${BASE_URL}/SHA256SUMS" -o "${TMP_DIR}/SHA256SUMS"
+curl -fL --retry 3 --connect-timeout 15 "${BASE_URL}/uninstall.sh" -o "${TMP_DIR}/uninstall.sh"
 (
   cd "$TMP_DIR"
   grep "  ${BINARY}$" SHA256SUMS | sha256sum -c -
+  grep "  uninstall.sh$" SHA256SUMS | sha256sum -c -
 ) || die "二进制校验失败"
 
 if ! getent group lukepanel >/dev/null 2>&1; then
@@ -46,6 +49,7 @@ fi
 install -d -o lukepanel -g lukepanel -m 0750 "$CONFIG_DIR" "$DATA_DIR"
 systemctl stop lukepanel.service lukepanel-agent.service 2>/dev/null || true
 install -m 0755 "${TMP_DIR}/${BINARY}" "${INSTALL_DIR}/lukepanel"
+install -m 0755 "${TMP_DIR}/uninstall.sh" "$UNINSTALL_COMMAND"
 
 cat > "$AGENT_SERVICE" <<'UNIT'
 [Unit]
@@ -114,6 +118,8 @@ log "安装或升级完成"
 printf '监听地址：127.0.0.1:6767\n'
 printf '配置文件：%s/config.json\n' "$CONFIG_DIR"
 printf 'Agent：/run/lukepanel/agent.sock\n'
+printf '卸载命令：lukepanel-uninstall（保留数据）\n'
+printf '彻底卸载：lukepanel-uninstall --purge\n'
 printf '请通过 Nginx Proxy Manager 使用 HTTPS 反向代理。\n'
 if [[ "$INITIAL_OUTPUT" == *"initial credentials"* ]]; then
   printf '\n%s\n' "$INITIAL_OUTPUT"

@@ -97,12 +97,26 @@ async function api(url, options={}){
   if(!res.ok){const error=new Error(body.error||`请求失败（${res.status}）`);error.status=res.status;throw error}
   return body
 }
+const ROUTE_STORAGE_KEY='lukepanel:last-route'
+const knownRoutes=new Set(['/','/system','/services','/processes','/network','/storage','/tasks','/updates','/files','/docker','/tools','/github','/ssh','/audit','/security'])
+const routeParents={'/system':'/','/services':'/system','/processes':'/system','/network':'/system','/storage':'/system','/tasks':'/system','/updates':'/system','/files':'/system','/ssh':'/system','/docker':'/','/tools':'/','/github':'/tools','/audit':'/security','/security':'/'}
+let pendingElevation=null
+function rememberRoute(pathname){if(knownRoutes.has(pathname))sessionStorage.setItem(ROUTE_STORAGE_KEY,pathname)}
+function rememberedRoute(fallback='/'){const saved=sessionStorage.getItem(ROUTE_STORAGE_KEY);return knownRoutes.has(saved)?saved:fallback}
+function passwordInputAttributes(){return 'inputmode="latin" lang="en" autocapitalize="none" autocorrect="off" spellcheck="false"'}
+function requestElevation(){
+  if(pendingElevation){pendingElevation.reject(new Error('已有二次验证请求'));pendingElevation=null}
+  return new Promise((resolve,reject)=>{
+    pendingElevation={resolve,reject}
+    state.modal={kind:'elevation',title:'二次验证'}
+    render()
+    requestAnimationFrame(()=>document.querySelector('#elevation-password')?.focus())
+  })
+}
 async function secureApi(url,options={}){
   try{return await api(url,options)}catch(error){
     if(error.status!==403||!String(error.message).includes('二次验证'))throw error
-    const password=prompt('此操作需要二次验证，请输入当前登录密码')
-    if(password===null)throw new Error('操作已取消')
-    await api('/api/v1/auth/elevate',{method:'POST',body:jsonBody({password})})
+    await requestElevation()
     return api(url,options)
   }
 }
@@ -110,8 +124,13 @@ async function secureApi(url,options={}){
 function theme(){ return localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light') }
 function applyTheme(value){ document.documentElement.dataset.theme=value; localStorage.setItem('theme',value); document.querySelector('meta[name=theme-color]')?.setAttribute('content',value==='dark'?'#101114':'#f6f7f9') }
 applyTheme(theme())
-function navigate(path){ if(location.pathname!==path) history.pushState({},'',path); state.modal=null; render() }
-window.addEventListener('popstate',()=>{state.modal=null;render()})
+function navigate(path,{replace=false}={}){
+  const target=knownRoutes.has(path)?path:'/'
+  if(location.pathname!==target){replace?history.replaceState({},'',target):history.pushState({},'',target)}
+  rememberRoute(target);state.modal=null;render()
+}
+window.addEventListener('popstate',()=>{state.modal=null;rememberRoute(location.pathname);render()})
+window.addEventListener('beforeunload',()=>rememberRoute(location.pathname))
 document.addEventListener('click',e=>{const link=e.target.closest('[data-nav]');if(link){e.preventDefault();navigate(link.getAttribute('href'))}})
 
 document.addEventListener('visibilitychange',()=>{
@@ -120,9 +139,16 @@ document.addEventListener('visibilitychange',()=>{
 })
 
 async function restore(){
+  const requestedPath=knownRoutes.has(location.pathname)?location.pathname:rememberedRoute('/')
+  rememberRoute(requestedPath)
   try{
     const me=await api('/api/v1/auth/me'); state.authenticated=true; state.username=me.username; state.csrf=me.csrf_token; state.sessionID=me.session_id
     state.settings=await api('/api/v1/settings')
+    const navigationType=performance.getEntriesByType?.('navigation')?.[0]?.type
+    const saved=rememberedRoute(requestedPath)
+    if(location.pathname==='/'&&navigationType==='reload'&&saved!=='/')history.replaceState({},'',saved)
+    else if(!knownRoutes.has(location.pathname))history.replaceState({},'',requestedPath)
+    rememberRoute(location.pathname)
   }catch{ state.authenticated=false; state.csrf='' }
   render()
 }
@@ -133,9 +159,9 @@ function navItems(){return [
 function isActive(href){ return href==='/' ? location.pathname==='/' : location.pathname===href || (href==='/system' && ['/services','/processes','/network','/storage','/tasks','/updates','/ssh'].includes(location.pathname)) }
 function shell(content){
   const nav=navItems()
-  return `<div class="app-shell"><aside class="sidebar"><div class="brand"><div class="brand-mark">L</div><div><strong>LukePanel</strong><span>${escapeHTML(state.settings?.version||'轻量系统管理')}</span></div></div><nav class="sidebar-nav">${nav.map(([label,href,i])=>`<a data-nav href="${href}" class="${isActive(href)?'active':''}">${icon(i,19)}<span>${label}</span></a>`).join('')}</nav><div class="sidebar-footer"><button id="theme-toggle" class="icon-text-button">${icon(theme()==='dark'?'sun':'moon',18)}${theme()==='dark'?'浅色模式':'深色模式'}</button><button id="logout" class="icon-text-button danger-text">${icon('logout',18)}退出登录</button></div></aside><main class="main-content">${content}</main><nav class="mobile-nav">${nav.filter(([,href])=>['/','/system','/docker','/tools','/security'].includes(href)).map(([label,href,i])=>`<a data-nav href="${href}" class="${isActive(href)?'active':''}">${icon(href==='/security'?'user':i,21)}<span>${href==='/security'?'我的':label.replace('管理','')}</span></a>`).join('')}</nav>${modalHTML()}</div>`
+  return `<div class="app-shell"><aside class="sidebar"><div class="brand"><div class="brand-mark">L</div><div><strong>LukePanel</strong><span>${escapeHTML(state.settings?.version||'轻量系统管理')}</span></div></div><nav class="sidebar-nav">${nav.map(([label,href,i])=>`<a data-nav href="${href}" class="${isActive(href)?'active':''}">${icon(i,19)}<span>${label}</span></a>`).join('')}</nav><div class="sidebar-footer"><button id="theme-toggle" class="icon-text-button">${icon(theme()==='dark'?'sun':'moon',18)}${theme()==='dark'?'浅色模式':'深色模式'}</button><button data-logout class="icon-text-button danger-text">${icon('logout',18)}退出登录</button></div></aside><main class="main-content">${content}</main><nav class="mobile-nav">${nav.filter(([,href])=>['/','/system','/docker','/tools','/security'].includes(href)).map(([label,href,i])=>`<a data-nav href="${href}" class="${isActive(href)?'active':''}">${icon(href==='/security'?'user':i,21)}<span>${href==='/security'?'我的':label.replace('管理','')}</span></a>`).join('')}</nav>${modalHTML()}</div>`
 }
-function pageHeader(title,description='',actions=''){return `<header class="page-header"><div><h1>${escapeHTML(title)}</h1>${description?`<p>${escapeHTML(description)}</p>`:''}</div><div class="page-header__actions">${actions}</div></header>`}
+function pageHeader(title,description='',actions=''){const parent=routeParents[location.pathname];return `<header class="page-header"><div class="page-header__main">${parent?`<button class="page-back" data-back="${parent}" aria-label="返回">${icon('back',20)}<span>返回</span></button>`:''}<div class="page-header__copy"><h1>${escapeHTML(title)}</h1>${description?`<p>${escapeHTML(description)}</p>`:''}</div></div><div class="page-header__actions">${actions}</div></header>`}
 function surfaceLoading(text='正在加载'){return `<section class="placeholder surface"><div class="spinner"></div><strong>${escapeHTML(text)}</strong></section>`}
 function errorBox(message){return message?`<div class="alert error">${icon('alert',18)}${escapeHTML(message)}</div>`:''}
 function formatBytes(value){let v=Number(value||0);const u=['B','KB','MB','GB','TB'];let i=0;while(v>=1024&&i<u.length-1){v/=1024;i++}return `${v.toFixed(i<2?0:1)} ${u[i]}`}
@@ -162,9 +188,9 @@ function statusBadge(status){const kind=['running','active'].includes(status)?'s
 
 function renderLogin(){
   stopOverviewUpdates()
-  app.innerHTML=`<main class="login-page"><section class="login-card surface"><div class="login-logo">L</div><h1>登录 LukePanel</h1><p>安全、轻量地管理你的服务器</p><form id="login-form"><label>用户名<input name="username" value="admin" autocomplete="username"></label><label>密码<div class="password-field"><input name="password" type="password" autocomplete="current-password" autofocus><button type="button" id="show-password">显示</button></div></label><div id="login-error" class="form-error" hidden></div><button class="primary-button" type="submit">登录</button></form><div class="security-note">${icon('shield',17)}会话仅通过 HttpOnly Cookie 保存</div></section></main>`
+  app.innerHTML=`<main class="login-page"><section class="login-card surface"><div class="login-logo">L</div><h1>登录 LukePanel</h1><p>安全、轻量地管理你的服务器</p><form id="login-form"><label>用户名<input name="username" value="admin" autocomplete="username"></label><label>密码<div class="password-field"><input name="password" type="password" autocomplete="current-password" inputmode="latin" lang="en" autocapitalize="none" autocorrect="off" spellcheck="false" autofocus><button type="button" id="show-password">显示</button></div></label><div id="login-error" class="form-error" hidden></div><button class="primary-button" type="submit">登录</button></form><div class="security-note">${icon('shield',17)}会话仅通过 HttpOnly Cookie 保存</div></section></main>`
   document.querySelector('#show-password').onclick=e=>{const input=document.querySelector('[name=password]');input.type=input.type==='password'?'text':'password';e.currentTarget.textContent=input.type==='password'?'显示':'隐藏'}
-  document.querySelector('#login-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget),button=e.currentTarget.querySelector('button[type=submit]'),error=document.querySelector('#login-error');button.disabled=true;button.textContent='正在登录…';error.hidden=true;try{const r=await api('/api/v1/auth/login',{method:'POST',body:jsonBody({username:f.get('username'),password:f.get('password')})});state.authenticated=true;state.username=r.username;state.csrf=r.csrf_token;state.settings=await api('/api/v1/settings');navigate('/')}catch(err){error.textContent=err.message;error.hidden=false}finally{button.disabled=false;button.textContent='登录'}}
+  document.querySelector('#login-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget),button=e.currentTarget.querySelector('button[type=submit]'),error=document.querySelector('#login-error');button.disabled=true;button.textContent='正在登录…';error.hidden=true;try{const r=await api('/api/v1/auth/login',{method:'POST',body:jsonBody({username:f.get('username'),password:f.get('password')})});state.authenticated=true;state.username=r.username;state.csrf=r.csrf_token;state.settings=await api('/api/v1/settings');navigate(rememberedRoute('/'),{replace:true})}catch(err){error.textContent=err.message;error.hidden=false}finally{button.disabled=false;button.textContent='登录'}}
 }
 
 async function loadOverview(silent=false){
@@ -517,8 +543,13 @@ async function createGitHubTag(form){const f=new FormData(form),button=form.quer
 async function rerunGitHubAction(runID){if(!confirm('确认重新运行这个 Actions 中失败的任务？'))return;try{await secureApi('/api/v1/github/rerun',{method:'POST',body:jsonBody({owner:state.github.owner,repo:state.github.name,run_id:Number(runID)})});showToast('已请求重试失败任务');setTimeout(()=>loadGitHub(state.github.owner,state.github.name),2200)}catch(error){alert(error.message)}}
 
 async function loadSecurity(){if(state.loading.security)return;state.loading.security=true;try{const [settings,sessions]=await Promise.all([api('/api/v1/settings'),api('/api/v1/auth/sessions')]);state.settings=settings;state.sessions=sessions}catch(e){state.errors.security=e.message}finally{state.loading.security=false;render()}}
-function securityPage(){if((!state.settings||!state.sessions)&&!state.errors.security){queueMicrotask(loadSecurity)}return `<div class="page-wrap">${pageHeader('我的与安全','账户、会话、刷新策略与面板安全')}${errorBox(state.errors.security)}<section class="settings-list surface"><div class="setting-row"><div class="setting-icon">${icon('shield',21)}</div><div><strong>当前账户</strong><p>${escapeHTML(state.username)} · 当前会话 ${escapeHTML(state.sessionID||'-')}</p></div><span>${escapeHTML(state.settings?.version||'dev')}</span></div><div class="setting-row"><div class="setting-icon">${icon('refresh',21)}</div><div><strong>兼容刷新间隔</strong><p>实时推送不可用时才启用；页面后台仍会暂停</p></div><select id="refresh-interval"><option value="2">2 秒</option><option value="5">5 秒</option><option value="10">10 秒</option><option value="30">30 秒</option><option value="60">60 秒</option></select></div><div class="setting-row"><div class="setting-icon">${icon('clock',21)}</div><div><strong>活跃会话</strong><p>${state.sessions?.sessions?.length||1} 个会话，密码修改后其余会话会失效</p></div><button id="revoke-sessions" class="secondary-button compact">退出其他设备</button></div><div class="setting-row muted"><div class="setting-icon">${icon('key',21)}</div><div><strong>TOTP / Passkey</strong><p>需要下一阶段补充完整恢复流程后开放</p></div><span>规划中</span></div></section><section class="password-panel surface"><h2>修改登录密码</h2><p>新密码至少 12 个字符，保存后其他会话会自动退出。</p><form id="password-form"><label>当前密码<input name="current" type="password" autocomplete="current-password"></label><label>新密码<input name="next" type="password" minlength="12" autocomplete="new-password"></label><label>确认新密码<input name="confirm" type="password" minlength="12" autocomplete="new-password"></label><div id="password-message" class="form-error" hidden></div><button class="primary-button" type="submit">保存新密码</button></form></section><section class="security-meta surface"><dl class="info-list"><div><dt>监听</dt><dd>${escapeHTML(state.settings?.listen||'-')}</dd></div><div><dt>安全 Cookie</dt><dd>${state.settings?.secure_cookie?'已开启':'已关闭'}</dd></div><div><dt>Agent Socket</dt><dd>${escapeHTML(state.settings?.agent_socket||'-')}</dd></div></dl></section></div>`}
-
+function securityPage(){
+  if((!state.settings||!state.sessions)&&!state.errors.security){queueMicrotask(loadSecurity)}
+  const uninstallCommand='lukepanel-uninstall'
+  const purgeCommand='lukepanel-uninstall --purge'
+  const headerActions=`<button data-logout class="danger-button compact">${icon('logout',16)}<span>退出</span></button>`
+  return `<div class="page-wrap security-page">${pageHeader('我的与安全','账户、会话、刷新策略与面板安全',headerActions)}${errorBox(state.errors.security)}<section class="settings-list surface"><div class="setting-row"><div class="setting-icon">${icon('shield',21)}</div><div><strong>当前账户</strong><p>${escapeHTML(state.username)} · 当前会话 ${escapeHTML(state.sessionID||'-')}</p></div><span>${escapeHTML(state.settings?.version||'dev')}</span></div><div class="setting-row"><div class="setting-icon">${icon('refresh',21)}</div><div><strong>兼容刷新间隔</strong><p>实时推送不可用时才启用；页面后台仍会暂停</p></div><select id="refresh-interval"><option value="2">2 秒</option><option value="5">5 秒</option><option value="10">10 秒</option><option value="30">30 秒</option><option value="60">60 秒</option></select></div><div class="setting-row"><div class="setting-icon">${icon('clock',21)}</div><div><strong>活跃会话</strong><p>${state.sessions?.sessions?.length||1} 个会话，密码修改后其余会话会失效</p></div><button id="revoke-sessions" class="secondary-button compact">退出其他设备</button></div><div class="setting-row muted"><div class="setting-icon">${icon('key',21)}</div><div><strong>TOTP / Passkey</strong><p>需要完整恢复流程后开放，避免把自己锁在服务器外</p></div><span>规划中</span></div></section><section class="password-panel surface"><h2>修改登录密码</h2><p>新密码至少 12 个字符。密码框使用英文键盘提示并关闭自动纠正。</p><form id="password-form"><label>当前密码<input name="current" type="password" autocomplete="current-password" ${passwordInputAttributes()}></label><label>新密码<input name="next" type="password" minlength="12" autocomplete="new-password" ${passwordInputAttributes()}></label><label>确认新密码<input name="confirm" type="password" minlength="12" autocomplete="new-password" ${passwordInputAttributes()}></label><div id="password-message" class="form-error" hidden></div><button class="primary-button" type="submit">保存新密码</button></form></section><section class="account-actions surface"><div><h2>账户操作</h2><p>退出只会结束当前设备会话，不影响服务器服务。</p></div><button data-logout class="danger-button">${icon('logout',18)}退出当前账号</button></section><section class="uninstall-panel surface"><div><h2>卸载 LukePanel</h2><p>默认卸载程序和 systemd 服务，但保留配置、密码、审计日志及文件备份，方便重新安装。</p></div><div class="command-row"><code>${uninstallCommand}</code><button class="secondary-button compact" data-copy-text="${uninstallCommand}">${icon('copy',16)}复制</button></div><div class="command-row danger-command"><code>${purgeCommand}</code><button class="secondary-button compact" data-copy-text="${purgeCommand}">${icon('copy',16)}复制彻底卸载命令</button></div><small>彻底卸载会删除 /etc/lukepanel、/var/lib/lukepanel 和面板用户，执行前请自行备份。</small></section><section class="security-meta surface"><dl class="info-list"><div><dt>监听</dt><dd>${escapeHTML(state.settings?.listen||'-')}</dd></div><div><dt>安全 Cookie</dt><dd>${state.settings?.secure_cookie?'已开启':'已关闭'}</dd></div><div><dt>Agent Socket</dt><dd>${escapeHTML(state.settings?.agent_socket||'-')}</dd></div></dl></section></div>`
+}
 function modalHTML(){
   if(!state.modal)return''
   const m=state.modal;let body='',footer=''
@@ -537,14 +568,16 @@ function modalHTML(){
     const x=m.spec
     if(x.compose_managed){body=`<div class="compose-managed-note">${icon('alert',20)}<h3>这个容器由 Docker Compose 管理</h3><p>直接重建会让配置和 Compose 文件失去同步。请编辑下面的 Compose YAML，再回到 Docker 页面点“启动/更新”。</p>${(x.compose_files||[]).map(path=>`<button class="secondary-button" data-open-compose-file="${escapeHTML(path)}">${icon('file',17)}${escapeHTML(path)}</button>`).join('')||'<span>未读取到 Compose 文件路径</span>'}</div>`}
     else{body=`<form id="docker-edit-form" class="docker-edit-form"><div class="form-grid"><label>容器名称<input name="name" value="${escapeHTML(x.name)}" required></label><label>镜像<input name="image" value="${escapeHTML(x.image)}" required></label><label>重启策略<select name="restart_policy"><option value="no" ${x.restart_policy==='no'?'selected':''}>不自动重启</option><option value="unless-stopped" ${x.restart_policy==='unless-stopped'?'selected':''}>除非手动停止</option><option value="always" ${x.restart_policy==='always'?'selected':''}>始终重启</option><option value="on-failure" ${x.restart_policy==='on-failure'?'selected':''}>失败时重启</option></select></label><label>失败最大重试<input name="restart_maximum_retry_count" type="number" min="0" value="${x.restart_maximum_retry_count||0}"></label><label>主机名<input name="hostname" value="${escapeHTML(x.hostname||'')}"></label><label>容器用户<input name="user" value="${escapeHTML(x.user||'')}"></label><label class="wide-field">工作目录<input name="working_dir" value="${escapeHTML(x.working_dir||'')}"></label><label class="wide-field">环境变量（每行一个 KEY=VALUE）<textarea name="env" rows="6">${escapeHTML((x.env||[]).join('\n'))}</textarea></label><label class="wide-field">端口（每行：主机IP|主机端口|容器端口|tcp/udp）<textarea name="ports" rows="5" placeholder="0.0.0.0|8080|80|tcp">${escapeHTML(dockerPortsText(x.ports))}</textarea></label><label class="wide-field">挂载（每行：bind/volume|来源|容器路径|ro/rw）<textarea name="mounts" rows="5" placeholder="bind|/opt/data|/data|rw">${escapeHTML(dockerMountsText(x.mounts))}</textarea></label><label>启动命令参数（每行一个）<textarea name="cmd" rows="4">${escapeHTML((x.cmd||[]).join('\n'))}</textarea></label><label>Entrypoint（每行一个）<textarea name="entrypoint" rows="4">${escapeHTML((x.entrypoint||[]).join('\n'))}</textarea></label></div><label class="checkbox-row"><input name="start" type="checkbox" ${x.running?'checked':''}><span>保存后启动新容器</span></label><div class="release-warning">${icon('shield',17)}保存时会先备份旧容器。新容器创建或启动失败会自动回滚。</div><button class="primary-button" type="submit">保存并重建</button></form>`}
-  }else if(m.kind==='process')body=`<div class="process-dialog"><p>${escapeHTML(m.content)}</p><code>PID ${m.pid}</code><button class="secondary-button" id="process-term">正常结束 SIGTERM</button><button class="danger-button" id="process-kill">强制结束 SIGKILL</button></div>`
+  }else if(m.kind==='elevation')body=`<form id="elevation-form" class="elevation-form"><div class="elevation-icon">${icon('shield',24)}</div><p>此操作会修改服务器状态，请输入当前登录密码继续。</p><label>当前密码<input id="elevation-password" name="password" type="password" autocomplete="current-password" ${passwordInputAttributes()} required></label><div id="elevation-error" class="form-error" hidden></div><button class="primary-button" type="submit">验证并继续</button><button class="secondary-button" type="button" id="elevation-cancel">取消</button></form>`
+  else if(m.kind==='process')body=`<div class="process-dialog"><p>${escapeHTML(m.content)}</p><code>PID ${m.pid}</code><button class="secondary-button" id="process-term">正常结束 SIGTERM</button><button class="danger-button" id="process-kill">强制结束 SIGKILL</button></div>`
   return `<div class="modal-backdrop" id="modal-backdrop"><section class="modal-card ${['editor','logs','docker-edit'].includes(m.kind)?'wide':''}"><header><div><strong>${escapeHTML(m.title)}</strong>${m.path?`<small>${escapeHTML(m.path)}</small>`:''}</div><button id="modal-close">${icon('close',20)}</button></header><div class="modal-body">${body}</div>${footer}</section></div>`
 }
 
 
 function bindShell(){
   document.querySelector('#theme-toggle')?.addEventListener('click',()=>{applyTheme(theme()==='dark'?'light':'dark');render()})
-  document.querySelector('#logout')?.addEventListener('click',async()=>{await api('/api/v1/auth/logout',{method:'POST'});state.authenticated=false;state.csrf='';stopOverviewUpdates();render()})
+  document.querySelectorAll('[data-back]').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.back||'/')))
+  document.querySelectorAll('[data-logout]').forEach(button=>button.addEventListener('click',performLogout))
   document.querySelectorAll('[data-copy-text]').forEach(button=>button.addEventListener('click',event=>{event.stopPropagation();copyText(button.dataset.copyText)}))
 
   document.querySelector('#refresh-overview')?.addEventListener('click',e=>{e.currentTarget.querySelector('svg')?.classList.add('spin');loadOverview(true)})
@@ -631,6 +664,8 @@ function bindShell(){
   document.querySelectorAll('[data-open-compose-file]').forEach(button=>button.onclick=()=>{state.modal=null;navigate('/files');setTimeout(()=>openFile(button.dataset.openComposeFile),50)})
   document.querySelector('#process-term')?.addEventListener('click',()=>signalProcess(state.modal.pid,'term'))
   document.querySelector('#process-kill')?.addEventListener('click',()=>signalProcess(state.modal.pid,'kill'))
+  const elevationForm=document.querySelector('#elevation-form');if(elevationForm)elevationForm.onsubmit=async event=>{event.preventDefault();const password=String(new FormData(elevationForm).get('password')||''),button=elevationForm.querySelector('button[type=submit]'),error=document.querySelector('#elevation-error');button.disabled=true;button.textContent='正在验证…';error.hidden=true;try{await api('/api/v1/auth/elevate',{method:'POST',body:jsonBody({password})});const pending=pendingElevation;pendingElevation=null;state.modal=null;render();pending?.resolve(true)}catch(err){error.textContent=err.message;error.hidden=false;button.disabled=false;button.textContent='验证并继续';document.querySelector('#elevation-password')?.focus()}}
+  document.querySelector('#elevation-cancel')?.addEventListener('click',closeModal)
   document.querySelector('#modal-close')?.addEventListener('click',closeModal)
   document.querySelector('#modal-done')?.addEventListener('click',closeModal)
   document.querySelector('#modal-backdrop')?.addEventListener('click',e=>{if(e.target.id==='modal-backdrop')closeModal()})
@@ -650,13 +685,24 @@ function bindShell(){
   document.querySelector('#delete-file')?.addEventListener('click',()=>fileMutation('delete',{path:state.modal.path,is_dir:false,mode:state.fileContent?.mode}))
 }
 
-function closeModal(){if(state.modal?.dirty&&!confirm('有未保存的修改，确认关闭？'))return;state.modal=null;render()}
+function closeModal(){
+  if(state.modal?.dirty&&!confirm('有未保存的修改，确认关闭？'))return
+  if(state.modal?.kind==='elevation'&&pendingElevation){const pending=pendingElevation;pendingElevation=null;pending.reject(new Error('操作已取消'))}
+  state.modal=null;render()
+}
+async function performLogout(){
+  if(!confirm('确认退出当前账号？'))return
+  try{await api('/api/v1/auth/logout',{method:'POST'})}catch{}
+  state.authenticated=false;state.csrf='';state.sessionID='';stopOverviewUpdates();history.replaceState({},'','/login');render()
+}
 function setBusy(value){document.body.classList.toggle('busy',value)}
 
 function render(){
   if(!state.authenticated){if(location.pathname!='/login')history.replaceState({},'','/login');renderLogin();return}
-  if(location.pathname==='/login')history.replaceState({},'','/')
+  if(location.pathname==='/login'){const target=rememberedRoute('/');history.replaceState({},'',target)}
   const routes={'/':dashboard,'/system':systemPage,'/services':servicesPage,'/processes':processesPage,'/network':networkPage,'/storage':storagePage,'/tasks':tasksPage,'/updates':updatesPage,'/files':filesPage,'/docker':dockerPage,'/tools':toolsPage,'/github':githubPage,'/ssh':sshPage,'/audit':auditPage,'/security':securityPage}
+  if(!routes[location.pathname])history.replaceState({},'','/')
+  rememberRoute(location.pathname)
   app.innerHTML=shell((routes[location.pathname]||routes['/'])());bindShell();syncOverviewUpdates()
 }
 

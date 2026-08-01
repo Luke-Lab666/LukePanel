@@ -1008,17 +1008,25 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 func (s *Server) spaHandler() http.Handler {
 	dist, _ := fs.Sub(webAssets, "webdist")
 	fileServer := http.FileServer(http.FS(dist))
+	index, _ := fs.ReadFile(dist, "index.html")
+	serveIndex := func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(index)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			http.NotFound(w, r)
 			return
 		}
 		clean := path.Clean(strings.TrimPrefix(r.URL.Path, "/"))
-		if clean == "." {
-			clean = "index.html"
+		if clean == "." || clean == "index.html" {
+			serveIndex(w)
+			return
 		}
 		if _, err := fs.Stat(dist, clean); err != nil {
-			r.URL.Path = "/index.html"
+			serveIndex(w)
+			return
 		}
 		fileServer.ServeHTTP(w, r)
 	})

@@ -2,7 +2,7 @@
 
 面向 Debian 12/13 的轻量系统管理面板。移动端优先、桌面端增强；核心由 Go 单二进制构成，不依赖 Node.js 运行时、Redis、外部数据库、Prometheus 或 Grafana。
 
-> 当前版本：`v0.4.0-alpha`。已经覆盖单机 VPS 的高频日常管理，但仍处于 Alpha 阶段。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
+> 当前版本：`v0.5.0-alpha`。已经覆盖单机 VPS 的高频日常管理，但仍处于 Alpha 阶段。生产使用必须放在 HTTPS 反向代理后，并限制访问来源。
 
 ## 设计目标
 
@@ -79,6 +79,14 @@
 - 创建版本 Tag、触发 Release、重试失败 Actions
 - 修改 `.github/workflows` 需要 GitHub 授权包含 workflow 权限
 
+### 导航与账户体验
+
+- 所有非首页页面提供明确返回按钮，子模块返回系统管理，顶级模块返回概览
+- 当前页面写入浏览器会话状态；刷新或重新登录后回到原页面，而不是强制跳转概览
+- 登录、修改密码和二次验证统一使用英文键盘提示，关闭自动大写、纠错和拼写检查
+- 移动端“我的与安全”提供顶部退出和独立退出当前账号按钮
+- 内置 `lukepanel-uninstall` 命令；默认保留数据，`--purge` 可彻底卸载
+
 ### 安全
 
 - PBKDF2-HMAC-SHA256 密码哈希（600,000 次迭代）
@@ -97,7 +105,7 @@
 curl -fsSL https://raw.githubusercontent.com/Luke-Lab666/LukePanel/main/install.sh | bash
 ```
 
-安装器会自动识别 AMD64 / ARM64，下载并校验二进制，安装或升级两个 systemd 服务。升级保留现有密码、配置、审计、备份和回收站。
+安装器会自动识别 AMD64 / ARM64，下载并校验二进制，安装或升级两个 systemd 服务。升级保留现有密码、配置、审计、备份和回收站，并安装 `lukepanel-uninstall` 卸载命令。
 
 默认链路：
 
@@ -108,6 +116,22 @@ curl -fsSL https://raw.githubusercontent.com/Luke-Lab666/LukePanel/main/install.
 ```
 
 不要直接把 `6767`、Docker Socket 或 Agent Socket 暴露到公网。
+
+## 卸载
+
+保留配置、密码、审计、备份和回收站：
+
+```bash
+lukepanel-uninstall
+```
+
+彻底删除程序与全部数据：
+
+```bash
+lukepanel-uninstall --purge
+```
+
+默认卸载后重新运行安装命令，会继续使用原有账号和数据。
 
 ## 登录
 
