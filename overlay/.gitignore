@@ -1,9 +1,0 @@
-dist/
-frontend/node_modules/
-frontend/dist/
-internal/server/webdist/*
-!internal/server/webdist/.gitkeep
-*.log
-.DS_Store
-.env
-.dev/
