@@ -40,7 +40,7 @@ func newAuthFlowServer(t *testing.T, recoveryCodes ...string) *Server {
 	if err := config.Save(configPath, cfg); err != nil {
 		t.Fatal(err)
 	}
-	srv, err := New(cfg, configPath, "v2.0.4", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv, err := New(cfg, configPath, "v2.0.5", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -271,6 +271,20 @@ func (s *Server) githubDisconnect(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (s *Server) githubRepositories(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	session, _ := sessionFromContext(r)
+	repositories, err := s.github.Repositories(r.Context(), s.githubToken(session.ID))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"repositories": repositories})
+}
+
 func (s *Server) githubImportPreview(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)

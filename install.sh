@@ -182,6 +182,7 @@ Before=lukepanel.service
 
 [Service]
 Type=simple
+Environment=GODEBUG=tlsmlkem=1,tlssecpmlkem=1
 User=root
 Group=lukepanel
 RuntimeDirectory=lukepanel
@@ -212,6 +213,7 @@ Requires=lukepanel-agent.service
 
 [Service]
 Type=simple
+Environment=GODEBUG=tlsmlkem=1,tlssecpmlkem=1
 User=lukepanel
 Group=lukepanel
 ExecStart=/usr/local/bin/lukepanel --config /etc/lukepanel/config.json

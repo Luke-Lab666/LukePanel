@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestValidateRepoAndTag(t *testing.T) {
@@ -199,5 +200,51 @@ func TestListAndMergePullRequests(t *testing.T) {
 	merged, err := client.MergePullRequest(context.Background(), "Luke-Lab666", "LukePanel", 7, pulls[0].HeadSHA, "squash", "token")
 	if err != nil || !merged.Merged {
 		t.Fatalf("merge=%#v err=%v", merged, err)
+	}
+}
+
+func TestRepositoriesUsesAuthenticatedEndpointAndPreservesPermissions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/user/repos" || r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Fatalf("authorization header = %q", r.Header.Get("Authorization"))
+		}
+		if r.URL.Query().Get("per_page") != "100" || r.URL.Query().Get("sort") != "updated" {
+			t.Fatalf("query = %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"id": 1, "name": "LukePanel", "full_name": "Luke-Lab666/LukePanel", "private": true,
+			"default_branch": "main", "updated_at": "2026-08-02T00:00:00Z",
+			"owner":       map[string]any{"login": "Luke-Lab666"},
+			"permissions": map[string]any{"admin": true, "push": true, "pull": true},
+		}})
+	}))
+	defer server.Close()
+	client := New()
+	client.apiBase = server.URL
+	repositories, err := client.Repositories(context.Background(), "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repositories) != 1 || repositories[0].FullName != "Luke-Lab666/LukePanel" || !repositories[0].Permissions.Push {
+		t.Fatalf("repositories = %#v", repositories)
+	}
+}
+
+func TestNewClientAllowsLargeGitHubTransfers(t *testing.T) {
+	client := New()
+	if client.http.Timeout < 10*time.Minute {
+		t.Fatalf("GitHub client timeout = %s, want at least 10m", client.http.Timeout)
+	}
+	transport, ok := client.http.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("unexpected transport type %T", client.http.Transport)
+	}
+	if transport.ResponseHeaderTimeout != 30*time.Second {
+		t.Fatalf("response header timeout = %s", transport.ResponseHeaderTimeout)
 	}
 }

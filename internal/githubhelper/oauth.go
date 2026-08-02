@@ -37,6 +37,23 @@ type User struct {
 	HTMLURL   string `json:"html_url"`
 }
 
+type Repository struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+	Owner    struct {
+		Login string `json:"login"`
+	} `json:"owner"`
+	Private       bool   `json:"private"`
+	DefaultBranch string `json:"default_branch"`
+	UpdatedAt     string `json:"updated_at"`
+	Permissions   struct {
+		Admin bool `json:"admin"`
+		Push  bool `json:"push"`
+		Pull  bool `json:"pull"`
+	} `json:"permissions"`
+}
+
 func (c *Client) StartDeviceFlow(ctx context.Context, clientID, scope string) (DeviceCode, error) {
 	clientID = strings.TrimSpace(clientID)
 	if !clientIDPattern.MatchString(clientID) {
@@ -98,6 +115,18 @@ func (c *Client) PollDeviceFlow(ctx context.Context, clientID, deviceCode string
 		}
 		return DevicePoll{}, fmt.Errorf("GitHub 登录失败：%s", firstNonEmpty(raw.ErrorDescription, raw.Error))
 	}
+}
+
+func (c *Client) Repositories(ctx context.Context, token string) ([]Repository, error) {
+	if strings.TrimSpace(token) == "" {
+		return nil, errors.New("尚未连接 GitHub")
+	}
+	endpoint := strings.TrimRight(c.apiBase, "/") + "/user/repos?per_page=100&sort=updated&direction=desc&affiliation=owner,collaborator,organization_member"
+	var repositories []Repository
+	if err := c.requestURLJSON(ctx, http.MethodGet, endpoint, token, nil, &repositories); err != nil {
+		return nil, err
+	}
+	return repositories, nil
 }
 
 func (c *Client) AuthenticatedUser(ctx context.Context, token string) (User, error) {

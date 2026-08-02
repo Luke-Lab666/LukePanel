@@ -1,9 +1,9 @@
 "use strict";
-/* LukePanel v2.0.4 React 18 frontend. No runtime CDN, no direct DOM templating. */
+/* LukePanel v2.0.5 React 18 frontend. No runtime CDN, no direct DOM templating. */
 (() => {
     'use strict';
     const { useCallback, useEffect, useMemo, useRef, useState } = React;
-    const VERSION = window.__LUKEPANEL_VERSION__ || 'v2.0.4';
+    const VERSION = window.__LUKEPANEL_VERSION__ || 'v2.0.5';
     const ROUTES = [
         { path: '/', title: '概览', subtitle: '服务器状态与关键指标', level: 1, nav: true, icon: 'dashboard' },
         { path: '/system', title: '系统', subtitle: '主机、服务、网络与维护', level: 1, nav: true, icon: 'system' },
@@ -184,6 +184,71 @@
             return api(url, init);
         }
     }
+    function xhrUpload(url, form, onProgress, signal, name = '上传文件') {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            const started = performance.now();
+            let settled = false;
+            const cleanup = () => signal?.removeEventListener('abort', abort);
+            const finish = (callback) => { if (settled)
+                return; settled = true; cleanup(); callback(); };
+            const abort = () => xhr.abort();
+            xhr.open('POST', url, true);
+            xhr.withCredentials = true;
+            xhr.responseType = 'text';
+            if (csrfToken)
+                xhr.setRequestHeader('X-CSRF-Token', csrfToken);
+            xhr.upload.onprogress = event => {
+                const total = event.lengthComputable && event.total > 0 ? event.total : 0;
+                const loaded = event.loaded;
+                const seconds = Math.max(.25, (performance.now() - started) / 1000);
+                const rate = loaded / seconds;
+                onProgress({ name, phase: 'uploading', loaded, total, percent: total ? Math.min(100, loaded / total * 100) : 0, rate, eta: total && rate ? Math.max(0, (total - loaded) / rate) : 0 });
+            };
+            xhr.upload.onload = () => {
+                const total = Number(xhr.getResponseHeader('X-Upload-Size')) || Number(form.get('file')?.size) || 0;
+                onProgress({ name, phase: 'processing', loaded: total, total, percent: 100, rate: 0, eta: 0 });
+            };
+            xhr.onerror = () => finish(() => reject(new ApiError('网络连接中断，上传未完成', 0, {})));
+            xhr.onabort = () => finish(() => reject(new DOMException('上传已取消', 'AbortError')));
+            xhr.onload = () => finish(() => {
+                let payload = {};
+                try {
+                    payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+                }
+                catch {
+                    payload = xhr.responseText || {};
+                }
+                const body = asObject(payload);
+                if (xhr.status === 401 && (body.code === 'session_required' || body.code === 'session_expired'))
+                    unauthorizedHandler?.();
+                if (xhr.status < 200 || xhr.status >= 300) {
+                    reject(new ApiError(text(body.error, `请求失败（${xhr.status}）`), xhr.status, body));
+                    return;
+                }
+                resolve(payload);
+            });
+            if (signal) {
+                if (signal.aborted) {
+                    abort();
+                    return;
+                }
+                signal.addEventListener('abort', abort, { once: true });
+            }
+            xhr.send(form);
+        });
+    }
+    async function uploadApi(url, form, onProgress, signal, name) {
+        try {
+            return await xhrUpload(url, form, onProgress, signal, name);
+        }
+        catch (cause) {
+            if (!(cause instanceof ApiError) || cause.status !== 403 || (cause.code !== 'elevation_required' && !cause.message.includes('二次验证')) || !elevationHandler)
+                throw cause;
+            await elevationHandler();
+            return xhrUpload(url, form, onProgress, signal, name);
+        }
+    }
     function errorDetail(cause) { return cause instanceof ApiError ? cause.detail : cause instanceof Error ? cause.message : String(cause || '未知错误'); }
     function useRoute() {
         const normalize = useCallback((path) => LEGACY_REDIRECTS[path] || (ROUTE_MAP.has(path) ? path : '/'), []);
@@ -279,6 +344,20 @@
         React.createElement("span", null)))); }
     function Progress({ value, tone = 'primary' }) { const safe = Math.max(0, Math.min(100, value)); return React.createElement("div", { className: "progress" },
         React.createElement("span", { className: `progress-${tone}`, style: { width: `${safe}%` } })); }
+    function TransferProgress({ state, onCancel }) {
+        const processing = state.phase === 'processing';
+        return React.createElement("div", { className: "transfer-panel", role: "status", "aria-live": "polite" },
+            React.createElement("div", { className: "transfer-heading" },
+                React.createElement("div", null,
+                    React.createElement("strong", null, state.name),
+                    React.createElement("span", null, processing ? '服务器正在校验并写入，请勿关闭页面' : `${state.percent.toFixed(1)}% · ${formatBytes(state.loaded)} / ${state.total ? formatBytes(state.total) : '未知大小'}`)),
+                onCancel && !processing ? React.createElement(Button, { tone: "ghost", onClick: onCancel }, "\u53D6\u6D88") : null),
+            React.createElement("div", { className: `progress transfer-progress ${processing ? 'is-processing' : ''}` },
+                React.createElement("span", { className: "progress-primary", style: { width: processing ? '100%' : `${Math.max(1, state.percent)}%` } })),
+            !processing ? React.createElement("div", { className: "transfer-meta" },
+                React.createElement("span", null, state.rate > 0 ? `${formatBytes(state.rate)}/s` : '正在计算速度'),
+                React.createElement("span", null, state.eta > 0 ? `预计剩余 ${formatDuration(state.eta)}` : '即将完成')) : null);
+    }
     function KeyValue({ label, value, mono = false }) { return React.createElement("div", { className: "key-value" },
         React.createElement("dt", null, label),
         React.createElement("dd", { className: mono ? 'mono' : '' }, value)); }
@@ -1671,6 +1750,8 @@
         const [error, setError] = useState('');
         const [createMenuOpen, setCreateMenuOpen] = useState(false);
         const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
+        const [transfer, setTransfer] = useState(null);
+        const transferController = useRef(null);
         const fileInput = useRef(null);
         const folderInput = useRef(null);
         const zipInput = useRef(null);
@@ -1914,37 +1995,61 @@
         finally {
             setWorking(false);
         } };
-        const upload = async (event, extract = false) => { const input = event.target; const files = Array.from(input.files || []); if (!files.length)
-            return; setWorking(true); let completed = 0; try {
-            if (extract) {
-                const form = new FormData();
-                form.set('directory', listing.path);
-                form.set('overwrite', 'false');
-                form.set('file', files[0]);
-                const out = asObject(await secureApi('/api/v1/files/archive/extract', { method: 'POST', body: form }));
-                props.notify('success', `已解压 ${number(out.files)} 个文件和 ${number(out.dirs)} 个目录`);
-            }
-            else {
-                for (const file of files) {
+        const upload = async (event, extract = false) => {
+            const input = event.target;
+            const files = Array.from(input.files || []);
+            if (!files.length)
+                return;
+            const controller = new AbortController();
+            transferController.current?.abort();
+            transferController.current = controller;
+            setWorking(true);
+            const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+            let completed = 0;
+            let completedBytes = 0;
+            try {
+                if (extract) {
+                    const file = files[0];
                     const form = new FormData();
                     form.set('directory', listing.path);
-                    form.set('relative_path', file.webkitRelativePath || file.name);
                     form.set('overwrite', 'false');
                     form.set('file', file);
-                    await secureApi('/api/v1/files/upload', { method: 'POST', body: form });
-                    completed++;
+                    const out = asObject(await uploadApi('/api/v1/files/archive/extract', form, state => setTransfer({ ...state, name: `解压 ${file.name}` }), controller.signal, `上传 ${file.name}`));
+                    props.notify('success', `已解压 ${number(out.files)} 个文件和 ${number(out.dirs)} 个目录`);
                 }
-                props.notify('success', `已上传 ${completed} 个文件`);
+                else {
+                    for (const file of files) {
+                        const form = new FormData();
+                        form.set('directory', listing.path);
+                        form.set('relative_path', file.webkitRelativePath || file.name);
+                        form.set('overwrite', 'false');
+                        form.set('file', file);
+                        await uploadApi('/api/v1/files/upload', form, state => {
+                            const loaded = Math.min(totalBytes, completedBytes + state.loaded);
+                            const rate = state.rate;
+                            setTransfer({ name: files.length > 1 ? `上传 ${completed + 1}/${files.length} · ${file.name}` : `上传 ${file.name}`, phase: state.phase, loaded, total: totalBytes, percent: totalBytes ? loaded / totalBytes * 100 : state.percent, rate, eta: rate ? Math.max(0, (totalBytes - loaded) / rate) : 0 });
+                        }, controller.signal, `上传 ${file.name}`);
+                        completed++;
+                        completedBytes += file.size;
+                    }
+                    props.notify('success', `已上传 ${completed} 个文件`);
+                }
+                await load(listing.path);
             }
-            await load(listing.path);
-        }
-        catch (cause) {
-            props.notify('error', extract ? 'ZIP 解压失败' : `上传中断（${completed}/${files.length}）`, errorDetail(cause));
-        }
-        finally {
-            input.value = '';
-            setWorking(false);
-        } };
+            catch (cause) {
+                if (cause instanceof DOMException && cause.name === 'AbortError')
+                    props.notify('info', '上传已取消');
+                else
+                    props.notify('error', extract ? 'ZIP 解压失败' : `上传中断（${completed}/${files.length}）`, errorDetail(cause));
+            }
+            finally {
+                input.value = '';
+                setWorking(false);
+                setTransfer(null);
+                if (transferController.current === controller)
+                    transferController.current = null;
+            }
+        };
         const searchAll = () => props.openModal({ title: `在 ${listing.path} 中搜索`, content: React.createElement("form", { className: "form-stack", onSubmit: async (event) => { event.preventDefault(); const term = String(new FormData(event.currentTarget).get('term') || '').trim(); try {
                     const result = await api(`/api/v1/files/search${query({ root: listing.path, q: term })}`);
                     const rows = listOf(result, 'entries', 'results');
@@ -1992,6 +2097,7 @@
                     React.createElement("input", { ref: fileInput, className: "visually-hidden", type: "file", multiple: true, onChange: (event) => upload(event) }),
                     React.createElement("input", { ref: folderInput, className: "visually-hidden", type: "file", multiple: true, ...{ webkitdirectory: '' }, onChange: (event) => upload(event) }),
                     React.createElement("input", { ref: zipInput, className: "visually-hidden", type: "file", accept: ".zip,application/zip", onChange: (event) => upload(event, true) })) : mode !== 'recycle' ? React.createElement(Button, { tone: "ghost", icon: "search", onClick: searchAll }, "\u641C\u7D22") : null }),
+            transfer ? React.createElement(TransferProgress, { state: transfer, onCancel: () => transferController.current?.abort() }) : null,
             React.createElement("div", { className: "tab-bar", role: "tablist" }, [['files', '文件'], ['favorites', `收藏 ${listOf(preferences, 'favorites').length}`], ['recent', `最近 ${listOf(preferences, 'recent').length}`], ['recycle', `回收站 ${recycle.length || ''}`]].map(([value, label]) => React.createElement("button", { key: value, className: mode === value ? 'active' : '', onClick: () => void switchMode(value) }, label))),
             error ? React.createElement(ErrorState, { error: error, retry: () => mode === 'recycle' ? loadRecycle() : load(listing.path) }) : mode === 'recycle' ? React.createElement(Card, { className: "file-list-card" }, recycle.length ? recycle.map(item => React.createElement("div", { className: "file-row", key: item.id },
                 React.createElement("span", { className: "file-icon" },
@@ -2094,22 +2200,85 @@
                         React.createElement("p", null, "\u8BBE\u5907\u767B\u5F55\u3001\u4ED3\u5E93\u3001Actions\u3001Release \u548C ZIP \u63A8\u9001")),
                     React.createElement(Icon, { name: "chevron" }))));
     }
+    function ReleaseAssetsPanel({ owner, repo, tag, notify }) {
+        const [assets, setAssets] = useState([]);
+        const [loading, setLoading] = useState(true);
+        const [transfer, setTransfer] = useState(null);
+        const inputRef = useRef(null);
+        const controllerRef = useRef(null);
+        const load = useCallback(async () => { setLoading(true); try {
+            setAssets(listOf(await api(`/api/v1/github/release/assets${query({ owner, repo, tag })}`), 'assets'));
+        }
+        catch (cause) {
+            notify('error', '读取 Release 附件失败', errorDetail(cause));
+        }
+        finally {
+            setLoading(false);
+        } }, [owner, repo, tag]);
+        useEffect(() => { void load(); return () => controllerRef.current?.abort(); }, [load]);
+        const upload = async (event) => { const input = event.target; const file = input.files?.[0]; if (!file)
+            return; const controller = new AbortController(); controllerRef.current?.abort(); controllerRef.current = controller; const form = new FormData(); form.set('owner', owner); form.set('repo', repo); form.set('tag', tag); form.set('file', file); try {
+            await uploadApi('/api/v1/github/release/assets/upload', form, state => setTransfer({ ...state, name: `上传 ${file.name}` }), controller.signal, `上传 ${file.name}`);
+            notify('success', `${file.name} 已上传`);
+            await load();
+        }
+        catch (cause) {
+            if (cause instanceof DOMException && cause.name === 'AbortError')
+                notify('info', '附件上传已取消');
+            else
+                notify('error', '附件上传失败', errorDetail(cause));
+        }
+        finally {
+            input.value = '';
+            setTransfer(null);
+            if (controllerRef.current === controller)
+                controllerRef.current = null;
+        } };
+        return React.createElement("div", { className: "form-stack" },
+            React.createElement(Button, { tone: "primary", icon: "upload", onClick: () => inputRef.current?.click(), disabled: !!transfer }, "\u9009\u62E9\u9644\u4EF6"),
+            React.createElement("input", { ref: inputRef, className: "visually-hidden", type: "file", onChange: upload }),
+            transfer ? React.createElement(TransferProgress, { state: transfer, onCancel: () => controllerRef.current?.abort() }) : null,
+            loading ? React.createElement(LoadingState, { rows: 3 }) : assets.length ? React.createElement("div", { className: "card-list compact-list" }, assets.map(asset => React.createElement("div", { className: "history-row", key: asset.id },
+                React.createElement("div", null,
+                    React.createElement("strong", null, asset.name),
+                    React.createElement("small", null,
+                        formatBytes(asset.size),
+                        " \u00B7 \u4E0B\u8F7D ",
+                        number(asset.download_count),
+                        " \u6B21 \u00B7 ",
+                        formatDate(asset.created_at))),
+                asset.browser_download_url ? React.createElement("a", { className: "button button-default", href: asset.browser_download_url, target: "_blank", rel: "noopener" }, "\u4E0B\u8F7D") : null))) : React.createElement(EmptyState, { icon: "package", title: "\u8FD8\u6CA1\u6709\u9644\u4EF6" }));
+    }
     function GitHubPage(props) {
         const [auth, setAuth] = useState({});
         const [flow, setFlow] = useState(null);
         const [summary, setSummary] = useState(null);
+        const [repositories, setRepositories] = useState([]);
         const [owner, setOwner] = useState(localStorage.getItem('lukepanel:github-owner') || '');
         const [repo, setRepo] = useState(localStorage.getItem('lukepanel:github-repo') || '');
         const [loading, setLoading] = useState(true);
         const [working, setWorking] = useState(false);
         const [error, setError] = useState('');
+        const [transfer, setTransfer] = useState(null);
+        const transferController = useRef(null);
         const pollRef = useRef(0);
         const zipRef = useRef(null);
-        const assetRef = useRef(null);
         const [importPlan, setImportPlan] = useState(null);
         const [importBranch, setImportBranch] = useState('main');
         const [importMessage, setImportMessage] = useState('chore: import files from LukePanel');
-        const loadAuth = async () => { const next = asObject(await api('/api/v1/github/auth/status')); setAuth(next); return next; };
+        const loadAuth = async () => { const next = asObject(await api('/api/v1/github/auth/status')); setAuth(next); if (next.connected) {
+            try {
+                const items = listOf(await api('/api/v1/github/repositories'), 'repositories');
+                setRepositories(items);
+                if (!owner.trim() && next.login)
+                    setOwner(text(next.login, ''));
+            }
+            catch {
+                setRepositories([]);
+            }
+        }
+        else
+            setRepositories([]); return next; };
         const loadRepo = async () => { if (!owner.trim() || !repo.trim())
             return; setWorking(true); try {
             const next = asObject(await api(`/api/v1/github/summary${query({ owner: owner.trim(), repo: repo.trim() })}`));
@@ -2117,6 +2286,24 @@
             localStorage.setItem('lukepanel:github-owner', owner.trim());
             localStorage.setItem('lukepanel:github-repo', repo.trim());
             setImportBranch(text(next.default_branch, 'main'));
+        }
+        catch (cause) {
+            props.notify('error', '读取仓库失败', errorDetail(cause));
+        }
+        finally {
+            setWorking(false);
+        } };
+        const chooseRepository = async (fullName) => { if (!fullName) {
+            setOwner('');
+            setRepo('');
+            setSummary(null);
+            return;
+        } const [nextOwner, ...parts] = fullName.split('/'); const nextRepo = parts.join('/'); setOwner(nextOwner); setRepo(nextRepo); setWorking(true); try {
+            const next = asObject(await api(`/api/v1/github/summary${query({ owner: nextOwner, repo: nextRepo })}`));
+            setSummary(next);
+            setImportBranch(text(next.default_branch, 'main'));
+            localStorage.setItem('lukepanel:github-owner', nextOwner);
+            localStorage.setItem('lukepanel:github-repo', nextRepo);
         }
         catch (cause) {
             props.notify('error', '读取仓库失败', errorDetail(cause));
@@ -2140,7 +2327,7 @@
         useEffect(() => { void reload(); return () => window.clearTimeout(pollRef.current); }, []);
         const connectToken = () => props.openModal({ title: '连接 GitHub Token', content: React.createElement("form", { className: "form-stack", onSubmit: async (event) => { event.preventDefault(); const token = String(new FormData(event.currentTarget).get('token') || '').trim(); setWorking(true); try {
                     const next = asObject(await api('/api/v1/github/auth/token', { method: 'POST', body: jsonBody({ token }) }));
-                    setAuth(next);
+                    await loadAuth();
                     props.closeModal();
                     props.notify('success', `已连接 GitHub @${text(next.login)}`);
                 }
@@ -2171,13 +2358,20 @@
             setFlow(null);
             props.notify('error', '设备登录失败', errorDetail(cause));
         } };
-        const startDevice = async () => { setWorking(true); try {
+        const startDevice = async () => { const popup = window.open('about:blank', 'lukepanel-github-device'); setWorking(true); try {
             const next = asObject(await api('/api/v1/github/auth/device/start', { method: 'POST', body: '{}' }));
             setFlow(next);
-            window.open(text(next.verification_uri), '_blank', 'noopener');
+            const target = text(next.verification_uri, 'https://github.com/login/device');
+            if (popup) {
+                popup.opener = null;
+                popup.location.replace(target);
+            }
+            else
+                props.notify('info', '浏览器阻止了新窗口，请复制设备代码后手动打开 GitHub');
             pollRef.current = window.setTimeout(() => void pollDevice(next), Math.max(2, number(next.interval, 5)) * 1000);
         }
         catch (cause) {
+            popup?.close();
             props.notify('error', '无法启动设备登录', errorDetail(cause));
         }
         finally {
@@ -2187,6 +2381,7 @@
             return; try {
             await api('/api/v1/github/auth/disconnect', { method: 'POST', body: '{}' });
             setAuth({ connected: false });
+            setRepositories([]);
             setSummary(null);
             props.notify('success', '已断开 GitHub');
         }
@@ -2233,26 +2428,36 @@
         catch (cause) {
             props.notify('error', '读取 Actions 详情失败', errorDetail(cause));
         } };
-        const previewImport = async (event) => { const file = event.target.files?.[0]; if (!file || !summary)
-            return; setWorking(true); try {
+        const previewImport = async (event) => { const input = event.target; const file = input.files?.[0]; if (!file || !summary)
+            return; if (file.size > 64 * 1024 * 1024) {
+            props.notify('warning', 'ZIP 不能超过 64MB');
+            input.value = '';
+            return;
+        } const controller = new AbortController(); transferController.current?.abort(); transferController.current = controller; setWorking(true); try {
             const form = new FormData();
             form.set('owner', summary.owner);
             form.set('repo', summary.name);
             form.set('branch', importBranch);
             form.set('file', file);
-            setImportPlan(await api('/api/v1/github/import/preview', { method: 'POST', body: form }));
+            setImportPlan(await uploadApi('/api/v1/github/import/preview', form, state => setTransfer({ ...state, name: `分析 ${file.name}` }), controller.signal, `上传 ${file.name}`));
             props.notify('success', 'ZIP 差异已生成');
         }
         catch (cause) {
-            props.notify('error', 'ZIP 预览失败', errorDetail(cause));
+            if (cause instanceof DOMException && cause.name === 'AbortError')
+                props.notify('info', 'ZIP 上传已取消');
+            else
+                props.notify('error', 'ZIP 预览失败', errorDetail(cause));
         }
         finally {
             setWorking(false);
-            event.target.value = '';
+            setTransfer(null);
+            input.value = '';
+            if (transferController.current === controller)
+                transferController.current = null;
         } };
         const commitImport = async () => { if (!importPlan)
             return; if (!await props.confirm('Commit 并 Push', `新增 ${number(importPlan.added)} · 修改 ${number(importPlan.modified)} · 删除 ${number(importPlan.deleted)}`, '提交推送'))
-            return; try {
+            return; setWorking(true); setTransfer({ name: `正在向 GitHub 提交 ${number(importPlan.added) + number(importPlan.modified)} 个文件`, phase: 'processing', loaded: number(importPlan.bytes), total: number(importPlan.bytes), percent: 100, rate: 0, eta: 0 }); try {
             const out = asObject(await secureApi('/api/v1/github/import/commit', { method: 'POST', body: jsonBody({ plan_id: importPlan.id, message: importMessage }) }));
             setImportPlan(null);
             props.notify('success', '文件已推送');
@@ -2262,43 +2467,19 @@
         }
         catch (cause) {
             props.notify('error', '推送失败', errorDetail(cause));
+        }
+        finally {
+            setTransfer(null);
+            setWorking(false);
         } };
         const openAssets = async () => { if (!summary?.latest_release)
-            return; const tag = summary.latest_release.tag_name; try {
-            const assets = listOf(await api(`/api/v1/github/release/assets${query({ owner: summary.owner, repo: summary.name, tag })}`), 'assets');
-            props.openModal({ title: `Release 附件 · ${tag}`, size: 'large', content: React.createElement("div", { className: "form-stack" },
-                    React.createElement("label", { className: "button button-primary file-button" },
-                        React.createElement(Icon, { name: "upload", size: 17 }),
-                        React.createElement("span", null, "\u4E0A\u4F20\u9644\u4EF6"),
-                        React.createElement("input", { ref: assetRef, type: "file", onChange: async (event) => { const file = event.target.files?.[0]; if (!file)
-                                return; const form = new FormData(); form.set('owner', summary.owner); form.set('repo', summary.name); form.set('tag', tag); form.set('file', file); try {
-                                await secureApi('/api/v1/github/release/assets/upload', { method: 'POST', body: form });
-                                props.notify('success', `${file.name} 已上传`);
-                                props.closeModal();
-                                await openAssets();
-                            }
-                            catch (cause) {
-                                props.notify('error', '附件上传失败', errorDetail(cause));
-                            } } })),
-                    React.createElement("div", { className: "card-list compact-list" }, assets.map(asset => React.createElement("div", { className: "history-row", key: asset.id },
-                        React.createElement("div", null,
-                            React.createElement("strong", null, asset.name),
-                            React.createElement("small", null,
-                                formatBytes(asset.size),
-                                " \u00B7 \u4E0B\u8F7D ",
-                                number(asset.download_count),
-                                " \u6B21 \u00B7 ",
-                                formatDate(asset.created_at))),
-                        asset.browser_download_url ? React.createElement("a", { className: "button button-default", href: asset.browser_download_url, target: "_blank", rel: "noopener" }, "\u4E0B\u8F7D") : null)))) });
-        }
-        catch (cause) {
-            props.notify('error', '读取 Release 附件失败', errorDetail(cause));
-        } };
+            return; const tag = summary.latest_release.tag_name; props.openModal({ title: `Release 附件 · ${tag}`, size: 'large', content: React.createElement(ReleaseAssetsPanel, { owner: summary.owner, repo: summary.name, tag: tag, notify: props.notify }) }); };
         const branches = listOf(summary, 'branches').map(item => item.name);
         const runs = listOf(summary, 'workflow_runs');
         const pulls = listOf(summary, 'pull_requests');
         return React.createElement("div", { className: "page-stack" },
             React.createElement(PageHeader, { ...props, busy: loading, onRefresh: reload }),
+            transfer ? React.createElement(TransferProgress, { state: transfer, onCancel: () => transferController.current?.abort() }) : null,
             error ? React.createElement(ErrorState, { error: error, retry: reload }) : React.createElement(React.Fragment, null,
                 flow ? React.createElement(Card, { className: "github-device-flow" },
                     React.createElement("div", { className: "github-identity" },
@@ -2325,7 +2506,14 @@
                         React.createElement(Button, { onClick: connectToken }, "Token \u767B\u5F55"),
                         auth.device_login_available !== false ? React.createElement(Button, { tone: "primary", busy: working, onClick: startDevice }, "\u8BBE\u5907\u767B\u5F55") : null))),
                 !flow ? React.createElement(Card, { className: "github-repo-card" },
-                    React.createElement(SectionTitle, { title: "\u9009\u62E9\u4ED3\u5E93" }),
+                    React.createElement(SectionTitle, { title: "\u9009\u62E9\u4ED3\u5E93", subtitle: repositories.length ? `已读取最近更新的 ${repositories.length} 个可访问仓库` : undefined }),
+                    repositories.length ? React.createElement(Field, { label: "\u5FEB\u901F\u9009\u62E9" },
+                        React.createElement(SelectInput, { value: owner && repo ? `${owner}/${repo}` : '', onChange: (event) => void chooseRepository(String(event.target.value)) },
+                            React.createElement("option", { value: "" }, "\u624B\u52A8\u8F93\u5165\u4ED3\u5E93"),
+                            repositories.map(item => React.createElement("option", { key: item.id || item.full_name, value: item.full_name },
+                                item.full_name,
+                                item.private ? ' · 私有' : '',
+                                item.permissions?.push ? '' : ' · 只读')))) : null,
                     React.createElement("form", { className: "repo-picker", onSubmit: (event) => { event.preventDefault(); void loadRepo(); } },
                         React.createElement(Field, { label: "\u6240\u6709\u8005" },
                             React.createElement(TextInput, { value: owner, onChange: (event) => setOwner(event.target.value), required: true })),
@@ -3095,7 +3283,14 @@
                         React.createElement("dl", { className: "key-value-list" },
                             React.createElement(KeyValue, { label: "\u7248\u672C", value: text(settings.version, VERSION) }),
                             React.createElement(KeyValue, { label: "\u76D1\u542C", value: text(settings.listen), mono: true }),
-                            React.createElement(KeyValue, { label: "HTTPS Cookie", value: boolText(settings.secure_cookie) })))),
+                            React.createElement(KeyValue, { label: "HTTPS Cookie", value: boolText(settings.secure_cookie) }),
+                            React.createElement(KeyValue, { label: "\u5BC6\u7801\u6D3E\u751F", value: text(settings.crypto?.password_kdf) }),
+                            React.createElement(KeyValue, { label: "\u8FED\u4EE3\u6210\u672C", value: number(settings.crypto?.password_iterations).toLocaleString('zh-CN') }),
+                            React.createElement(KeyValue, { label: "\u4F1A\u8BDD\u7B7E\u540D", value: text(settings.crypto?.session_mac) }),
+                            React.createElement(KeyValue, { label: "\u540E\u91CF\u5B50\u51FA\u7AD9", value: settings.crypto?.post_quantum_capable ? React.createElement(Badge, { tone: "success" }, "\u5DF2\u542F\u7528\u6DF7\u5408 ML-KEM") : React.createElement(Badge, { tone: "warning" }, "\u5F53\u524D\u6784\u5EFA\u672A\u542F\u7528") }),
+                            React.createElement(KeyValue, { label: "\u534F\u5546\u65B9\u6848", value: text(settings.crypto?.outbound_tls) }),
+                            React.createElement(KeyValue, { label: "\u5165\u7AD9 HTTPS", value: text(settings.crypto?.inbound_tls) }),
+                            React.createElement(KeyValue, { label: "\u8FD0\u884C\u65F6", value: text(settings.crypto?.runtime), mono: true })))),
                 React.createElement(Card, null,
                     React.createElement(SectionTitle, { title: "Passkey", subtitle: "\u65E0\u9700\u7528\u6237\u540D\uFF0C\u76F4\u63A5\u4F7F\u7528 Face ID\u3001Touch ID \u6216\u5B89\u5168\u5BC6\u94A5\u767B\u5F55" }),
                     React.createElement("div", { className: "inline-form" },

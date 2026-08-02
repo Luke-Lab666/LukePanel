@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/binary"
@@ -72,18 +73,26 @@ func GenerateRecoveryCodes(count int) ([]string, error) {
 }
 
 func HashRecoveryCode(code, key string) string {
+	mac := hmac.New(sha512.New, []byte(key))
+	_, _ = mac.Write([]byte(normalizeRecoveryCode(code)))
+	return "sha512:" + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func legacyRecoveryCodeHash(code, key string) string {
 	mac := hmac.New(sha256.New, []byte(key))
 	_, _ = mac.Write([]byte(normalizeRecoveryCode(code)))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
 func ConsumeRecoveryCode(code, key string, hashes []string) ([]string, bool) {
-	candidate := HashRecoveryCode(code, key)
-	for i, hash := range hashes {
-		if hmac.Equal([]byte(candidate), []byte(hash)) {
-			out := append([]string(nil), hashes[:i]...)
-			out = append(out, hashes[i+1:]...)
-			return out, true
+	candidates := []string{HashRecoveryCode(code, key), legacyRecoveryCodeHash(code, key)}
+	for i, stored := range hashes {
+		for _, candidate := range candidates {
+			if hmac.Equal([]byte(candidate), []byte(stored)) {
+				out := append([]string(nil), hashes[:i]...)
+				out = append(out, hashes[i+1:]...)
+				return out, true
+			}
 		}
 	}
 	return hashes, false

@@ -4,6 +4,7 @@ After=local-fs.target docker.service
 Before=lukepanel.service
 
 [Service]
+Environment=GODEBUG=tlsmlkem=1,tlssecpmlkem=1
 Type=simple
 User=root
 Group=lukepanel

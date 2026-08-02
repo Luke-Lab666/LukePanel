@@ -5,6 +5,7 @@ Wants=network-online.target
 Requires=lukepanel-agent.service
 
 [Service]
+Environment=GODEBUG=tlsmlkem=1,tlssecpmlkem=1
 Type=simple
 User=lukepanel
 Group=lukepanel

@@ -3,7 +3,7 @@ package auth
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"sync"
 	"time"
@@ -124,7 +124,7 @@ func (s *Store) Cleanup() {
 	s.mu.Unlock()
 }
 func (s *Store) sign(id string) string {
-	mac := hmac.New(sha256.New, s.secret)
+	mac := hmac.New(sha512.New, s.secret)
 	_, _ = mac.Write([]byte(id))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }

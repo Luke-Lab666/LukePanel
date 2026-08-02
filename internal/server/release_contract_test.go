@@ -199,3 +199,32 @@ func TestEmbeddedFrontendMatchesSource(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseBuildAndServicesKeepPostQuantumRuntimeProfile(t *testing.T) {
+	root := filepath.Join("..", "..")
+	for _, path := range []string{
+		filepath.Join(root, ".github", "workflows", "build.yml"),
+		filepath.Join(root, ".github", "workflows", "release.yml"),
+	} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), "go-version: '1.26.5'") {
+			t.Fatalf("%s must build with Go 1.26.5", path)
+		}
+	}
+	for _, path := range []string{
+		filepath.Join(root, "install.sh"),
+		filepath.Join(root, "packaging", "systemd", "lukepanel.service"),
+		filepath.Join(root, "packaging", "systemd", "lukepanel-agent.service"),
+	} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), "GODEBUG=tlsmlkem=1,tlssecpmlkem=1") {
+			t.Fatalf("%s must keep ML-KEM hybrid TLS explicitly enabled", path)
+		}
+	}
+}

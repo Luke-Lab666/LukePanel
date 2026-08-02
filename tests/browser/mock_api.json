@@ -11,12 +11,23 @@
   "/api/v1/settings": {
     "status": 200,
     "payload": {
-      "version": "v2.0.4",
+      "version": "v2.0.5",
       "listen": "127.0.0.1:8080",
       "secure_cookie": true,
       "agent_socket": "/run/lukepanel/agent.sock",
       "admin_user": "admin",
-      "auto_refresh_seconds": 5
+      "auto_refresh_seconds": 5,
+      "crypto": {
+        "runtime": "go1.26.5",
+        "password_kdf": "PBKDF2-HMAC-SHA-512",
+        "password_iterations": 750000,
+        "session_mac": "HMAC-SHA-512",
+        "outbound_tls": "X25519MLKEM768 + SecP256r1MLKEM768 + SecP384r1MLKEM1024",
+        "post_quantum_capable": true,
+        "post_quantum_detail": "出站 HTTPS 优先协商传统算法 + ML-KEM 混合密钥交换",
+        "inbound_tls": "由反向代理与浏览器协商",
+        "negotiation_required": true
+      }
     }
   },
   "/api/v1/system/overview": {

@@ -1,28 +1,32 @@
 {
-  "version": "v2.0.4",
-  "package": "mobile-ui-cache-complete-source",
+  "version": "v2.0.5",
+  "package": "security-github-upload-complete-source",
   "frontend": "React 18.2.0 + TypeScript",
   "repository": "Luke-Lab666/LukePanel",
+  "official_release_go": "1.26.5",
+  "post_quantum_profile": "Hybrid ML-KEM outbound TLS; inbound TLS depends on reverse proxy and browser",
   "verification": {
-    "routes": "198/198",
+    "render": "198/198",
     "interactions": "51/51",
-    "truthful_controls": "149/149",
+    "visible_controls": "149/149",
     "accessibility_issues": 0,
-    "go_test": "passed",
-    "go_vet": "passed",
-    "race": "auth/config/server targeted passed",
-    "amd64_arm64": "built"
+    "upload_progress": "pass",
+    "go_test": "pass",
+    "go_vet": "pass",
+    "race": "auth, githubhelper, config-targeted, server-targeted pass"
   },
+  "indexed_file_count": 150,
+  "indexed_total_bytes": 3245973,
   "files": [
     {
       "path": ".github/workflows/build.yml",
       "bytes": 2229,
-      "sha256": "a330b39757657ccec9a76890298758f37a564969b6d7de60bb06d3d52c5f8fa7"
+      "sha256": "8bd44aa61366b0570b9c6daf8f036659384bf435eb6a9f2fd3da9b78d46affb4"
     },
     {
       "path": ".github/workflows/release.yml",
       "bytes": 3411,
-      "sha256": "bb6b0d43659fd08033e3842cd13b4a0d3f225bacd9fa4c88caf31abdfb9f3557"
+      "sha256": "d3396153434afb17de0b95c580f255d03b15eb9e215135eb669dfa5a8373c8c6"
     },
     {
       "path": ".gitignore",
@@ -31,8 +35,8 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 20925,
-      "sha256": "af68b2fb8e398e06e67d23b349df70c5e027f34bc76d81b81c7cb33711b1b23f"
+      "bytes": 21562,
+      "sha256": "80f8f10c7ca1dfb3ea3d4c0accd6c270491bb7a9ac53d100c03ebbb90c3728e8"
     },
     {
       "path": "LICENSE",
@@ -46,23 +50,23 @@
     },
     {
       "path": "README.md",
-      "bytes": 9529,
-      "sha256": "1194897b68185ac07c02423991c85ac40f4a78968fec6fc6d509f01b09a65377"
+      "bytes": 10829,
+      "sha256": "810ee1125f59406dea9baf7dcefb06212ce7d7afc86fb56baa39c819cb1e4a56"
     },
     {
       "path": "SECURITY.md",
-      "bytes": 3696,
-      "sha256": "0ddd5dc7f2c33ad21cbaef97a7ace3007eb5302f994bbfb8e9fbf1c5072c74d8"
+      "bytes": 5113,
+      "sha256": "da37a2fbf165143b9fd74ebe1f307388f857c05aa1a806dd11b02fc90068e8bc"
     },
     {
       "path": "UPLOAD.md",
-      "bytes": 672,
-      "sha256": "45e9048f4d5b575f8f413069704367f79f3adefbe009a2d2c56eb2922f893662"
+      "bytes": 1279,
+      "sha256": "d47b9e2466ad998ed6ceb548bab3e1883960b006022a97af19396ffce3027e99"
     },
     {
       "path": "VERSION",
       "bytes": 7,
-      "sha256": "375065d2c6c524d0617f08d0328e622d2c9aa02233cf964c98c5cf600ef0a701"
+      "sha256": "347fbde86e5c5eb5cecc8f341c24aa180298103960afc03f02231b8b9760750b"
     },
     {
       "path": "cmd/lukepanel/main.go",
@@ -76,13 +80,13 @@
     },
     {
       "path": "docs/ROADMAP.md",
-      "bytes": 7031,
-      "sha256": "e7da27e2b8658ee789bb4db8175eae08f1467e3c277c2a2aa6852cbf8822b7b9"
+      "bytes": 7124,
+      "sha256": "e48f2570c53361540adbf874aa90d42b9924f90b1fe39d5d55c20ef30b7da17c"
     },
     {
       "path": "docs/SOURCE_PACKAGE.md",
-      "bytes": 592,
-      "sha256": "e9d83a75bcd52f5fb796de6d2285808a0a4f3bf424243b117162cd6096b04cc4"
+      "bytes": 621,
+      "sha256": "0078197bfd0e946abeabf6708c17b1fd17808e461948aacf42a07821bdfbf46b"
     },
     {
       "path": "docs/UI_AND_INTERACTION.md",
@@ -91,18 +95,18 @@
     },
     {
       "path": "docs/VERIFICATION.md",
-      "bytes": 1706,
-      "sha256": "46df501d1a048c8054296d0c7095fd76a5ec4f95d3643aab0cd8d687dc2333f9"
+      "bytes": 4111,
+      "sha256": "0358a781cef42c35cd60324acb7e7549fe547425211ea3ae9649b1d5ec784fef"
     },
     {
       "path": "frontend/index.html",
       "bytes": 1275,
-      "sha256": "f1fb7b671d4bde5ff65f53a294bdeab602a22e002d5995da7c30a7d8d143981d"
+      "sha256": "ce1ee3bf37ed21f292e6783c0c73feb20a0b84e5e8614d4a62bb9609f875ced7"
     },
     {
       "path": "frontend/package.json",
       "bytes": 507,
-      "sha256": "9c706966b5b6fa9b01e344e55537dd53dffd0a6afe91a5b649b8d8c7acd5b9ed"
+      "sha256": "c957b174ede6ba24b40dff9a04f8cc684ecf0ba663509cc4b3a585cd2ec202a1"
     },
     {
       "path": "frontend/public/assets/apple-touch-icon.png",
@@ -136,13 +140,13 @@
     },
     {
       "path": "frontend/src/app.css",
-      "bytes": 48694,
-      "sha256": "b9ce3821d5659f4241705e3e705814ebb7ff6eae986db0cd082f3019bf17b521"
+      "bytes": 50134,
+      "sha256": "1947592aa250acf48c2da5cf09cb11b43f860e706347c6103b11d0c8e3196af3"
     },
     {
       "path": "frontend/src/app.tsx",
-      "bytes": 214104,
-      "sha256": "647ff209f41dc3b0840b64132f793455c005120bb242f77ff53e50ff6e800a2c"
+      "bytes": 224658,
+      "sha256": "9dbef278dbe8d408e01fcee762a41c4ee6485d9b1c5b87bb7301ae50f9c0f1b6"
     },
     {
       "path": "frontend/src/global.d.ts",
@@ -191,8 +195,8 @@
     },
     {
       "path": "install.sh",
-      "bytes": 9304,
-      "sha256": "2eea7372e1103c1ebd78e9fdf5f8cf46defae631ce1ba3401564c5dd00303086"
+      "bytes": 9396,
+      "sha256": "9b2ff92a5a1ae428a263107ad46bf86656d921e81d8ac777391ce94f9e2aa52d"
     },
     {
       "path": "internal/agent/client.go",
@@ -231,13 +235,13 @@
     },
     {
       "path": "internal/auth/password.go",
-      "bytes": 4946,
-      "sha256": "ca65fc1d925bb3a4299dcf453d30d60acd756185341c6733e703b66b8489e35f"
+      "bytes": 6506,
+      "sha256": "b0bdc9ef4beaae68fb77dc32948c5ba7b5bc16d93fe4960d8a2a9faa537d686e"
     },
     {
       "path": "internal/auth/password_test.go",
-      "bytes": 902,
-      "sha256": "d33d4ac77d82a97c0997e10384dbe8df1c35b43a4e19c7fb29284df1036d3951"
+      "bytes": 1530,
+      "sha256": "108051ce0b52b4de4388342a1e46e0fe92a20ccb0a77629435556d5f7a4c1769"
     },
     {
       "path": "internal/auth/ratelimit.go",
@@ -252,12 +256,12 @@
     {
       "path": "internal/auth/session.go",
       "bytes": 3211,
-      "sha256": "12408dd01b8388e0637e0f8bfb23fc73e1ff4e3f6cf3f6d9554fed9ef0f666b8"
+      "sha256": "21007e461877e0ffed6a734a7acd6c20130f57374e4565cb39d7b6360e0c7ed8"
     },
     {
       "path": "internal/auth/totp.go",
-      "bytes": 3169,
-      "sha256": "cc9e2b841cdd0677bebfae9749493f6577b89d38461082252044471e57ce6cf2"
+      "bytes": 3512,
+      "sha256": "47003a883c3ccc950471c43ae91af49036ecf871318844dda62c0fc8315a3c0b"
     },
     {
       "path": "internal/auth/totp_test.go",
@@ -326,13 +330,13 @@
     },
     {
       "path": "internal/githubhelper/client.go",
-      "bytes": 20460,
-      "sha256": "83b4379c216cfb33e15205e9af79f129b99ba308f889d36a21d777006bd8b0b8"
+      "bytes": 20677,
+      "sha256": "63ea5f6a38e9476a2553619186e26d68b4845526aece2f42c60bf4a5eff6c257"
     },
     {
       "path": "internal/githubhelper/client_test.go",
-      "bytes": 6810,
-      "sha256": "218534b00b1acbc21cd922b08bcfd851f7809d838b7bb5a46a431ad5375cb911"
+      "bytes": 8610,
+      "sha256": "94fba873c1f24fcefd58d83d2cd3164ed85faa8ed71c60964ec20d07d226c4a8"
     },
     {
       "path": "internal/githubhelper/importer.go",
@@ -341,8 +345,8 @@
     },
     {
       "path": "internal/githubhelper/oauth.go",
-      "bytes": 5923,
-      "sha256": "645274f4d595a4e5b9a113e062f2ff8e1e8f5ddf0ef9c37e7118527f087ae908"
+      "bytes": 6884,
+      "sha256": "fb4c39d9f3d6eef86a6afa99f621bd012d6fb54e68d2ea107d53e8aa2ed8bd5d"
     },
     {
       "path": "internal/hostadmin/fail2ban.go",
@@ -397,7 +401,7 @@
     {
       "path": "internal/server/auth_flow_test.go",
       "bytes": 13767,
-      "sha256": "5a9ba0e1ef0006530d88c2cccde67136a3542a4ea9184a4ffab1f61834b1b57a"
+      "sha256": "a20f38b47a3be0dcf3259f4c8728ce99b5855806c4c1a7df87706fc3220f2f7c"
     },
     {
       "path": "internal/server/backup.go",
@@ -420,6 +424,16 @@
       "sha256": "68fc485309f4aab33997f513646dda8ce5b0d44ca7bea850137c3277cee1ee8a"
     },
     {
+      "path": "internal/server/crypto_profile.go",
+      "bytes": 2781,
+      "sha256": "aa0e7a209d5266d4aa6be47fd4fc8566d553b45e20b2a45dd301e92fbf1df96d"
+    },
+    {
+      "path": "internal/server/crypto_profile_test.go",
+      "bytes": 1100,
+      "sha256": "039774e656541538456173c638e45ec5c3b090dba868970cfffaf6ae0199bc2e"
+    },
+    {
       "path": "internal/server/fileprefs.go",
       "bytes": 3622,
       "sha256": "4b565241e97539f51e3963266091775bf5695ee868aa1441817e76049ab7c5a7"
@@ -431,8 +445,8 @@
     },
     {
       "path": "internal/server/github_auth.go",
-      "bytes": 11272,
-      "sha256": "bd2c05ff7f9c0c57c4cb81ba1e9432dc356c89122541296e582c604b2ec24414"
+      "bytes": 11697,
+      "sha256": "fe88bc1bee39a727e83ac9728931fee66ac1dbec03e0df0ddfe04cabf1ffd880"
     },
     {
       "path": "internal/server/github_auth_test.go",
@@ -456,8 +470,8 @@
     },
     {
       "path": "internal/server/release_contract_test.go",
-      "bytes": 5920,
-      "sha256": "1ae988b5378b2e47a0a813a5dc3465346dc37442d015203eff1506268a12fc3a"
+      "bytes": 6823,
+      "sha256": "28c976fd861c826d2fcde6f2e4d4275b2c5ea7208fad64ed8dd3527a90791f96"
     },
     {
       "path": "internal/server/security_auth.go",
@@ -466,13 +480,13 @@
     },
     {
       "path": "internal/server/server.go",
-      "bytes": 79900,
-      "sha256": "389ad6c1fdccb4d6c91665f8acfd7039d6fa320445126e6cc6bbf417c706377d"
+      "bytes": 81270,
+      "sha256": "fdefc3bbd68b0d392217ceacc0a02ba96e52f95d391d507bf78bc47ef8c326e6"
     },
     {
       "path": "internal/server/spa_test.go",
       "bytes": 2666,
-      "sha256": "e5d061186df0ee89cd7694af468eadc69c7af646ce7a96218e0084c4f8d9dfc2"
+      "sha256": "0b10379060b9aa9d23ede62505df64dbe3ffa7d766a05da5e508ad0cd58e05f7"
     },
     {
       "path": "internal/server/totp.go",
@@ -481,13 +495,13 @@
     },
     {
       "path": "internal/server/webdist/assets/app.css",
-      "bytes": 48694,
-      "sha256": "b9ce3821d5659f4241705e3e705814ebb7ff6eae986db0cd082f3019bf17b521"
+      "bytes": 50134,
+      "sha256": "1947592aa250acf48c2da5cf09cb11b43f860e706347c6103b11d0c8e3196af3"
     },
     {
       "path": "internal/server/webdist/assets/app.js",
-      "bytes": 307327,
-      "sha256": "378289ca2f5ef629bdfa2c2a8fa929f147357f43be055b0ff8c664b4f87d1eb3"
+      "bytes": 319999,
+      "sha256": "392de3185905177e006bb7d1327e20d0d422c3e4826435f0f64ee5c37f10bbb1"
     },
     {
       "path": "internal/server/webdist/assets/apple-touch-icon.png",
@@ -537,12 +551,12 @@
     {
       "path": "internal/server/webdist/build-meta.json",
       "bytes": 1949,
-      "sha256": "cbf29453feceafed7197f86a0d5f304ea7f618754d1593726881ab37570731ba"
+      "sha256": "c98a13b45924561957efca893c617d38d24b6e61dd6c9103bf3a0c7392ebc398"
     },
     {
       "path": "internal/server/webdist/index.html",
       "bytes": 1275,
-      "sha256": "f1fb7b671d4bde5ff65f53a294bdeab602a22e002d5995da7c30a7d8d143981d"
+      "sha256": "ce1ee3bf37ed21f292e6783c0c73feb20a0b84e5e8614d4a62bb9609f875ced7"
     },
     {
       "path": "internal/server/webdist/manifest.webmanifest",
@@ -606,13 +620,13 @@
     },
     {
       "path": "packaging/systemd/lukepanel-agent.service",
-      "bytes": 615,
-      "sha256": "f4878066d22891fb433118fc8082417b9e65732e314f8b9708fbe87f7f129a04"
+      "bytes": 661,
+      "sha256": "d6f72d116fbf8561054d8b6a4c43fcbc3e62d0b6f201e9cf76d22a7a6bd7306b"
     },
     {
       "path": "packaging/systemd/lukepanel.service",
-      "bytes": 606,
-      "sha256": "05da21be86d82eff99d87fa4e313e3f80c4a5dee487e8d6bd13480d8993542d2"
+      "bytes": 652,
+      "sha256": "211d1534ac5f77238571a5fee1b3a8de8dd03d235f7a7ec2f4144e651d438451"
     },
     {
       "path": "scripts/build-frontend.sh",
@@ -626,8 +640,8 @@
     },
     {
       "path": "tests/browser/audit.py",
-      "bytes": 65372,
-      "sha256": "bd50b0d77cef9cde9f45ce2ba3f6fa3c0dfa6b31374aa8959513d6e9e04fa913"
+      "bytes": 65720,
+      "sha256": "069f80eff4491b2304aa53f0ff90004c63ec6d77c6b3329e57e8d856e59fc227"
     },
     {
       "path": "tests/browser/capture_all.py",
@@ -637,7 +651,7 @@
     {
       "path": "tests/browser/merge_reports.py",
       "bytes": 2194,
-      "sha256": "51edc57ce7f380321f5da7ff83c7d8efe2efa67fdbece93ebf070707759ffa04"
+      "sha256": "7ca675c1d9e623e2ea30b675e1282aeb3b01209a088955ed08efdf0b9393d2fa"
     },
     {
       "path": "tests/browser/merge_truth.py",
@@ -646,8 +660,8 @@
     },
     {
       "path": "tests/browser/mock_api.json",
-      "bytes": 17486,
-      "sha256": "73bcf93f2f9dfbb0feffdee3a461b0f00b422061b6e0b736d703ef385fc2c6e9"
+      "bytes": 17987,
+      "sha256": "abee88fc56fdf161d73000407eb56369fc70f0deb18aee79fbccb1b5ff8d91e6"
     },
     {
       "path": "tests/browser/truth_all.py",
@@ -658,6 +672,11 @@
       "path": "tests/browser/truth_worker.py",
       "bytes": 5680,
       "sha256": "be672ec2fbb1a73259b51bd7c997d4b1a47ed941c7247fad8f06ba1aab8a8e5f"
+    },
+    {
+      "path": "tests/browser/upload_progress.py",
+      "bytes": 2521,
+      "sha256": "5386e39925864701c9d07205c2fef3c8992ffdda4f3344bdef4fcb8b14a860ba"
     },
     {
       "path": "tests/browser/worker.py",
@@ -672,7 +691,7 @@
     {
       "path": "tests/static/validate.py",
       "bytes": 5932,
-      "sha256": "773d21508300edb0dcf3df9487863349388783dfe667640de3675316044e9705"
+      "sha256": "d0b675a45af095436e221e2f245f4de68be74d1a2388fbbdd05d9cc04facfa44"
     },
     {
       "path": "uninstall.sh",
@@ -681,13 +700,13 @@
     },
     {
       "path": "web/assets/app.css",
-      "bytes": 48694,
-      "sha256": "b9ce3821d5659f4241705e3e705814ebb7ff6eae986db0cd082f3019bf17b521"
+      "bytes": 50134,
+      "sha256": "1947592aa250acf48c2da5cf09cb11b43f860e706347c6103b11d0c8e3196af3"
     },
     {
       "path": "web/assets/app.js",
-      "bytes": 307327,
-      "sha256": "378289ca2f5ef629bdfa2c2a8fa929f147357f43be055b0ff8c664b4f87d1eb3"
+      "bytes": 319999,
+      "sha256": "392de3185905177e006bb7d1327e20d0d422c3e4826435f0f64ee5c37f10bbb1"
     },
     {
       "path": "web/assets/apple-touch-icon.png",
@@ -737,12 +756,12 @@
     {
       "path": "web/build-meta.json",
       "bytes": 1949,
-      "sha256": "cbf29453feceafed7197f86a0d5f304ea7f618754d1593726881ab37570731ba"
+      "sha256": "c98a13b45924561957efca893c617d38d24b6e61dd6c9103bf3a0c7392ebc398"
     },
     {
       "path": "web/index.html",
       "bytes": 1275,
-      "sha256": "f1fb7b671d4bde5ff65f53a294bdeab602a22e002d5995da7c30a7d8d143981d"
+      "sha256": "ce1ee3bf37ed21f292e6783c0c73feb20a0b84e5e8614d4a62bb9609f875ced7"
     },
     {
       "path": "web/manifest.webmanifest",

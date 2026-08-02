@@ -4,10 +4,12 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"hash"
 	"strconv"
 	"strings"
 	"unicode"
@@ -15,9 +17,10 @@ import (
 )
 
 const (
-	pbkdf2Iterations = 600_000
-	saltLength       = 16
-	keyLength        = 32
+	pbkdf2SHA512Iterations = 750_000
+	legacySHA256Iterations = 600_000
+	saltLength             = 24
+	keyLength              = 64
 )
 
 var commonPasswords = map[string]struct{}{
@@ -108,44 +111,73 @@ func HashPassword(password string) (string, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	hash := pbkdf2SHA256([]byte(password), salt, pbkdf2Iterations, keyLength)
-	return fmt.Sprintf("$pbkdf2-sha256$i=%d$%s$%s", pbkdf2Iterations,
-		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(hash)), nil
+	digest := pbkdf2([]byte(password), salt, pbkdf2SHA512Iterations, keyLength, sha512.New)
+	return fmt.Sprintf("$pbkdf2-sha512$i=%d$%s$%s", pbkdf2SHA512Iterations,
+		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(digest)), nil
 }
 
 func VerifyPassword(password, encoded string) (bool, error) {
 	parts := strings.Split(encoded, "$")
-	if len(parts) != 5 || parts[1] != "pbkdf2-sha256" {
+	if len(parts) != 5 {
 		return false, errors.New("invalid password hash")
 	}
 	iterations, err := strconv.Atoi(strings.TrimPrefix(parts[2], "i="))
-	if err != nil || iterations < 100_000 || iterations > 2_000_000 {
+	if err != nil || iterations < 100_000 || iterations > 3_000_000 {
 		return false, errors.New("invalid PBKDF2 iterations")
 	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
-	if err != nil {
-		return false, err
+	if err != nil || len(salt) < 16 || len(salt) > 64 {
+		return false, errors.New("invalid password salt")
 	}
 	expected, err := base64.RawStdEncoding.DecodeString(parts[4])
-	if err != nil || len(expected) < 16 || len(expected) > 64 {
+	if err != nil || len(expected) < 16 || len(expected) > 128 {
 		return false, errors.New("invalid password digest")
 	}
-	actual := pbkdf2SHA256([]byte(password), salt, iterations, len(expected))
+	var factory func() hash.Hash
+	switch parts[1] {
+	case "pbkdf2-sha512":
+		factory = sha512.New
+	case "pbkdf2-sha256":
+		factory = sha256.New
+	default:
+		return false, errors.New("unsupported password hash")
+	}
+	actual := pbkdf2([]byte(password), salt, iterations, len(expected), factory)
 	return subtle.ConstantTimeCompare(actual, expected) == 1, nil
 }
 
-func pbkdf2SHA256(password, salt []byte, iterations, length int) []byte {
-	hashLength := sha256.Size
+// NeedsPasswordRehash reports whether a valid stored hash should be upgraded
+// after the next complete password + second-factor login. This keeps existing
+// installations compatible while moving them to the current SHA-512 profile.
+func NeedsPasswordRehash(encoded string) bool {
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 5 || parts[1] != "pbkdf2-sha512" {
+		return true
+	}
+	iterations, err := strconv.Atoi(strings.TrimPrefix(parts[2], "i="))
+	if err != nil || iterations < pbkdf2SHA512Iterations {
+		return true
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
+	if err != nil || len(salt) < saltLength {
+		return true
+	}
+	digest, err := base64.RawStdEncoding.DecodeString(parts[4])
+	return err != nil || len(digest) < keyLength
+}
+
+func pbkdf2(password, salt []byte, iterations, length int, factory func() hash.Hash) []byte {
+	hashLength := factory().Size()
 	blocks := (length + hashLength - 1) / hashLength
 	result := make([]byte, 0, blocks*hashLength)
 	for block := 1; block <= blocks; block++ {
-		mac := hmac.New(sha256.New, password)
+		mac := hmac.New(factory, password)
 		_, _ = mac.Write(salt)
 		_, _ = mac.Write([]byte{byte(block >> 24), byte(block >> 16), byte(block >> 8), byte(block)})
 		u := mac.Sum(nil)
 		t := append([]byte(nil), u...)
 		for i := 1; i < iterations; i++ {
-			mac = hmac.New(sha256.New, password)
+			mac = hmac.New(factory, password)
 			_, _ = mac.Write(u)
 			u = mac.Sum(nil)
 			for j := range t {
@@ -155,4 +187,12 @@ func pbkdf2SHA256(password, salt []byte, iterations, length int) []byte {
 		result = append(result, t...)
 	}
 	return result[:length]
+}
+
+// legacyPBKDF2Hash is used only by migration tests and documents the previous
+// profile accepted by VerifyPassword.
+func legacyPBKDF2Hash(password string, salt []byte) string {
+	digest := pbkdf2([]byte(password), salt, legacySHA256Iterations, 32, sha256.New)
+	return fmt.Sprintf("$pbkdf2-sha256$i=%d$%s$%s", legacySHA256Iterations,
+		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(digest))
 }

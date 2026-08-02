@@ -203,6 +203,7 @@ func New(cfg config.Config, configPath, version, githubClientID string, logger *
 	mux.HandleFunc("/api/v1/github/import/preview", s.requireAuth(s.githubImportPreview))
 	mux.HandleFunc("/api/v1/github/import/commit", s.requireAuth(s.githubImportCommit))
 	mux.HandleFunc("/api/v1/github/summary", s.requireAuth(s.githubSummary))
+	mux.HandleFunc("/api/v1/github/repositories", s.requireAuth(s.githubRepositories))
 	mux.HandleFunc("/api/v1/github/tag", s.requireAuth(s.githubCreateTag))
 	mux.HandleFunc("/api/v1/github/branch", s.requireAuth(s.githubCreateBranch))
 	mux.HandleFunc("/api/v1/github/pull", s.requireAuth(s.githubCreatePullRequest))
@@ -285,7 +286,31 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 			s.audit.Write(AuditEvent{IP: ip, User: req.Username, Action: "auth.login.recovery", Result: "success"})
 		}
 	}
+	s.upgradePasswordHash(req.Password, passwordHash)
 	s.establishSession(w, r, req.Username, "auth.login")
+}
+
+func (s *Server) upgradePasswordHash(password, currentHash string) {
+	if !auth.NeedsPasswordRehash(currentHash) {
+		return
+	}
+	upgraded, err := auth.HashPassword(password)
+	if err != nil {
+		s.logger.Warn("password hash migration failed", "error", err)
+		return
+	}
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	if s.cfg.PasswordHash != currentHash {
+		return
+	}
+	updated := s.cfg.Clone()
+	updated.PasswordHash = upgraded
+	if err := config.Save(s.configPath, updated); err != nil {
+		s.logger.Warn("password hash migration could not be saved", "error", err)
+		return
+	}
+	s.cfg = updated
 }
 
 func (s *Server) expireLegacyTrustedDeviceCookie(w http.ResponseWriter) {
@@ -1191,6 +1216,24 @@ func (s *Server) securityStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	profile := currentCryptoRuntimeProfile()
+	checks, _ := out["checks"].([]any)
+	status := "good"
+	recommendation := ""
+	if !profile.PostQuantumCapable {
+		status = "warn"
+		recommendation = "安装官方 v2.0.5 Release，或使用 Go 1.26.5 重新构建"
+	}
+	checks = append(checks, map[string]any{
+		"id": "post-quantum-tls", "title": "后量子混合 TLS", "status": status,
+		"detail": profile.PostQuantumDetail, "recommendation": recommendation,
+	})
+	out["checks"] = checks
+	if !profile.PostQuantumCapable {
+		if score, ok := out["score"].(float64); ok {
+			out["score"] = max(0, int(score)-8)
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -1542,7 +1585,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		s.configMu.RLock()
 		cfg := s.cfg.Clone()
 		s.configMu.RUnlock()
-		writeJSON(w, http.StatusOK, map[string]any{"version": s.version, "listen": cfg.Listen, "secure_cookie": cfg.SecureCookie, "auto_refresh_seconds": cfg.AutoRefreshSeconds, "allowed_roots": cfg.AllowedRoots, "agent_socket": cfg.AgentSocket, "admin_user": cfg.AdminUser})
+		writeJSON(w, http.StatusOK, map[string]any{"version": s.version, "listen": cfg.Listen, "secure_cookie": cfg.SecureCookie, "auto_refresh_seconds": cfg.AutoRefreshSeconds, "allowed_roots": cfg.AllowedRoots, "agent_socket": cfg.AgentSocket, "admin_user": cfg.AdminUser, "crypto": currentCryptoRuntimeProfile()})
 	case http.MethodPatch:
 		var req struct {
 			AutoRefreshSeconds int `json:"auto_refresh_seconds"`

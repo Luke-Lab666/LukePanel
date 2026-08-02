@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  当前版本：<code>v2.0.4</code>
+  当前版本：<code>v2.0.5</code>
 </p>
 
 LukePanel 面向需要维护单台 Debian 或 Ubuntu 服务器的个人用户和小型团队。它提供系统、Docker、文件、SSH、安全与审计管理，同时避免把浏览器变成任意 root WebShell。
@@ -17,13 +17,15 @@ LukePanel 面向需要维护单台 Debian 或 Ubuntu 服务器的个人用户和
 Web 服务以普通系统用户运行；需要 root 权限的操作由独立 Agent 通过本地 Unix Socket 执行。Agent 只接受经过校验的固定动作，不接收浏览器传入的任意 Shell 命令。
 
 
-## v2.0.4 移动端 UI 与资源状态修复
+## v2.0.5 安全与 GitHub 上传体验增强
 
-- 刷新按钮在未点击时也保持完整按钮轮廓，避免 iOS 点击后样式突然变化。
-- 概览页按后端真实字段读取 Swap；已配置时显示容量和使用率，未配置时使用干净的文字空状态。
-- 登录页删除重复的 Passkey 和认证规则说明，只保留操作所需信息。
-- Passkey、内存、磁盘和刷新图标统一为语义明确的线性图标。
-- 延续 v2.0.2 的认证加固：密码登录开启 TOTP 后强制第二因素，Passkey 独立认证，高风险操作要求当前密码与 TOTP。
+- 官方 Release 使用 Go 1.26.5 构建，并显式启用 X25519MLKEM768、SecP256r1MLKEM768 与 SecP384r1MLKEM1024 后量子混合密钥交换；是否实际采用仍由 TLS 对端共同协商。
+- 密码存储升级为 PBKDF2-HMAC-SHA-512（750,000 次迭代、24 字节随机盐、64 字节摘要）；旧 PBKDF2-HMAC-SHA-256 哈希会在完成密码与第二因素验证后自动迁移。
+- 会话签名与恢复码校验升级为 HMAC-SHA-512，同时继续兼容并一次性迁移旧恢复码。
+- 文件管理、GitHub ZIP 差异导入和 Release 附件上传显示真实字节进度、速度、预计剩余时间、服务端处理阶段，并支持取消。
+- GitHub 助手可读取当前账号有权限访问的仓库并快速选择；设备登录在 iOS Safari 中预先创建授权窗口，降低弹窗被拦截的概率。
+- GitHub API 大文件操作使用独立长超时传输客户端，避免旧版 30 秒总超时导致上传或 Release 操作中断。
+- “抗 AI 加密”不是正式密码学算法名称；本版通过强密码派生、登录限速、TOTP、Passkey、会话保护和可审计高风险验证抵抗自动化猜测与凭据攻击。
 - 前端使用 React 18 + TypeScript 离线构建，运行资源由 Go `embed` 内嵌且不依赖 CDN。
 
 ## 主要特点
@@ -37,7 +39,7 @@ Web 服务以普通系统用户运行；需要 root 权限的操作由独立 Age
 - SSH 用户、公钥和安全设置管理
 - Passkey、TOTP、恢复码、会话和登录保护
 - UFW、Fail2ban、安全体检和审计日志
-- 可选 GitHub 仓库、Actions、Pull Request 和 Release 工作流
+- 可选 GitHub 仓库、Actions、Pull Request 和 Release 工作流，支持真实上传进度与取消
 - React 18 + TypeScript 前端，构建产物随 Go 单二进制内嵌；服务器运行时不依赖 Node.js、CDN、Redis 或外部数据库
 
 ## 支持范围
@@ -176,11 +178,12 @@ rm -f /root/.lukepanel-password
 
 GitHub 助手是内置的可选功能，可以在“常用工具”中显示或隐藏入口。它支持：
 
-- GitHub Device Flow 登录
+- GitHub Device Flow 登录和 Fine-grained Token 登录
+- 自动读取当前账号可访问仓库并快速选择
 - 仓库、分支、提交和 Actions 状态查看
-- ZIP 差异预览与 Commit / Push
+- ZIP 差异预览与 Commit / Push，上传阶段显示真实进度、速度、剩余时间并支持取消
 - Pull Request 创建与合并
-- Tag、Release 和附件管理
+- Tag、Release 和附件管理，附件上传显示真实传输与服务端处理状态
 - Actions Job 日志读取
 
 访问令牌只保存在 LukePanel 当前服务会话中，不显示在页面和审计日志里。服务重启或主动断开后，授权会被清除。
@@ -192,10 +195,12 @@ LukePanel 将浏览器服务和高权限操作分离：
 - `lukepanel.service` 使用普通 `lukepanel` 用户运行
 - `lukepanel-agent.service` 使用 root 运行，只监听受保护的 Unix Socket
 - Agent 只提供固定、可校验的管理动作
-- 密码使用 PBKDF2-HMAC-SHA256 哈希保存
+- 密码使用 PBKDF2-HMAC-SHA-512（750,000 次、随机盐、64 字节摘要）保存；旧 SHA-256 配置在完整登录后自动迁移
+- 会话令牌与恢复码使用 HMAC-SHA-512 校验
+- 官方 Go 1.26.5 Release 的出站 HTTPS 支持传统算法与 ML-KEM 后量子混合密钥交换；入站 HTTPS 仍由反向代理、浏览器和证书链共同决定
 - 会话 Cookie 使用 HttpOnly、SameSite 与 Secure 属性
 - 修改操作使用 CSRF 校验
-- 高风险操作需要短时有效的密码二次验证
+- 高风险操作需要短时有效的当前密码验证；启用 TOTP 时还必须验证 TOTP 或恢复码
 - 密码、Cookie、私钥和访问令牌不会写入审计内容
 
 公网部署前请阅读 [SECURITY.md](SECURITY.md)。
@@ -255,7 +260,7 @@ ls -l /run/lukepanel/agent.sock
 
 要求：
 
-- Go 1.23 或更高版本
+- Go 1.23 或更高版本可进行兼容开发；正式安全 Release 固定使用 Go 1.26.5
 - Node.js 20 或更高版本；执行 `npm --prefix frontend install` 安装固定版本的 TypeScript 编译器
 - 完整系统集成测试需要 Linux
 
@@ -273,7 +278,7 @@ make build
 
 ## 项目状态
 
-LukePanel v2.0.4 的页面、路由、状态、API 调用和弹窗均使用 React 18 + TypeScript。React 与 ReactDOM 固定版本随仓库内嵌，生产运行不依赖 CDN；旧版手写 DOM 与过渡前端均不进入正式资源链路。
+LukePanel v2.0.5 的页面、路由、状态、API 调用和弹窗均使用 React 18 + TypeScript。React 与 ReactDOM 固定版本随仓库内嵌，生产运行不依赖 CDN；旧版手写 DOM 与过渡前端均不进入正式资源链路。
 
 执行软件升级、防火墙、SSH、Docker 和文件系统操作前，仍应保留服务器级备份。项目会尽量使用验证、快照和回滚降低风险，但任何具备 root 管理能力的面板都无法消除错误操作和系统差异带来的风险。
 

@@ -113,7 +113,11 @@ type WorkflowRun struct {
 }
 
 func New() *Client {
-	return &Client{http: &http.Client{Timeout: 30 * time.Second}, apiBase: "https://api.github.com", webBase: "https://github.com"}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.MaxIdleConnsPerHost = 8
+	return &Client{http: &http.Client{Transport: transport, Timeout: 10 * time.Minute}, apiBase: "https://api.github.com", webBase: "https://github.com"}
 }
 
 func (c *Client) Summary(ctx context.Context, owner, repo, token string) (RepositorySummary, error) {
@@ -332,7 +336,7 @@ func (c *Client) CreateTag(ctx context.Context, owner, repo, tag, targetSHA, tok
 		return err
 	}
 	if !tagPattern.MatchString(tag) {
-		return errors.New("版本号必须以小写 v 开头，例如 v2.0.4")
+		return errors.New("版本号必须以小写 v 开头，例如 v2.0.5")
 	}
 	if strings.TrimSpace(token) == "" {
 		return errors.New("需要一次性 GitHub Token")

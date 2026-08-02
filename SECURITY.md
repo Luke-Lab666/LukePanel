@@ -1,6 +1,6 @@
 # Security Policy
 
-LukePanel v2.0.4 已进入稳定维护阶段。即使如此，也不要在没有 HTTPS、强密码、访问控制和可信反向代理的情况下暴露到公网。
+LukePanel v2.0.5 已进入稳定维护阶段。即使如此，也不要在没有 HTTPS、强密码、访问控制和可信反向代理的情况下暴露到公网。
 
 ## 权限模型
 
@@ -13,7 +13,8 @@ LukePanel v2.0.4 已进入稳定维护阶段。即使如此，也不要在没有
 ## 默认安全措施
 
 - 仅监听 `127.0.0.1:6767`
-- PBKDF2-HMAC-SHA256，600,000 次迭代
+- PBKDF2-HMAC-SHA-512，750,000 次迭代、24 字节随机盐、64 字节摘要；旧 SHA-256 哈希在完整登录后自动迁移
+- HMAC-SHA-512 会话签名与恢复码校验
 - HttpOnly、SameSite=Strict、Secure Cookie
 - CSRF Token
 - 登录失败 5 次锁定 15 分钟
@@ -26,6 +27,15 @@ LukePanel v2.0.4 已进入稳定维护阶段。即使如此，也不要在没有
 - GitHub OAuth Token 仅保存在当前会话内存，不持久化、不审计；退出或重启后清除
 - GitHub ZIP 推送不 Force Push，并在提交前检查远端分支是否变化
 
+
+
+## 后量子与自动化攻击说明
+
+- 官方 Release 固定使用 Go 1.26.5，并显式启用 `tlsmlkem=1,tlssecpmlkem=1`。LukePanel 发起到 GitHub 等外部服务的 HTTPS 连接时，会优先提供 X25519MLKEM768、SecP256r1MLKEM768 和 SecP384r1MLKEM1024 混合密钥交换。
+- 混合方案同时包含传统椭圆曲线与 ML-KEM；只有远端也支持时，单次 TLS 连接才会实际协商后量子混合组。不支持的远端会自动使用传统安全组，避免破坏兼容性。
+- 浏览器到 LukePanel 的入站 HTTPS 通常终止于 Nginx、Caddy 或 Nginx Proxy Manager，因此是否具备后量子协商取决于反向代理、TLS 库和客户端浏览器，LukePanel 无法在应用层单方面保证。
+- LukePanel 没有宣称存在“抗 AI 加密算法”。对自动化和机器学习辅助攻击的防护来自高成本密码派生、登录锁定、强密码规则、TOTP、Passkey、本机用户验证、CSRF、防重放挑战和高风险二次验证。
+- 后量子密钥交换不等于后量子数字签名。当前公网证书与 GitHub API 身份认证仍由现有 PKI 和对端能力决定；本版没有虚假宣称使用 ML-DSA 或 SLH-DSA 签署证书。
 
 ## 防失联设计
 
@@ -54,7 +64,7 @@ LukePanel v2.0.4 已进入稳定维护阶段。即使如此，也不要在没有
 - OAuth 授权只使用当前需要的账号；不在其他人共享的面板上连接 GitHub。
 - 仓库写入需要 `repo` 权限；修改 `.github/workflows` 还需要 `workflow` 权限。
 - LukePanel 断开连接只清除本机内存 Token；需要彻底撤销授权时，在 GitHub Applications 设置中撤销 OAuth App。
-- 上传 ZIP 前先核对目标仓库、分支和差异预览，提交后通过 GitHub Actions 检查结果。
+- 上传 ZIP 前先核对目标仓库、分支和差异预览；上传进度完成后仍要等待 GitHub Blob、Tree 和 Commit 处理阶段，提交后通过 GitHub Actions 检查结果。
 
 ## 部署建议
 
