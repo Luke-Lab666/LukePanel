@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  当前版本：<code>v2.0.0</code>
+  当前版本：<code>v1.1.1</code>
 </p>
 
 LukePanel 面向需要维护单台 Debian 或 Ubuntu 服务器的个人用户和小型团队。它提供系统、Docker、文件、SSH、安全与审计管理，同时避免把浏览器变成任意 root WebShell。
