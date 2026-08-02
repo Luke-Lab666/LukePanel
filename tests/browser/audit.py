@@ -207,7 +207,7 @@ async def setup_page(browser,w,h,path,authenticated=True,context=None):
     await page.expose_function('__mockRequest',state.request)
     await page.set_content('<!doctype html><html lang="zh-CN"><head><base href="http://lukepanel.test/"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body><div id="app"></div></body></html>')
     await page.add_style_tag(path=str(WEB/'assets/app.css'))
-    await page.evaluate("""({path})=>{ const store={}; Object.defineProperty(window,'localStorage',{configurable:true,value:{getItem:k=>Object.prototype.hasOwnProperty.call(store,k)?store[k]:null,setItem:(k,v)=>{store[k]=String(v)},removeItem:k=>{delete store[k]},clear:()=>{for(const k of Object.keys(store))delete store[k]}}}); window.__LUKEPANEL_VERSION__='v2.0.3'; window.__LUKEPANEL_TEST_PATH__=path; window.fetch=async (input,init={})=>{const url=typeof input==='string'?input:(input&&input.url)||''; const result=await window.__mockRequest({url,method:init.method||'GET',body:init.body||null,headers:{}}); return new Response(JSON.stringify(result.payload),{status:result.status,headers:{'content-type':'application/json'}})}; }""",{'path':path})
+    await page.evaluate("""({path})=>{ const store={}; Object.defineProperty(window,'localStorage',{configurable:true,value:{getItem:k=>Object.prototype.hasOwnProperty.call(store,k)?store[k]:null,setItem:(k,v)=>{store[k]=String(v)},removeItem:k=>{delete store[k]},clear:()=>{for(const k of Object.keys(store))delete store[k]}}}); window.__LUKEPANEL_VERSION__='v2.0.4'; window.__LUKEPANEL_TEST_PATH__=path; window.fetch=async (input,init={})=>{const url=typeof input==='string'?input:(input&&input.url)||''; const result=await window.__mockRequest({url,method:init.method||'GET',body:init.body||null,headers:{}}); return new Response(JSON.stringify(result.payload),{status:result.status,headers:{'content-type':'application/json'}})}; }""",{'path':path})
     if not authenticated:
       await page.evaluate("""()=>{
         window.PublicKeyCredential=function PublicKeyCredential(){};
@@ -319,7 +319,7 @@ async def interaction_tests():
         if ctx: await ctx.close()
     try:
       async def login(p,s):
-        passkey=p.get_by_role('button',name='使用 Passkey 登录',exact=True)
+        passkey=p.get_by_role('button',name='Passkey 登录',exact=True)
         await passkey.click(); await p.wait_for_timeout(80)
         begin=reqs(s,'/api/v1/auth/passkey/login/begin','POST')
         await p.locator('input[name="username"]').fill('admin'); await p.locator('input[name="password"]').fill('StrongPass!123'); await p.locator('button[type="submit"]').click(); await p.wait_for_selector('.app-shell',timeout=5000)
@@ -407,7 +407,7 @@ async def interaction_tests():
       await case('Docker 重建保留运行状态与重试字段','/docker',recreate)
 
       async def file_create(p,s):
-        await p.get_by_role('button',name='新建文件',exact=True).click(); m=p.locator('.modal'); await m.locator('input[name="value"]').fill('notes.txt'); await m.get_by_role('button',name='确认',exact=True).click(); await p.wait_for_timeout(100)
+        await p.get_by_role('button',name='新建',exact=True).click(); await p.get_by_role('button',name='新建文件',exact=True).click(); m=p.locator('.modal'); await m.locator('input[name="value"]').fill('notes.txt'); await m.get_by_role('button',name='确认',exact=True).click(); await p.wait_for_timeout(100)
         r=reqs(s,'/api/v1/files/create','POST'); return True if r and r[-1]['body']=={'path':'/notes.txt'} else [r[-1:]]
       await case('文件创建真实路径契约','/files',file_create)
 
@@ -487,7 +487,7 @@ async def interaction_tests():
       await case('Docker 不可用停止后续请求并显示原因','/docker',docker_unavailable)
 
       async def file_failure(p,s):
-        s.force_failures[('POST','/api/v1/files/create')]=s.response(400,{'error':'permission denied','command':'open /notes.txt','output':'EACCES'}); await p.get_by_role('button',name='新建文件',exact=True).click(); m=p.locator('.modal'); await m.locator('input[name="value"]').fill('notes.txt'); await m.get_by_role('button',name='确认',exact=True).click(); await p.wait_for_selector('.toast-error'); visible=await p.locator('.modal').is_visible(); body=await p.locator('body').inner_text()
+        s.force_failures[('POST','/api/v1/files/create')]=s.response(400,{'error':'permission denied','command':'open /notes.txt','output':'EACCES'}); await p.get_by_role('button',name='新建',exact=True).click(); await p.get_by_role('button',name='新建文件',exact=True).click(); m=p.locator('.modal'); await m.locator('input[name="value"]').fill('notes.txt'); await m.get_by_role('button',name='确认',exact=True).click(); await p.wait_for_selector('.toast-error'); visible=await p.locator('.modal').is_visible(); body=await p.locator('body').inner_text()
         return True if visible and 'permission denied' in body and 'EACCES' in body else ['失败后弹窗被关闭或真实错误未显示']
       await case('文件操作失败不伪装成功且保留输入','/files',file_failure)
 
@@ -617,7 +617,7 @@ async def interaction_tests():
 
 async def main():
   started=time.time(); results,failures=await run_matrix(); interactions=await interaction_tests(); failures.extend({'device':'interaction','route':t['name'],'issues':t['issues']} for t in interactions if not t['passed'])
-  report={'version':'v2.0.3','framework':'React 18.2.0','render_checks':len(results),'render_passed':sum(1 for r in results if r['passed']),'interaction_checks':len(interactions),'interaction_passed':sum(1 for t in interactions if t['passed']),'failures':failures,'interactions':interactions,'results':results,'duration_seconds':round(time.time()-started,2)}
+  report={'version':'v2.0.4','framework':'React 18.2.0','render_checks':len(results),'render_passed':sum(1 for r in results if r['passed']),'interaction_checks':len(interactions),'interaction_passed':sum(1 for t in interactions if t['passed']),'failures':failures,'interactions':interactions,'results':results,'duration_seconds':round(time.time()-started,2)}
   REPORTS.mkdir(exist_ok=True); (REPORTS/'browser-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
   print(json.dumps({k:report[k] for k in ['render_checks','render_passed','interaction_checks','interaction_passed','duration_seconds']},ensure_ascii=False))
   if failures:

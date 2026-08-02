@@ -1694,6 +1694,8 @@ func (s *Server) spaHandler() http.Handler {
 			serveIndex(w)
 			return
 		}
+		// Embedded assets keep stable filenames, so force revalidation after every binary update.
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 		fileServer.ServeHTTP(w, r)
 	})
 }

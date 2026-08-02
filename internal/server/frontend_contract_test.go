@@ -99,8 +99,8 @@ func TestLoginUsesDedicatedPasskeyIconWithoutRedundantHints(t *testing.T) {
 			t.Fatalf("login page still contains redundant hint %q", forbidden)
 		}
 	}
-	if !strings.Contains(content, `Button icon="passkey" tone="primary"`) {
-		t.Fatal("login Passkey action must use the dedicated Passkey icon")
+	if !strings.Contains(content, `Button icon="fingerprint" tone="primary"`) {
+		t.Fatal("login Passkey action must use the dedicated fingerprint icon")
 	}
 	if !strings.Contains(content, `className="header-refresh-button"`) {
 		t.Fatal("page refresh action must keep a stable default button appearance")

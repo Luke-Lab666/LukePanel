@@ -1,6 +1,6 @@
 # 完整源码包说明
 
-本目录是可直接作为 GitHub 仓库根目录上传的 LukePanel v2.0.3 完整源码。
+本目录是可直接作为 GitHub 仓库根目录上传的 LukePanel v2.0.4 完整源码。
 
 它不是补丁包，不包含 `overlay/`、`apply-react-rebuild.sh` 或删除清单。根目录已经同时包含：
 

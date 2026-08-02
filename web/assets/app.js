@@ -1,9 +1,9 @@
 "use strict";
-/* LukePanel v2.0.3 React 18 frontend. No runtime CDN, no direct DOM templating. */
+/* LukePanel v2.0.4 React 18 frontend. No runtime CDN, no direct DOM templating. */
 (() => {
     'use strict';
     const { useCallback, useEffect, useMemo, useRef, useState } = React;
-    const VERSION = window.__LUKEPANEL_VERSION__ || 'v2.0.3';
+    const VERSION = window.__LUKEPANEL_VERSION__ || 'v2.0.4';
     const ROUTES = [
         { path: '/', title: '概览', subtitle: '服务器状态与关键指标', level: 1, nav: true, icon: 'dashboard' },
         { path: '/system', title: '系统', subtitle: '主机、服务、网络与维护', level: 1, nav: true, icon: 'system' },
@@ -59,6 +59,7 @@
         chevron: ['m9 18 6-6-6-6'], check: ['m5 12 4 4L19 6'], warning: ['M12 3 2 21h20L12 3Z', 'M12 9v5', 'M12 18h.01'],
         terminal: ['m5 7 4 4-4 4', 'M11 17h8'], user: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M4 21a8 8 0 0 1 16 0'],
         key: ['M21 2l-2 2', 'm15 6 3 3', 'M14.5 9.5 9 15H6v3H3v3H1v-4.5l6.5-6.5', 'M15.5 8.5h.01'],
+        fingerprint: ['M12 11a1 1 0 0 0-1 1c0 2.6-.8 4.8-2.4 6.6', 'M12 7a5 5 0 0 0-5 5c0 1.2-.1 2.3-.4 3.4', 'M12 3a9 9 0 0 0-9 9c0 1.8-.3 3.5-.9 5', 'M12 15a3 3 0 0 0 3-3 3 3 0 0 0-6 0c0 3.8-1.2 6.7-3.5 8.8', 'M16.6 20.6c1.6-2.5 2.4-5.3 2.4-8.6a7 7 0 0 0-14 0c0 1.5-.2 2.9-.6 4.2'],
         passkey: ['M12 11a1 1 0 0 0-1 1c0 2.6-.8 4.8-2.4 6.6', 'M12 7a5 5 0 0 0-5 5c0 1.2-.1 2.3-.4 3.4', 'M12 3a9 9 0 0 0-9 9c0 1.8-.3 3.5-.9 5', 'M12 15a3 3 0 0 0 3-3 3 3 0 0 0-6 0c0 3.8-1.2 6.7-3.5 8.8', 'M16.6 20.6c1.6-2.5 2.4-5.3 2.4-8.6a7 7 0 0 0-14 0c0 1.5-.2 2.9-.6 4.2'],
         memory: ['M6 4h12v16H6z', 'M9 8h6v8H9z', 'M9 1v3', 'M15 1v3', 'M9 20v3', 'M15 20v3', 'M1 9h5', 'M1 15h5', 'M18 9h5', 'M18 15h5'],
         disk: ['M4 5h16v14H4z', 'M7 9h10', 'M7 15h.01', 'M11 15h6'],
@@ -431,20 +432,17 @@
                 React.createElement("form", { className: "login-card", onSubmit: submit },
                     React.createElement("div", { className: "login-card-title" },
                         React.createElement("img", { src: "/assets/favicon-64.png", alt: "" }),
-                        React.createElement("div", null,
-                            React.createElement("h2", null, "\u767B\u5F55 LukePanel"),
-                            React.createElement("p", null, "\u9009\u62E9 Passkey \u6216\u7BA1\u7406\u5458\u8D26\u6237"))),
-                    typeof PublicKeyCredential !== 'undefined' ? React.createElement("div", { className: "passkey-login-block" },
-                        React.createElement(Button, { icon: "passkey", tone: "primary", busy: busy, onClick: passkey, className: "full-width" }, "\u4F7F\u7528 Passkey \u767B\u5F55")) : null,
+                        React.createElement("h2", null, "\u767B\u5F55 LukePanel")),
+                    typeof PublicKeyCredential !== 'undefined' ? React.createElement(Button, { icon: "fingerprint", tone: "primary", busy: busy, onClick: passkey, className: "full-width passkey-login-button" }, "Passkey \u767B\u5F55") : null,
                     React.createElement("div", { className: "login-divider" },
-                        React.createElement("span", null, "\u4F7F\u7528\u7BA1\u7406\u5458\u8D26\u6237")),
+                        React.createElement("span", null, "\u8D26\u6237\u5BC6\u7801")),
                     React.createElement(Field, { label: "\u7528\u6237\u540D" },
                         React.createElement(TextInput, { name: "username", autoCapitalize: "none", autoCorrect: "off", autoComplete: "username", value: username, onChange: (event) => changeUsername(event.target.value), required: true })),
                     React.createElement(Field, { label: "\u5BC6\u7801" },
                         React.createElement(TextInput, { name: "password", type: "password", autoComplete: "current-password", value: password, onChange: (event) => changePassword(event.target.value), required: true })),
-                    totpRequired ? React.createElement(Field, { label: "\u4E24\u6B65\u9A8C\u8BC1\u7801", hint: "\u5BC6\u7801\u767B\u5F55\u5DF2\u5F3A\u5236\u542F\u7528\uFF1A\u8F93\u5165\u9A8C\u8BC1\u5668\u4E2D\u7684 6 \u4F4D\u9A8C\u8BC1\u7801\u6216\u4E00\u6B21\u6027\u6062\u590D\u7801" },
+                    totpRequired ? React.createElement(Field, { label: "\u9A8C\u8BC1\u7801\u6216\u6062\u590D\u7801" },
                         React.createElement(SecondFactorInput, { name: "otp", value: totp, onChange: (event) => setTotp(event.target.value), autoFocus: true, required: true })) : null,
-                    React.createElement(Button, { type: "submit", busy: busy, className: "full-width" }, totpRequired ? '验证并登录' : '使用账户密码登录'))));
+                    React.createElement(Button, { type: "submit", busy: busy, className: "full-width" }, totpRequired ? '验证并登录' : '账户密码登录'))));
     }
     function normalizeRequestOptions(options) {
         const allow = options.allowCredentials || options.allow_credentials || [];
@@ -1671,6 +1669,7 @@
         const [loading, setLoading] = useState(true);
         const [working, setWorking] = useState(false);
         const [error, setError] = useState('');
+        const [createMenuOpen, setCreateMenuOpen] = useState(false);
         const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
         const fileInput = useRef(null);
         const folderInput = useRef(null);
@@ -1977,20 +1976,22 @@
             setWorking(false);
         } };
         return React.createElement("div", { className: "page-stack files-page" },
-            React.createElement(PageHeader, { ...props, busy: loading, onRefresh: () => mode === 'recycle' ? loadRecycle() : load(listing.path), actions: React.createElement(React.Fragment, null,
-                    mode !== 'recycle' ? React.createElement(Button, { tone: "ghost", icon: "search", onClick: searchAll }, "\u641C\u7D22") : null,
-                    mode === 'files' ? React.createElement(React.Fragment, null,
-                        React.createElement(Button, { tone: "ghost", icon: "plus", onClick: () => createEntry('file') }, "\u65B0\u5EFA\u6587\u4EF6"),
-                        React.createElement(Button, { tone: "ghost", icon: "plus", onClick: () => createEntry('folder') }, "\u65B0\u5EFA\u6587\u4EF6\u5939"),
-                        React.createElement(Button, { tone: "primary", icon: "upload", busy: working, onClick: () => fileInput.current?.click() }, "\u4E0A\u4F20"),
-                        React.createElement("input", { ref: fileInput, className: "visually-hidden", type: "file", multiple: true, onChange: (event) => upload(event) }),
-                        React.createElement("input", { ref: folderInput, className: "visually-hidden", type: "file", multiple: true, ...{ webkitdirectory: '' }, onChange: (event) => upload(event) }),
-                        React.createElement("input", { ref: zipInput, className: "visually-hidden", type: "file", accept: ".zip,application/zip", onChange: (event) => upload(event, true) }),
-                        React.createElement("div", { className: `dropdown ${uploadMenuOpen ? 'is-open' : ''}` },
-                            React.createElement(Button, { tone: "ghost", icon: "more", title: "\u66F4\u591A\u4E0A\u4F20\u65B9\u5F0F", onClick: () => setUploadMenuOpen(current => !current), "aria-expanded": uploadMenuOpen }, "\u66F4\u591A"),
-                            React.createElement("div", { className: "dropdown-menu" },
-                                React.createElement("button", { onClick: () => { setUploadMenuOpen(false); folderInput.current?.click(); } }, "\u4E0A\u4F20\u6587\u4EF6\u5939"),
-                                React.createElement("button", { onClick: () => { setUploadMenuOpen(false); zipInput.current?.click(); } }, "\u4E0A\u4F20 ZIP \u5E76\u89E3\u538B")))) : null) }),
+            React.createElement(PageHeader, { ...props, busy: loading, onRefresh: () => mode === 'recycle' ? loadRecycle() : load(listing.path), actions: mode === 'files' ? React.createElement("div", { className: "file-page-actions" },
+                    React.createElement(Button, { tone: "primary", icon: "upload", busy: working, onClick: () => fileInput.current?.click() }, "\u4E0A\u4F20"),
+                    React.createElement("div", { className: `dropdown ${createMenuOpen ? 'is-open' : ''}` },
+                        React.createElement(Button, { icon: "plus", onClick: () => { setCreateMenuOpen(current => !current); setUploadMenuOpen(false); }, "aria-expanded": createMenuOpen }, "\u65B0\u5EFA"),
+                        React.createElement("div", { className: "dropdown-menu" },
+                            React.createElement("button", { onClick: () => { setCreateMenuOpen(false); createEntry('file'); } }, "\u65B0\u5EFA\u6587\u4EF6"),
+                            React.createElement("button", { onClick: () => { setCreateMenuOpen(false); createEntry('folder'); } }, "\u65B0\u5EFA\u6587\u4EF6\u5939"))),
+                    React.createElement("div", { className: `dropdown ${uploadMenuOpen ? 'is-open' : ''}` },
+                        React.createElement(Button, { tone: "ghost", icon: "more", onClick: () => { setUploadMenuOpen(current => !current); setCreateMenuOpen(false); }, "aria-expanded": uploadMenuOpen }, "\u66F4\u591A"),
+                        React.createElement("div", { className: "dropdown-menu" },
+                            React.createElement("button", { onClick: () => { setUploadMenuOpen(false); searchAll(); } }, "\u641C\u7D22\u5F53\u524D\u76EE\u5F55"),
+                            React.createElement("button", { onClick: () => { setUploadMenuOpen(false); folderInput.current?.click(); } }, "\u4E0A\u4F20\u6587\u4EF6\u5939"),
+                            React.createElement("button", { onClick: () => { setUploadMenuOpen(false); zipInput.current?.click(); } }, "\u4E0A\u4F20 ZIP \u5E76\u89E3\u538B"))),
+                    React.createElement("input", { ref: fileInput, className: "visually-hidden", type: "file", multiple: true, onChange: (event) => upload(event) }),
+                    React.createElement("input", { ref: folderInput, className: "visually-hidden", type: "file", multiple: true, ...{ webkitdirectory: '' }, onChange: (event) => upload(event) }),
+                    React.createElement("input", { ref: zipInput, className: "visually-hidden", type: "file", accept: ".zip,application/zip", onChange: (event) => upload(event, true) })) : mode !== 'recycle' ? React.createElement(Button, { tone: "ghost", icon: "search", onClick: searchAll }, "\u641C\u7D22") : null }),
             React.createElement("div", { className: "tab-bar", role: "tablist" }, [['files', '文件'], ['favorites', `收藏 ${listOf(preferences, 'favorites').length}`], ['recent', `最近 ${listOf(preferences, 'recent').length}`], ['recycle', `回收站 ${recycle.length || ''}`]].map(([value, label]) => React.createElement("button", { key: value, className: mode === value ? 'active' : '', onClick: () => void switchMode(value) }, label))),
             error ? React.createElement(ErrorState, { error: error, retry: () => mode === 'recycle' ? loadRecycle() : load(listing.path) }) : mode === 'recycle' ? React.createElement(Card, { className: "file-list-card" }, recycle.length ? recycle.map(item => React.createElement("div", { className: "file-row", key: item.id },
                 React.createElement("span", { className: "file-icon" },
@@ -2007,8 +2008,8 @@
                 React.createElement(Card, { className: "file-toolbar" },
                     React.createElement("nav", { className: "breadcrumbs", "aria-label": "\u5F53\u524D\u76EE\u5F55" }, breadcrumbs.map(crumb => React.createElement("button", { key: crumb.path, onClick: () => load(crumb.path) }, crumb.label))),
                     React.createElement("div", { className: "file-toolbar-actions" },
-                        listing.parent ? React.createElement(Button, { tone: "ghost", icon: "back", onClick: () => load(listing.parent), title: "\u8FD4\u56DE\u4E0A\u7EA7\u76EE\u5F55" }, "\u8FD4\u56DE\u4E0A\u7EA7") : null,
-                        React.createElement(Button, { tone: "ghost", icon: "copy", onClick: () => copyText(listing.path).then(() => props.notify('success', '路径已复制')).catch(() => props.openModal({ title: '当前路径', content: React.createElement(Terminal, null, listing.path) })) }, "\u590D\u5236\u8DEF\u5F84"))),
+                        listing.parent ? React.createElement(Button, { tone: "ghost", icon: "back", onClick: () => load(listing.parent), title: "\u8FD4\u56DE\u4E0A\u7EA7\u76EE\u5F55", ariaLabel: "\u8FD4\u56DE\u4E0A\u7EA7\u76EE\u5F55", className: "compact-icon-button" }) : null,
+                        React.createElement(Button, { tone: "ghost", icon: "copy", title: "\u590D\u5236\u5F53\u524D\u8DEF\u5F84", ariaLabel: "\u590D\u5236\u5F53\u524D\u8DEF\u5F84", className: "compact-icon-button", onClick: () => copyText(listing.path).then(() => props.notify('success', '路径已复制')).catch(() => props.openModal({ title: '当前路径', content: React.createElement(Terminal, null, listing.path) })) }))),
                 React.createElement("div", { className: "file-filter" },
                     React.createElement("div", { className: "search-box" },
                         React.createElement(Icon, { name: "search", size: 17 }),
@@ -2299,38 +2300,38 @@
         return React.createElement("div", { className: "page-stack" },
             React.createElement(PageHeader, { ...props, busy: loading, onRefresh: reload }),
             error ? React.createElement(ErrorState, { error: error, retry: reload }) : React.createElement(React.Fragment, null,
-                React.createElement(Card, { className: "github-auth-card" },
+                flow ? React.createElement(Card, { className: "github-device-flow" },
+                    React.createElement("div", { className: "github-identity" },
+                        React.createElement("span", { className: "github-mark" },
+                            React.createElement(Icon, { name: "github" })),
+                        React.createElement("div", null,
+                            React.createElement("h2", null, "\u7B49\u5F85 GitHub \u6388\u6743"),
+                            React.createElement("code", null, text(flow.user_code)))),
+                    React.createElement("div", { className: "row-buttons" },
+                        React.createElement(Button, { icon: "copy", onClick: () => copyText(flow.user_code).then(() => props.notify('success', '设备代码已复制')) }, "\u590D\u5236\u4EE3\u7801"),
+                        React.createElement(Button, { tone: "danger", onClick: async () => { window.clearTimeout(pollRef.current); try {
+                                await api('/api/v1/github/auth/device/cancel', { method: 'POST', body: jsonBody({ flow_id: flow.flow_id }) });
+                            }
+                            finally {
+                                setFlow(null);
+                            } } }, "\u53D6\u6D88"))) : React.createElement(Card, { className: "github-auth-card" },
                     React.createElement("div", { className: "github-identity" },
                         React.createElement("span", { className: "github-mark" },
                             React.createElement(Icon, { name: "github" })),
                         React.createElement("div", null,
                             React.createElement("h2", null, auth.connected ? `@${text(auth.login)}` : '连接 GitHub'),
-                            React.createElement("p", null, auth.connected ? `${text(auth.name || auth.scope)} · Token 仅保存在当前登录会话内存` : '推荐设备代码登录，也可以使用 Fine-grained Token。'))),
+                            auth.connected ? React.createElement("p", null, text(auth.name || auth.scope)) : null)),
                     React.createElement("div", { className: "row-buttons" }, auth.connected ? React.createElement(Button, { tone: "danger", onClick: disconnect }, "\u65AD\u5F00") : React.createElement(React.Fragment, null,
                         React.createElement(Button, { onClick: connectToken }, "Token \u767B\u5F55"),
                         auth.device_login_available !== false ? React.createElement(Button, { tone: "primary", busy: working, onClick: startDevice }, "\u8BBE\u5907\u767B\u5F55") : null))),
-                flow ? React.createElement("div", { className: "notice info" },
-                    React.createElement(Icon, { name: "info" }),
-                    React.createElement("div", null,
-                        React.createElement("strong", null,
-                            "\u8BBE\u5907\u4EE3\u7801\uFF1A",
-                            text(flow.user_code)),
-                        React.createElement("span", null, "\u5DF2\u6253\u5F00 GitHub \u9A8C\u8BC1\u9875\uFF0C\u5B8C\u6210\u6388\u6743\u540E\u4F1A\u81EA\u52A8\u66F4\u65B0\u3002")),
-                    React.createElement(Button, { icon: "copy", onClick: () => copyText(flow.user_code).then(() => props.notify('success', '设备代码已复制')) }, "\u590D\u5236"),
-                    React.createElement(Button, { tone: "danger", onClick: async () => { window.clearTimeout(pollRef.current); try {
-                            await api('/api/v1/github/auth/device/cancel', { method: 'POST', body: jsonBody({ flow_id: flow.flow_id }) });
-                        }
-                        finally {
-                            setFlow(null);
-                        } } }, "\u53D6\u6D88")) : null,
-                React.createElement(Card, null,
-                    React.createElement(SectionTitle, { title: "\u9009\u62E9\u4ED3\u5E93", subtitle: "LukePanel \u4E0D\u9884\u8BBE\u4EFB\u4F55\u4ED3\u5E93" }),
+                !flow ? React.createElement(Card, { className: "github-repo-card" },
+                    React.createElement(SectionTitle, { title: "\u9009\u62E9\u4ED3\u5E93" }),
                     React.createElement("form", { className: "repo-picker", onSubmit: (event) => { event.preventDefault(); void loadRepo(); } },
                         React.createElement(Field, { label: "\u6240\u6709\u8005" },
                             React.createElement(TextInput, { value: owner, onChange: (event) => setOwner(event.target.value), required: true })),
                         React.createElement(Field, { label: "\u4ED3\u5E93" },
                             React.createElement(TextInput, { value: repo, onChange: (event) => setRepo(event.target.value), required: true })),
-                        React.createElement(Button, { type: "submit", tone: "primary", busy: working }, "\u8BFB\u53D6\u4ED3\u5E93"))),
+                        React.createElement(Button, { type: "submit", tone: "primary", busy: working }, "\u8BFB\u53D6\u4ED3\u5E93"))) : null,
                 summary ? React.createElement(React.Fragment, null,
                     React.createElement("section", { className: "github-summary-grid" },
                         React.createElement(Card, null,
@@ -2428,8 +2429,7 @@
                                     number(importPlan.unchanged),
                                     " \u00B7 \u5220\u9664 ",
                                     number(importPlan.deleted))),
-                            React.createElement(Button, { tone: "primary", busy: working, onClick: commitImport }, "Commit \u5E76 Push")) : null)) : React.createElement(Card, null,
-                    React.createElement(EmptyState, { icon: "github", title: "\u5C1A\u672A\u9009\u62E9\u4ED3\u5E93", description: "\u586B\u5199\u4ED3\u5E93\u6240\u6709\u8005\u548C\u540D\u79F0\u540E\u8BFB\u53D6\uFF1B\u672A\u8FDE\u63A5\u65F6\u4E5F\u53EF\u4EE5\u67E5\u770B\u516C\u5F00\u4ED3\u5E93\u3002" }))));
+                            React.createElement(Button, { tone: "primary", busy: working, onClick: commitImport }, "Commit \u5E76 Push")) : null)) : null));
     }
     function SSHPage(props) {
         const [status, setStatus] = useState({});

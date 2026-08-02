@@ -8,7 +8,7 @@ def check(cond,msg):
     if not cond: errors.append(msg)
 def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 version=(ROOT/'VERSION').read_text().strip()
-check(version=='v2.0.3', f'VERSION must be v2.0.3, got {version}')
+check(version=='v2.0.4', f'VERSION must be v2.0.4, got {version}')
 source=(ROOT/'frontend/src/app.tsx').read_text()
 css=(ROOT/'frontend/src/app.css').read_text()
 html=(ROOT/'web/index.html').read_text()
@@ -61,7 +61,7 @@ check('https://' not in html and 'http://' not in html, 'runtime HTML must not l
 for asset in ['vendor-runtime.js','react-18.2.0.js','react-dom-18.2.0.js','react-bootstrap.js','app.js','app.css']:
     check((ROOT/'web/assets'/asset).is_file(), f'missing built asset {asset}')
 meta=json.loads((ROOT/'web/build-meta.json').read_text())
-check(meta.get('version')=='v2.0.3' and meta.get('framework')=='React' and meta.get('react')=='18.2.0','invalid build metadata')
+check(meta.get('version')=='v2.0.4' and meta.get('framework')=='React' and meta.get('react')=='18.2.0','invalid build metadata')
 for webfile in (ROOT/'web').rglob('*'):
     if webfile.is_file():
         peer=ROOT/'internal/server/webdist'/webfile.relative_to(ROOT/'web')
@@ -71,8 +71,8 @@ check('env(safe-area-inset-bottom)' in css, 'mobile safe-area handling missing')
 check('@media' in css and 'max-width: 680px' in css, 'phone breakpoint missing')
 # Version alignment
 for path in ['frontend/package.json','README.md','CHANGELOG.md']:
-    check('2.0.3' in (ROOT/path).read_text(), f'{path} not aligned to 2.0.3')
-check('## v2.0.3' in changelog, 'v2.0.3 changelog section missing')
+    check('2.0.4' in (ROOT/path).read_text(), f'{path} not aligned to 2.0.4')
+check('## v2.0.4' in changelog, 'v2.0.4 changelog section missing')
 if errors:
     print('STATIC AUDIT FAILED')
     for e in errors: print(' -',e)

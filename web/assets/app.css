@@ -277,15 +277,14 @@
   .login-hero h1 { margin-bottom: 15px; font-size: clamp(38px, 5vw, 66px); line-height: 1.02; letter-spacing: -.055em; }
   .login-hero p { max-width: 540px; color: #c8d3e9; font-size: 16px; line-height: 1.8; }
   .login-panel { display: grid; min-height: 100vh; place-items: center; padding: 30px; background: var(--bg); }
-  .login-card { width: min(100%, 430px); padding: clamp(24px, 4vw, 38px); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-md); }
+  .login-card { display: grid; width: min(100%, 430px); gap: 14px; padding: clamp(24px, 4vw, 38px); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-md); }
   .login-card > h2 { font-size: 26px; letter-spacing: -.035em; }
-  .login-card-title { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+  .login-card-title { display: flex; align-items: center; gap: 12px; margin-bottom: 2px; }
   .login-card-title img { width: 43px; height: 43px; border-radius: 12px; }
   .login-card-title h2 { font-size: 24px; letter-spacing: -.035em; }
   .login-card-title p { margin-top: 2px; color: var(--muted); }
   .login-card > p { margin: 7px 0 24px; color: var(--muted); }
-  .passkey-login-block { display: grid; margin-bottom: 2px; }
-  .login-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--muted-2); font-size: 11px; }
+    .login-divider { display: flex; align-items: center; gap: 12px; margin: 1px 0; color: var(--muted-2); font-size: 11px; }
   .login-divider::before, .login-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 
   .boot-screen, .fatal-layout { display: grid; min-height: 100vh; place-items: center; align-content: center; gap: 13px; padding: 24px; text-align: center; }
@@ -381,7 +380,12 @@
   .github-auth-card, .github-identity { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   .github-mark, .credential-icon { display: grid; flex: 0 0 auto; width: 42px; height: 42px; place-items: center; border-radius: 12px; background: var(--surface-soft); color: var(--text); }
   .github-identity > div { min-width: 0; flex: 1; }
-  .repo-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 9px; }
+  .repo-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .repo-picker .button { grid-column: 1 / -1; justify-self: start; min-width: 148px; }
+  .github-device-flow { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-color: color-mix(in srgb, var(--primary) 28%, var(--line)); background: color-mix(in srgb, var(--primary-soft) 48%, var(--surface)); }
+  .github-device-flow code { display: inline-block; margin-top: 5px; color: var(--primary); font-size: 20px; font-weight: 800; letter-spacing: .08em; }
+  .file-page-actions { display: flex; align-items: center; gap: 8px; }
+  .compact-icon-button { width: 40px; min-width: 40px; padding-inline: 0; }
   .workflow-list { display: grid; gap: 9px; }
   .workflow-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
 
@@ -499,10 +503,10 @@
     .list-actions .button, .row-buttons .button, .row-actions .button { flex: 1 1 auto; }
     .table-row { grid-template-columns: 1fr; }
     .table-row > span:last-child { grid-column: auto; }
-    .file-toolbar { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; }
-    .breadcrumbs { width: 100%; }
-    .file-toolbar-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); width: 100%; }
-    .file-toolbar-actions .button { width: 100%; }
+    .file-toolbar { display: flex; min-height: 58px; align-items: center; padding: 7px 9px; }
+    .breadcrumbs { width: auto; }
+    .file-toolbar-actions { display: flex; width: auto; flex: 0 0 auto; }
+    .file-toolbar-actions .button { width: 40px; }
     .file-row { min-height: 64px; padding: 9px; }
     .file-main small { max-width: 64vw; }
     .action-menu { grid-template-columns: 1fr; }
@@ -511,7 +515,7 @@
     .security-score { align-items: flex-start; }
     .score-ring { width: 82px; height: 82px; border-width: 7px; }
     .security-score > div:last-child h2 { font-size: 19px; }
-    .firewall-status-card, .recovery-banner, .github-auth-card, .github-identity { align-items: stretch; flex-direction: column; }
+    .firewall-status-card, .recovery-banner, .github-auth-card { align-items: stretch; flex-direction: column; }
     .firewall-rule-card { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
     .firewall-rule-card > .button { grid-column: 1 / -1; width: 100%; }
     .inline-form, .search-form { align-items: stretch; flex-direction: column; }
@@ -521,12 +525,12 @@
     .modal-body { max-height: calc(min(92dvh, 900px) - 63px - env(safe-area-inset-bottom)); padding-bottom: calc(18px + env(safe-area-inset-bottom)); }
     .toast-stack { top: calc(10px + env(safe-area-inset-top)); right: 10px; width: calc(100vw - 20px); }
     .login-layout { display: block; min-height: 100vh; background: var(--bg); }
-    .login-brand { min-height: auto; padding: calc(22px + env(safe-area-inset-top)) 22px 66px; }
-    .login-brand .login-hero { margin-top: 30px; }
+    .login-brand { min-height: auto; padding: calc(20px + env(safe-area-inset-top)) 22px 56px; }
+    .login-brand .login-hero { margin-top: 24px; }
     .login-brand footer, .login-hero p { display: none; }
-    .login-hero h1 { margin-bottom: 0; font-size: 32px; line-height: 1.04; }
-    .login-panel { min-height: auto; margin-top: -38px; padding: 0 12px calc(30px + env(safe-area-inset-bottom)); background: transparent; }
-    .login-card { position: relative; z-index: 2; padding: 23px 18px; border-radius: 18px; }
+    .login-hero h1 { margin-bottom: 0; font-size: 30px; line-height: 1.06; }
+    .login-panel { min-height: auto; margin-top: -34px; padding: 0 12px calc(26px + env(safe-area-inset-bottom)); background: transparent; }
+    .login-card { position: relative; z-index: 2; gap: 12px; padding: 20px 18px; border-radius: 18px; }
   }
   @media (max-width: 380px) {
     .content { padding-inline: 9px; }
@@ -552,7 +556,7 @@
   }
 }
 
-/* v2.0.3 responsive hardening: prevent min-content and hidden-file controls from escaping cards. */
+/* v2.0.4 responsive hardening: prevent min-content and hidden-file controls from escaping cards. */
 @layer components {
   .file-button { position: relative; overflow: hidden; }
   .file-button input[type="file"] { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
@@ -580,9 +584,16 @@
     .sidebar .sidebar-close { display: inline-grid; }
   }
   @media (max-width: 680px) {
-    .files-page .page-actions { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-    .files-page .page-actions > .button, .files-page .page-actions > .dropdown, .files-page .page-actions .dropdown > .button { width: 100%; min-width: 0; }
-    .files-page .page-actions .button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .files-page .page-actions { display: block; width: 100%; }
+    .file-page-actions { display: grid; width: 100%; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
+    .file-page-actions > .button { width: 100%; }
+    .file-page-actions .dropdown > .button { min-width: 88px; }
+    .github-auth-card, .github-device-flow { align-items: stretch; flex-direction: column; }
+    .github-identity { align-items: center; flex-direction: row; }
+    .github-auth-card .row-buttons, .github-device-flow .row-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .repo-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .repo-picker .button { width: 100%; justify-self: stretch; }
+    .toast { padding: 10px 12px; }
   }
   @media (max-width: 380px) {
     .security-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }

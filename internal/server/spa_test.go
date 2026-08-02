@@ -41,6 +41,9 @@ func TestSPAStillServesReactStaticAssets(t *testing.T) {
 		t.Fatalf("index status = %d", indexRecorder.Code)
 	}
 	index := indexRecorder.Body.String()
+	if !strings.Contains(index, "/assets/app.js?v=v2.0.4") || !strings.Contains(index, "/assets/app.css?v=v2.0.4") {
+		t.Fatal("versioned frontend asset URLs are missing from index")
+	}
 	for _, asset := range []string{"/assets/vendor-runtime.js", "/assets/react-18.2.0.js", "/assets/react-dom-18.2.0.js", "/assets/react-bootstrap.js", "/assets/app.js"} {
 		if !strings.Contains(index, asset) {
 			t.Fatalf("React runtime asset %s is missing from index", asset)
@@ -56,6 +59,9 @@ func TestSPAStillServesReactStaticAssets(t *testing.T) {
 		}
 		if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "javascript") {
 			t.Fatalf("unexpected JavaScript content type %q for %s", contentType, asset)
+		}
+		if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "no-cache, must-revalidate" {
+			t.Fatalf("unexpected asset cache policy %q for %s", cacheControl, asset)
 		}
 	}
 }
