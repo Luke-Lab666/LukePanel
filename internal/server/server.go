@@ -76,7 +76,6 @@ func New(cfg config.Config, configPath, version, githubClientID string, logger *
 	mux.HandleFunc("/api/v1/auth/passkey/register/begin", s.requireAuth(s.passkeyRegisterBegin))
 	mux.HandleFunc("/api/v1/auth/passkey/register/finish", s.requireAuth(s.passkeyRegisterFinish))
 	mux.HandleFunc("/api/v1/auth/passkeys", s.requireAuth(s.passkeyManagement))
-	mux.HandleFunc("/api/v1/auth/trusted-devices", s.requireAuth(s.trustedDeviceManagement))
 	mux.HandleFunc("/api/v1/auth/logout", s.requireAuth(s.logout))
 	mux.HandleFunc("/api/v1/auth/password", s.requireAuth(s.changePassword))
 	mux.HandleFunc("/api/v1/auth/account", s.requireAuth(s.changeAccount))
@@ -253,11 +252,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Username    string `json:"username"`
-		Password    string `json:"password"`
-		OTP         string `json:"otp"`
-		TrustDevice bool   `json:"trust_device"`
-		DeviceName  string `json:"device_name"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+		OTP      string `json:"otp"`
 	}
 	if decodeJSON(w, r, 4096, &req) != nil {
 		return
@@ -272,8 +269,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "用户名或密码错误")
 		return
 	}
-	trustedDevice := totpEnabled && s.trustedDeviceValid(r)
-	if totpEnabled && !trustedDevice {
+	if totpEnabled {
 		if isSecondFactorMissing(req.OTP) {
 			writeErrorCode(w, http.StatusUnauthorized, "请输入身份验证器验证码或恢复码", "totp_required")
 			return
@@ -288,11 +284,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		if recoveryUsed {
 			s.audit.Write(AuditEvent{IP: ip, User: req.Username, Action: "auth.login.recovery", Result: "success"})
 		}
-		if req.TrustDevice {
-			_ = s.createTrustedDevice(w, r, req.DeviceName)
-		}
 	}
 	s.establishSession(w, r, req.Username, "auth.login")
+}
+
+func (s *Server) expireLegacyTrustedDeviceCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{Name: "lukepanel_trusted_device", Value: "", Path: "/", HttpOnly: true, Secure: s.cfg.SecureCookie, SameSite: http.SameSiteStrictMode, MaxAge: -1})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -307,6 +304,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		s.sessions.Delete(cookie.Value)
 	}
 	http.SetCookie(w, &http.Cookie{Name: "lukepanel_session", Value: "", Path: "/", HttpOnly: true, Secure: s.cfg.SecureCookie, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	s.expireLegacyTrustedDeviceCookie(w)
 	s.audit.Write(AuditEvent{IP: clientIP(r, s.cfg.TrustedProxy), User: session.Username, Action: "auth.logout", Target: session.ID, Result: "success"})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -319,6 +317,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		CurrentPassword string `json:"current_password"`
 		NewPassword     string `json:"new_password"`
+		OTP             string `json:"otp"`
 	}
 	if decodeJSON(w, r, 8192, &req) != nil {
 		return
@@ -330,6 +329,20 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		s.audit.Write(AuditEvent{IP: ip, User: session.Username, Action: "auth.password.change", Result: "failed"})
 		writeError(w, http.StatusUnauthorized, "当前密码错误")
 		return
+	}
+	if s.totpEnabled() {
+		if isSecondFactorMissing(req.OTP) {
+			writeErrorCode(w, http.StatusUnauthorized, "请输入身份验证器验证码或恢复码", "totp_required")
+			return
+		}
+		ok, recoveryUsed, verifyErr := s.verifySecondFactor(req.OTP, true)
+		if verifyErr != nil || !ok {
+			writeErrorCode(w, http.StatusUnauthorized, "验证码或恢复码不正确", "totp_invalid")
+			return
+		}
+		if recoveryUsed {
+			s.audit.Write(AuditEvent{IP: ip, User: session.Username, Action: "auth.password.change.recovery", Result: "success"})
+		}
 	}
 	s.configMu.RLock()
 	adminUser := s.cfg.AdminUser
@@ -371,6 +384,7 @@ func (s *Server) changeAccount(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		CurrentPassword string `json:"current_password"`
 		Username        string `json:"username"`
+		OTP             string `json:"otp"`
 	}
 	if decodeJSON(w, r, 4096, &req) != nil {
 		return
@@ -387,6 +401,21 @@ func (s *Server) changeAccount(w http.ResponseWriter, r *http.Request) {
 	if err != nil || !valid {
 		writeError(w, http.StatusUnauthorized, "当前密码错误")
 		return
+	}
+	if s.totpEnabled() {
+		if isSecondFactorMissing(req.OTP) {
+			writeErrorCode(w, http.StatusUnauthorized, "请输入身份验证器验证码或恢复码", "totp_required")
+			return
+		}
+		ok, recoveryUsed, verifyErr := s.verifySecondFactor(req.OTP, true)
+		if verifyErr != nil || !ok {
+			writeErrorCode(w, http.StatusUnauthorized, "验证码或恢复码不正确", "totp_invalid")
+			return
+		}
+		if recoveryUsed {
+			session, _ := sessionFromContext(r)
+			s.audit.Write(AuditEvent{IP: clientIP(r, s.cfg.TrustedProxy), User: session.Username, Action: "auth.username.change.recovery", Result: "success"})
+		}
 	}
 	if req.Username == oldUser {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": oldUser, "revoked": 0})
@@ -420,16 +449,36 @@ func (s *Server) elevate(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Password string `json:"password"`
+		OTP      string `json:"otp"`
 	}
 	if decodeJSON(w, r, 4096, &req) != nil {
 		return
 	}
 	session, _ := sessionFromContext(r)
-	valid, err := auth.VerifyPassword(req.Password, s.cfg.PasswordHash)
+	s.configMu.RLock()
+	passwordHash := s.cfg.PasswordHash
+	s.configMu.RUnlock()
+	valid, err := auth.VerifyPassword(req.Password, passwordHash)
 	if err != nil || !valid {
-		s.auditRequest(r, "auth.elevate", session.ID, "failed", "")
+		s.auditRequest(r, "auth.elevate", session.ID, "failed", "password")
 		writeError(w, http.StatusUnauthorized, "当前密码错误")
 		return
+	}
+	if s.totpEnabled() {
+		if isSecondFactorMissing(req.OTP) {
+			s.auditRequest(r, "auth.elevate", session.ID, "failed", "totp required")
+			writeErrorCode(w, http.StatusUnauthorized, "请输入身份验证器验证码或恢复码", "totp_required")
+			return
+		}
+		ok, recoveryUsed, verifyErr := s.verifySecondFactor(req.OTP, true)
+		if verifyErr != nil || !ok {
+			s.auditRequest(r, "auth.elevate", session.ID, "failed", "totp invalid")
+			writeErrorCode(w, http.StatusUnauthorized, "验证码或恢复码不正确", "totp_invalid")
+			return
+		}
+		if recoveryUsed {
+			s.auditRequest(r, "auth.elevate.recovery", session.ID, "success", "")
+		}
 	}
 	s.elevatedMu.Lock()
 	s.elevated[session.ID] = time.Now().Add(5 * time.Minute)
@@ -444,7 +493,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, _ := sessionFromContext(r)
-	writeJSON(w, http.StatusOK, map[string]any{"username": session.Username, "csrf_token": session.CSRFToken, "session_id": session.ID})
+	writeJSON(w, http.StatusOK, map[string]any{"username": session.Username, "csrf_token": session.CSRFToken, "session_id": session.ID, "totp_enabled": s.totpEnabled()})
 }
 
 func (s *Server) sessionManagement(w http.ResponseWriter, r *http.Request) {
@@ -1594,7 +1643,7 @@ func (s *Server) elevationActive(r *http.Request) bool {
 
 func (s *Server) requireElevation(w http.ResponseWriter, r *http.Request) bool {
 	if !s.elevationActive(r) {
-		writeError(w, http.StatusForbidden, "需要二次验证后执行此操作")
+		writeErrorCode(w, http.StatusForbidden, "需要二次验证后执行此操作", "elevation_required")
 		return false
 	}
 	return true
@@ -1608,12 +1657,12 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		cookie, err := r.Cookie("lukepanel_session")
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "未登录")
+			writeErrorCode(w, http.StatusUnauthorized, "未登录", "session_required")
 			return
 		}
 		session, ok := s.sessions.Get(cookie.Value)
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "会话已过期")
+			writeErrorCode(w, http.StatusUnauthorized, "会话已过期", "session_expired")
 			return
 		}
 		if site := strings.ToLower(r.Header.Get("Sec-Fetch-Site")); site == "cross-site" {

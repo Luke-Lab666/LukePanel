@@ -139,6 +139,9 @@ func VerifyPasskey(response PasskeyAssertionResponse, credential PasskeyCredenti
 	if flags&0x01 == 0 {
 		return 0, errors.New("Passkey 未确认用户存在")
 	}
+	if flags&0x04 == 0 {
+		return 0, errors.New("Passkey 未完成人脸、指纹或设备 PIN 验证")
+	}
 	signCount := binary.BigEndian.Uint32(authData[33:37])
 	sig, err := decodeBase64URL(response.Response.Signature)
 	if err != nil {
@@ -194,8 +197,8 @@ func parseAttestedAuthData(data []byte, rpID string) ([]byte, []byte, []byte, ui
 		return nil, nil, nil, 0, errors.New("Passkey 域名校验失败")
 	}
 	flags := data[32]
-	if flags&0x01 == 0 || flags&0x40 == 0 {
-		return nil, nil, nil, 0, errors.New("Passkey 注册数据缺少用户确认或凭据")
+	if flags&0x01 == 0 || flags&0x04 == 0 || flags&0x40 == 0 {
+		return nil, nil, nil, 0, errors.New("Passkey 注册必须完成用户确认、本机验证并包含凭据")
 	}
 	signCount := binary.BigEndian.Uint32(data[33:37])
 	offset := 37 + 16

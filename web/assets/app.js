@@ -59,7 +59,7 @@
         chevron: ['m9 18 6-6-6-6'], check: ['m5 12 4 4L19 6'], warning: ['M12 3 2 21h20L12 3Z', 'M12 9v5', 'M12 18h.01'],
         terminal: ['m5 7 4 4-4 4', 'M11 17h8'], user: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M4 21a8 8 0 0 1 16 0'],
         key: ['M21 2 13.6 9.4', 'M15 4l5 5', 'M11 13a5 5 0 1 1-7-7 5 5 0 0 1 7 7Z'], copy: ['M8 8h12v12H8z', 'M4 4h12v4', 'M4 4v12h4'],
-        info: ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z', 'M12 10v7', 'M12 7h.01'], more: ['M5 12h.01', 'M12 12h.01', 'M19 12h.01']
+        info: ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z', 'M12 10v7', 'M12 7h.01'], more: ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'], logout: ['M10 5H5v14h5', 'm15 16 4-4-4-4', 'M19 12H9']
     };
     function Icon({ name, size = 20, className = '' }) {
         const paths = ICONS[name] || ICONS.info;
@@ -140,12 +140,11 @@
             throw new ApiError(cause instanceof Error ? cause.message : '网络连接失败', 0, {});
         }
         const payload = await parsePayload(response);
-        if (response.status === 401)
+        const body = asObject(payload);
+        if (response.status === 401 && (body.code === 'session_required' || body.code === 'session_expired'))
             unauthorizedHandler?.();
-        if (!response.ok) {
-            const body = asObject(payload);
+        if (!response.ok)
             throw new ApiError(text(body.error, `请求失败（${response.status}）`), response.status, body);
-        }
         return payload;
     }
     async function secureApi(url, init = {}) {
@@ -153,7 +152,7 @@
             return await api(url, init);
         }
         catch (cause) {
-            if (!(cause instanceof ApiError) || cause.status !== 403 || !cause.message.includes('二次验证') || !elevationHandler)
+            if (!(cause instanceof ApiError) || cause.status !== 403 || (cause.code !== 'elevation_required' && !cause.message.includes('二次验证')) || !elevationHandler)
                 throw cause;
             await elevationHandler();
             return api(url, init);
@@ -261,7 +260,7 @@
         React.createElement("summary", null, title),
         React.createElement(Terminal, null, JSON.stringify(data, null, 2))); }
     function PageHeader({ route, navigate, busy, onRefresh, actions }) {
-        return React.createElement("header", { className: "page-header" },
+        return React.createElement("header", { className: `page-header ${actions ? 'has-custom-actions' : ''}` },
             React.createElement("div", { className: "page-heading" },
                 route.parent ? React.createElement("button", { className: "back-button", onClick: () => navigate(route.parent), "aria-label": `返回${ROUTE_MAP.get(route.parent)?.title || '上级页面'}` },
                     React.createElement(Icon, { name: "back", size: 21 })) : null,
@@ -345,30 +344,31 @@
         const [totp, setTotp] = useState('');
         const [totpRequired, setTotpRequired] = useState(false);
         const [busy, setBusy] = useState(false);
-        const submit = async (event) => { event.preventDefault(); setBusy(true); try {
-            const result = await api('/api/v1/auth/login', { method: 'POST', body: jsonBody({ username: username.trim(), password, otp: totp.trim() }) });
-            if (result.totp_required) {
-                setTotpRequired(true);
-                notify('info', '请输入两步验证码');
-                return;
+        const changeUsername = (value) => { setUsername(value); setTotpRequired(false); setTotp(''); };
+        const changePassword = (value) => { setPassword(value); setTotpRequired(false); setTotp(''); };
+        const submit = async (event) => {
+            event.preventDefault();
+            setBusy(true);
+            try {
+                const result = await api('/api/v1/auth/login', { method: 'POST', body: jsonBody({ username: username.trim(), password, otp: totp.trim() }) });
+                onAuthenticated(result);
             }
-            onAuthenticated(result);
-        }
-        catch (cause) {
-            if (cause instanceof ApiError && cause.code === 'totp_required') {
-                setTotpRequired(true);
-                notify('info', '请输入两步验证码');
+            catch (cause) {
+                if (cause instanceof ApiError && (cause.code === 'totp_required' || cause.code === 'totp_invalid')) {
+                    setTotpRequired(true);
+                    notify(cause.code === 'totp_required' ? 'info' : 'error', cause.code === 'totp_required' ? '还需要两步验证码' : '验证码不正确', cause.code === 'totp_invalid' ? cause.message : undefined);
+                }
+                else
+                    notify('error', '登录失败', errorDetail(cause));
             }
-            else
-                notify('error', '登录失败', errorDetail(cause));
-        }
-        finally {
-            setBusy(false);
-        } };
+            finally {
+                setBusy(false);
+            }
+        };
         const passkey = async () => {
             setBusy(true);
             try {
-                const begin = await api('/api/v1/auth/passkey/login/begin', { method: 'POST', body: jsonBody({ username: username.trim() }) });
+                const begin = await api('/api/v1/auth/passkey/login/begin', { method: 'POST', body: '{}' });
                 const publicKey = normalizeRequestOptions(begin.public_key || begin.options || begin);
                 const credential = await navigator.credentials.get({ publicKey });
                 if (!credential)
@@ -377,7 +377,10 @@
                 onAuthenticated(result);
             }
             catch (cause) {
-                notify('error', 'Passkey 登录失败', errorDetail(cause));
+                if (cause instanceof DOMException && cause.name === 'NotAllowedError')
+                    notify('info', '已取消 Passkey 登录');
+                else
+                    notify('error', 'Passkey 登录失败', errorDetail(cause));
             }
             finally {
                 setBusy(false);
@@ -404,21 +407,22 @@
                         React.createElement("img", { src: "/assets/favicon-64.png", alt: "" }),
                         React.createElement("div", null,
                             React.createElement("h2", null, "\u767B\u5F55 LukePanel"),
-                            React.createElement("p", null, "\u4F7F\u7528\u9762\u677F\u8D26\u6237\u7EE7\u7EED"))),
+                            React.createElement("p", null, "\u9009\u62E9 Passkey \u6216\u7BA1\u7406\u5458\u8D26\u6237"))),
+                    typeof PublicKeyCredential !== 'undefined' ? React.createElement("div", { className: "passkey-login-block" },
+                        React.createElement(Button, { icon: "key", tone: "primary", busy: busy, onClick: passkey, className: "full-width" }, "\u4F7F\u7528 Passkey \u767B\u5F55"),
+                        React.createElement("small", null, "\u65E0\u9700\u5148\u8F93\u5165\u7528\u6237\u540D\u3001\u5BC6\u7801\u6216\u4E24\u6B65\u9A8C\u8BC1\u7801")) : null,
+                    React.createElement("div", { className: "login-divider" },
+                        React.createElement("span", null, "\u4F7F\u7528\u7BA1\u7406\u5458\u8D26\u6237")),
                     React.createElement(Field, { label: "\u7528\u6237\u540D" },
-                        React.createElement(TextInput, { name: "username", autoCapitalize: "none", autoCorrect: "off", autoComplete: "username", value: username, onChange: (event) => setUsername(event.target.value), required: true })),
+                        React.createElement(TextInput, { name: "username", autoCapitalize: "none", autoCorrect: "off", autoComplete: "username", value: username, onChange: (event) => changeUsername(event.target.value), required: true })),
                     React.createElement(Field, { label: "\u5BC6\u7801" },
-                        React.createElement(TextInput, { name: "password", type: "password", autoComplete: "current-password", value: password, onChange: (event) => setPassword(event.target.value), required: true })),
-                    totpRequired ? React.createElement(Field, { label: "\u4E24\u6B65\u9A8C\u8BC1\u7801", hint: "\u8F93\u5165\u9A8C\u8BC1\u5668\u4E2D\u7684 6 \u4F4D\u9A8C\u8BC1\u7801\u6216\u6062\u590D\u7801" },
+                        React.createElement(TextInput, { name: "password", type: "password", autoComplete: "current-password", value: password, onChange: (event) => changePassword(event.target.value), required: true })),
+                    totpRequired ? React.createElement(Field, { label: "\u4E24\u6B65\u9A8C\u8BC1\u7801", hint: "\u5BC6\u7801\u767B\u5F55\u5DF2\u5F3A\u5236\u542F\u7528\uFF1A\u8F93\u5165\u9A8C\u8BC1\u5668\u4E2D\u7684 6 \u4F4D\u9A8C\u8BC1\u7801\u6216\u4E00\u6B21\u6027\u6062\u590D\u7801" },
                         React.createElement(TextInput, { name: "otp", inputMode: "numeric", autoComplete: "one-time-code", value: totp, onChange: (event) => setTotp(event.target.value), autoFocus: true, required: true })) : null,
-                    React.createElement(Button, { type: "submit", tone: "primary", busy: busy, className: "full-width" }, "\u767B\u5F55"),
-                    typeof PublicKeyCredential !== 'undefined' ? React.createElement(React.Fragment, null,
-                        React.createElement("div", { className: "login-divider" },
-                            React.createElement("span", null, "\u6216")),
-                        React.createElement(Button, { icon: "key", busy: busy, onClick: passkey, className: "full-width" }, "\u4F7F\u7528 Passkey")) : null,
+                    React.createElement(Button, { type: "submit", busy: busy, className: "full-width" }, "\u4F7F\u7528\u8D26\u6237\u5BC6\u7801\u767B\u5F55"),
                     React.createElement("p", { className: "login-note" },
                         React.createElement(Icon, { name: "security", size: 16 }),
-                        "\u767B\u5F55\u72B6\u6001\u4EC5\u4FDD\u5B58\u5728\u5F53\u524D\u6D4F\u89C8\u5668\u5B89\u5168\u4F1A\u8BDD\u4E2D"))));
+                        "Passkey \u72EC\u7ACB\u5B8C\u6210\u5F3A\u8BA4\u8BC1\uFF1B\u8D26\u6237\u5BC6\u7801\u767B\u5F55\u5728\u5F00\u542F TOTP \u540E\u6BCF\u6B21\u90FD\u5FC5\u987B\u9A8C\u8BC1"))));
     }
     function normalizeRequestOptions(options) {
         const allow = options.allowCredentials || options.allow_credentials || [];
@@ -426,7 +430,7 @@
             challenge: typeof options.challenge === 'string' ? base64urlToBuffer(options.challenge) : options.challenge,
             rpId: options.rpId || options.rp_id,
             timeout: options.timeout || 60000,
-            userVerification: options.userVerification || options.user_verification || 'preferred',
+            userVerification: options.userVerification || options.user_verification || 'required',
             allowCredentials: allow.map((item) => ({ type: item.type || 'public-key', id: typeof item.id === 'string' ? base64urlToBuffer(item.id) : item.id, transports: item.transports }))
         };
     }
@@ -441,7 +445,7 @@
             pubKeyCredParams: options.pubKeyCredParams || options.pub_key_cred_params || [{ type: 'public-key', alg: -7 }],
             timeout: options.timeout || 60000,
             attestation: options.attestation || 'none',
-            authenticatorSelection: selection ? { residentKey: selection.residentKey || selection.resident_key, userVerification: selection.userVerification || selection.user_verification } : undefined,
+            authenticatorSelection: selection ? { residentKey: selection.residentKey || selection.resident_key || 'required', userVerification: selection.userVerification || selection.user_verification || 'required' } : { residentKey: 'required', userVerification: 'required' },
             excludeCredentials: excluded.map((item) => ({ type: item.type || 'public-key', id: typeof item.id === 'string' ? base64urlToBuffer(item.id) : item.id, transports: item.transports }))
         };
     }
@@ -1979,9 +1983,10 @@
                     React.createElement(Button, { tone: "primary", onClick: () => recycleAction(item, 'restore') }, "\u6062\u590D"),
                     React.createElement(Button, { tone: "danger", onClick: () => recycleAction(item, 'purge') }, "\u6C38\u4E45\u5220\u9664")))) : !loading ? React.createElement(EmptyState, { icon: "trash", title: "\u56DE\u6536\u7AD9\u662F\u7A7A\u7684" }) : React.createElement(LoadingState, null)) : React.createElement(React.Fragment, null,
                 React.createElement(Card, { className: "file-toolbar" },
-                    React.createElement(Button, { tone: "ghost", icon: "back", disabled: !listing.parent, onClick: () => listing.parent && load(listing.parent), title: "\u8FD4\u56DE\u4E0A\u7EA7\u76EE\u5F55" }),
                     React.createElement("nav", { className: "breadcrumbs", "aria-label": "\u5F53\u524D\u76EE\u5F55" }, breadcrumbs.map(crumb => React.createElement("button", { key: crumb.path, onClick: () => load(crumb.path) }, crumb.label))),
-                    React.createElement(Button, { tone: "ghost", icon: "copy", onClick: () => copyText(listing.path).then(() => props.notify('success', '路径已复制')).catch(() => props.openModal({ title: '当前路径', content: React.createElement(Terminal, null, listing.path) })) }, "\u590D\u5236\u8DEF\u5F84")),
+                    React.createElement("div", { className: "file-toolbar-actions" },
+                        listing.parent ? React.createElement(Button, { tone: "ghost", icon: "back", onClick: () => load(listing.parent), title: "\u8FD4\u56DE\u4E0A\u7EA7\u76EE\u5F55" }, "\u8FD4\u56DE\u4E0A\u7EA7") : null,
+                        React.createElement(Button, { tone: "ghost", icon: "copy", onClick: () => copyText(listing.path).then(() => props.notify('success', '路径已复制')).catch(() => props.openModal({ title: '当前路径', content: React.createElement(Terminal, null, listing.path) })) }, "\u590D\u5236\u8DEF\u5F84"))),
                 React.createElement("div", { className: "file-filter" },
                     React.createElement("div", { className: "search-box" },
                         React.createElement(Icon, { name: "search", size: 17 }),
@@ -2961,24 +2966,22 @@
         const [sessions, setSessions] = useState([]);
         const [currentSession, setCurrentSession] = useState('');
         const [passkeys, setPasskeys] = useState([]);
-        const [devices, setDevices] = useState([]);
         const [totp, setTotp] = useState({});
-        const [account, setAccount] = useState({ username: props.username, current_password: '' });
-        const [password, setPassword] = useState({ current_password: '', new_password: '', confirm: '' });
+        const [account, setAccount] = useState({ username: props.username, current_password: '', otp: '' });
+        const [password, setPassword] = useState({ current_password: '', new_password: '', confirm: '', otp: '' });
         const [refreshSeconds, setRefreshSeconds] = useState(10);
         const [passkeyName, setPasskeyName] = useState('');
         const [loading, setLoading] = useState(true);
         const [working, setWorking] = useState(false);
         const [error, setError] = useState('');
         const reload = useCallback(async () => { setLoading(true); setError(''); try {
-            const [a, b, c, d, e] = await Promise.all([api('/api/v1/settings'), api('/api/v1/auth/sessions'), api('/api/v1/auth/passkeys'), api('/api/v1/auth/trusted-devices'), api('/api/v1/auth/totp/status')]);
+            const [a, b, c, d] = await Promise.all([api('/api/v1/settings'), api('/api/v1/auth/sessions'), api('/api/v1/auth/passkeys'), api('/api/v1/auth/totp/status')]);
             const config = asObject(a), sessionData = asObject(b);
             setSettings(config);
             setSessions(listOf(sessionData, 'sessions'));
             setCurrentSession(text(sessionData.current, ''));
             setPasskeys(listOf(c, 'passkeys'));
-            setDevices(listOf(d, 'devices'));
-            setTotp(asObject(e));
+            setTotp(asObject(d));
             setAccount(current => ({ ...current, username: text(config.admin_user, props.username) }));
             setRefreshSeconds(number(config.auto_refresh_seconds, 10));
         }
@@ -3017,14 +3020,9 @@
                 React.createElement("div", { className: "form-actions" },
                     React.createElement(Button, { onClick: props.closeModal }, "\u53D6\u6D88"),
                     React.createElement(Button, { type: "submit", tone: "primary" }, "\u9A8C\u8BC1\u5E76\u5F00\u542F"))) }); });
-        const codeAction = (title, description, endpoint, success, destructive = false) => props.openModal({ title, content: React.createElement("form", { className: "form-stack", onSubmit: async (event) => { event.preventDefault(); const code = String(new FormData(event.currentTarget).get('code') || '').trim(); await run(`${title}失败`, async () => { const out = asObject(await secureApi(endpoint, { method: 'POST', body: jsonBody({ code }) })); props.closeModal(); if (out.recovery_codes)
-                    recoveryModal(listOf(out.recovery_codes)); await reload(); props.notify('success', success); }); } },
-                React.createElement("p", null, description),
-                React.createElement(Field, { label: "\u9A8C\u8BC1\u7801\u6216\u6062\u590D\u7801" },
-                    React.createElement(TextInput, { name: "code", required: true, autoFocus: true, autoComplete: "one-time-code" })),
-                React.createElement("div", { className: "form-actions" },
-                    React.createElement(Button, { onClick: props.closeModal }, "\u53D6\u6D88"),
-                    React.createElement(Button, { type: "submit", tone: destructive ? 'danger' : 'primary' }, destructive ? '确认关闭' : '确认'))) });
+        const codeAction = async (title, description, endpoint, success, destructive = false) => { if (!await props.confirm(title, description, destructive ? '确认关闭' : '继续', destructive))
+            return; await run(`${title}失败`, async () => { const out = asObject(await secureApi(endpoint, { method: 'POST', body: '{}' })); if (out.recovery_codes)
+            recoveryModal(listOf(out.recovery_codes)); await reload(); props.notify('success', success); }); };
         const registerPasskey = () => run('Passkey 注册失败', async () => { if (!window.PublicKeyCredential || !navigator.credentials)
             throw new Error('当前浏览器不支持 Passkey'); const name = passkeyName.trim() || navigator.platform || '当前设备'; const begin = asObject(await secureApi('/api/v1/auth/passkey/register/begin', { method: 'POST', body: jsonBody({ name }) })); const credential = await navigator.credentials.create({ publicKey: normalizeCreationOptions(begin.public_key || begin.options || begin) }); if (!credential)
             throw new Error('未完成 Passkey 创建'); await secureApi('/api/v1/auth/passkey/register/finish', { method: 'POST', body: jsonBody({ flow_id: begin.flow_id, name, credential: serializeCredential(credential) }) }); setPasskeyName(''); await reload(); props.notify('success', 'Passkey 已添加'); });
@@ -3034,24 +3032,28 @@
                 React.createElement("div", { className: "settings-grid" },
                     React.createElement(Card, { className: "setting-card" },
                         React.createElement(SectionTitle, { title: "\u7BA1\u7406\u5458\u8D26\u6237", subtitle: "\u4FEE\u6539\u7528\u6237\u540D\u540E\u4F1A\u64A4\u9500\u5176\u4ED6\u767B\u5F55\u4F1A\u8BDD" }),
-                        React.createElement("form", { className: "form-stack", onSubmit: (event) => { event.preventDefault(); void run('用户名修改失败', async () => { await api('/api/v1/auth/account', { method: 'PATCH', body: jsonBody({ username: account.username.trim(), current_password: account.current_password }) }); setAccount(current => ({ ...current, current_password: '' })); await reload(); props.notify('success', '管理员用户名已更新'); }); } },
+                        React.createElement("form", { className: "form-stack", onSubmit: (event) => { event.preventDefault(); void run('用户名修改失败', async () => { await api('/api/v1/auth/account', { method: 'PATCH', body: jsonBody({ username: account.username.trim(), current_password: account.current_password, otp: account.otp.trim() }) }); setAccount(current => ({ ...current, current_password: '', otp: '' })); await reload(); props.notify('success', '管理员用户名已更新'); }); } },
                             React.createElement(Field, { label: "\u7BA1\u7406\u5458\u7528\u6237\u540D" },
                                 React.createElement(TextInput, { value: account.username, onChange: (event) => setAccount(current => ({ ...current, username: event.target.value })), autoCapitalize: "none", required: true })),
                             React.createElement(Field, { label: "\u5F53\u524D\u5BC6\u7801" },
                                 React.createElement(TextInput, { type: "password", value: account.current_password, onChange: (event) => setAccount(current => ({ ...current, current_password: event.target.value })), autoComplete: "current-password", required: true })),
+                            totp.enabled ? React.createElement(Field, { label: "\u4E24\u6B65\u9A8C\u8BC1\u7801\u6216\u6062\u590D\u7801" },
+                                React.createElement(TextInput, { value: account.otp, onChange: (event) => setAccount(current => ({ ...current, otp: event.target.value })), inputMode: "numeric", autoComplete: "one-time-code", required: true })) : null,
                             React.createElement(Button, { type: "submit", tone: "primary", busy: working }, "\u4FDD\u5B58\u7528\u6237\u540D"))),
                     React.createElement(Card, { className: "setting-card" },
                         React.createElement(SectionTitle, { title: "\u4FEE\u6539\u5BC6\u7801", subtitle: "\u65B0\u5BC6\u7801\u5FC5\u987B\u6EE1\u8DB3\u540E\u7AEF\u5B89\u5168\u5F3A\u5EA6\u8981\u6C42" }),
                         React.createElement("form", { className: "form-stack", onSubmit: (event) => { event.preventDefault(); if (password.new_password !== password.confirm) {
                                 props.notify('warning', '两次输入的新密码不一致');
                                 return;
-                            } void run('密码修改失败', async () => { await api('/api/v1/auth/password', { method: 'POST', body: jsonBody({ current_password: password.current_password, new_password: password.new_password }) }); setPassword({ current_password: '', new_password: '', confirm: '' }); await reload(); props.notify('success', '密码已修改，其他会话已撤销'); }); } },
+                            } void run('密码修改失败', async () => { await api('/api/v1/auth/password', { method: 'POST', body: jsonBody({ current_password: password.current_password, new_password: password.new_password, otp: password.otp.trim() }) }); setPassword({ current_password: '', new_password: '', confirm: '', otp: '' }); await reload(); props.notify('success', '密码已修改，其他会话已撤销'); }); } },
                             React.createElement(Field, { label: "\u5F53\u524D\u5BC6\u7801" },
                                 React.createElement(TextInput, { type: "password", value: password.current_password, onChange: (event) => setPassword(current => ({ ...current, current_password: event.target.value })), autoComplete: "current-password", required: true })),
                             React.createElement(Field, { label: "\u65B0\u5BC6\u7801" },
                                 React.createElement(TextInput, { type: "password", value: password.new_password, onChange: (event) => setPassword(current => ({ ...current, new_password: event.target.value })), autoComplete: "new-password", required: true })),
                             React.createElement(Field, { label: "\u786E\u8BA4\u65B0\u5BC6\u7801" },
                                 React.createElement(TextInput, { type: "password", value: password.confirm, onChange: (event) => setPassword(current => ({ ...current, confirm: event.target.value })), autoComplete: "new-password", required: true })),
+                            totp.enabled ? React.createElement(Field, { label: "\u4E24\u6B65\u9A8C\u8BC1\u7801\u6216\u6062\u590D\u7801" },
+                                React.createElement(TextInput, { value: password.otp, onChange: (event) => setPassword(current => ({ ...current, otp: event.target.value })), inputMode: "numeric", autoComplete: "one-time-code", required: true })) : null,
                             React.createElement(Button, { type: "submit", tone: "primary", busy: working }, "\u4FEE\u6539\u5BC6\u7801"))),
                     React.createElement(Card, { className: "setting-card" },
                         React.createElement(SectionTitle, { title: "\u4E24\u6B65\u9A8C\u8BC1", subtitle: "\u8EAB\u4EFD\u9A8C\u8BC1\u5668\u548C\u4E00\u6B21\u6027\u6062\u590D\u7801", actions: React.createElement(Badge, { tone: totp.enabled ? 'success' : 'neutral' }, totp.enabled ? '已开启' : '未开启') }),
@@ -3073,7 +3075,7 @@
                             React.createElement(KeyValue, { label: "\u76D1\u542C", value: text(settings.listen), mono: true }),
                             React.createElement(KeyValue, { label: "HTTPS Cookie", value: boolText(settings.secure_cookie) })))),
                 React.createElement(Card, null,
-                    React.createElement(SectionTitle, { title: "Passkey", subtitle: "\u4F7F\u7528 Face ID\u3001Touch ID \u6216\u5B89\u5168\u5BC6\u94A5\u767B\u5F55" }),
+                    React.createElement(SectionTitle, { title: "Passkey", subtitle: "\u65E0\u9700\u7528\u6237\u540D\uFF0C\u76F4\u63A5\u4F7F\u7528 Face ID\u3001Touch ID \u6216\u5B89\u5168\u5BC6\u94A5\u767B\u5F55" }),
                     React.createElement("div", { className: "inline-form" },
                         React.createElement(TextInput, { value: passkeyName, onChange: (event) => setPasskeyName(event.target.value), placeholder: "\u8BBE\u5907\u540D\u79F0\uFF0C\u4F8B\u5982 iPhone" }),
                         React.createElement(Button, { tone: "primary", busy: working, onClick: registerPasskey }, "\u6DFB\u52A0 Passkey")),
@@ -3090,7 +3092,7 @@
                                 await run('删除失败', async () => { await secureApi('/api/v1/auth/passkeys', { method: 'DELETE', body: jsonBody({ id: item.id }) }); await reload(); props.notify('success', 'Passkey 已删除'); }); } }, "\u5220\u9664")))) : React.createElement(EmptyState, { icon: "key", title: "\u5C1A\u672A\u6DFB\u52A0 Passkey" })),
                 React.createElement("div", { className: "settings-two-column" },
                     React.createElement(Card, null,
-                        React.createElement(SectionTitle, { title: "\u767B\u5F55\u4F1A\u8BDD", subtitle: "\u5F53\u524D\u4F1A\u8BDD\u4E0D\u4F1A\u88AB\u6279\u91CF\u64A4\u9500", actions: React.createElement(Button, { tone: "danger", disabled: sessions.length <= 1, onClick: () => run('撤销失败', async () => { const out = asObject(await api('/api/v1/auth/sessions', { method: 'DELETE', body: '{}' })); await reload(); props.notify('success', `已撤销 ${number(out.revoked)} 个其他会话`); }) }, "\u64A4\u9500\u5176\u4ED6\u4F1A\u8BDD") }),
+                        React.createElement(SectionTitle, { title: "\u767B\u5F55\u4F1A\u8BDD", subtitle: "\u5F53\u524D\u4F1A\u8BDD\u4E0D\u4F1A\u88AB\u6279\u91CF\u64A4\u9500", actions: React.createElement(Button, { tone: "danger", disabled: sessions.length <= 1, onClick: () => run('撤销失败', async () => { const out = asObject(await secureApi('/api/v1/auth/sessions', { method: 'DELETE', body: '{}' })); await reload(); props.notify('success', `已撤销 ${number(out.revoked)} 个其他会话`); }) }, "\u64A4\u9500\u5176\u4ED6\u4F1A\u8BDD") }),
                         React.createElement("div", { className: "compact-list" }, sessions.map(session => React.createElement("div", { className: "compact-row", key: session.id },
                             React.createElement("div", null,
                                 React.createElement("strong", null,
@@ -3101,15 +3103,12 @@
                                     " \u2192 ",
                                     formatDate(session.expires_at))))))),
                     React.createElement(Card, null,
-                        React.createElement(SectionTitle, { title: "\u53EF\u4FE1\u8BBE\u5907", subtitle: "\u8DF3\u8FC7\u4E24\u6B65\u9A8C\u8BC1\u7684\u8BBE\u5907 Cookie", actions: React.createElement(Button, { tone: "danger", disabled: !devices.length, onClick: () => run('撤销失败', async () => { await secureApi('/api/v1/auth/trusted-devices', { method: 'DELETE', body: jsonBody({ all: true }) }); await reload(); props.notify('success', '全部可信设备已撤销'); }) }, "\u5168\u90E8\u64A4\u9500") }),
-                        React.createElement("div", { className: "compact-list" }, devices.length ? devices.map(device => React.createElement("div", { className: "compact-row", key: device.id },
-                            React.createElement("div", null,
-                                React.createElement("strong", null, text(device.name, '未命名设备')),
-                                React.createElement("small", null,
-                                    text(device.last_ip),
-                                    " \u00B7 ",
-                                    formatDate(device.last_used))),
-                            React.createElement(Button, { tone: "danger", icon: "trash", title: `撤销可信设备 ${text(device.name, '未命名设备')}`, onClick: () => run('撤销失败', async () => { await secureApi('/api/v1/auth/trusted-devices', { method: 'DELETE', body: jsonBody({ id: device.id }) }); await reload(); props.notify('success', '可信设备已撤销'); }) }))) : React.createElement(EmptyState, { icon: "user", title: "\u6CA1\u6709\u53EF\u4FE1\u8BBE\u5907" }))))));
+                        React.createElement(SectionTitle, { title: "\u767B\u5F55\u8BA4\u8BC1\u89C4\u5219", subtitle: "\u4E0D\u5B58\u5728\u53EF\u7ED5\u8FC7\u4E24\u6B65\u9A8C\u8BC1\u7684\u53EF\u4FE1\u8BBE\u5907" }),
+                        React.createElement("dl", { className: "key-value-list" },
+                            React.createElement(KeyValue, { label: "\u8D26\u6237\u5BC6\u7801\u767B\u5F55", value: totp.enabled ? React.createElement(Badge, { tone: "success" }, "\u6BCF\u6B21\u5F3A\u5236 TOTP") : React.createElement(Badge, { tone: "warning" }, "\u4EC5\u5BC6\u7801") }),
+                            React.createElement(KeyValue, { label: "Passkey \u767B\u5F55", value: React.createElement(Badge, { tone: "success" }, "\u65E0\u7528\u6237\u540D\u72EC\u7ACB\u8BA4\u8BC1") }),
+                            React.createElement(KeyValue, { label: "\u9AD8\u98CE\u9669\u64CD\u4F5C", value: totp.enabled ? '当前密码 + TOTP' : '当前密码' }),
+                            React.createElement(KeyValue, { label: "\u514D\u9A8C\u8BC1\u8BBE\u5907", value: "\u4E0D\u652F\u6301" }))))));
     }
     class AppErrorBoundary extends React.Component {
         constructor(props) { super(props); this.state = { error: null }; }
@@ -3196,14 +3195,14 @@
                         React.createElement("p", null, "\u6B64\u64CD\u4F5C\u4F1A\u4FEE\u6539\u7CFB\u7EDF\u914D\u7F6E\uFF0C\u8BF7\u518D\u6B21\u9A8C\u8BC1\u7BA1\u7406\u5458\u8EAB\u4EFD\u3002"),
                         React.createElement(Field, { label: "\u5F53\u524D\u5BC6\u7801" },
                             React.createElement(TextInput, { name: "password", type: "password", autoComplete: "current-password", required: true, autoFocus: true })),
-                        React.createElement(Field, { label: "\u4E24\u6B65\u9A8C\u8BC1\u7801\uFF08\u5DF2\u5F00\u542F\u65F6\uFF09" },
-                            React.createElement(TextInput, { name: "otp", inputMode: "numeric", autoComplete: "one-time-code" })),
+                        identity?.totp_enabled ? React.createElement(Field, { label: "\u4E24\u6B65\u9A8C\u8BC1\u7801\u6216\u6062\u590D\u7801", hint: "\u5DF2\u5F00\u542F TOTP\uFF0C\u9AD8\u98CE\u9669\u64CD\u4F5C\u5FC5\u987B\u518D\u6B21\u9A8C\u8BC1" },
+                            React.createElement(TextInput, { name: "otp", inputMode: "numeric", autoComplete: "one-time-code", required: true })) : null,
                         React.createElement("div", { className: "form-actions" },
                             React.createElement(Button, { onClick: () => { setModal(null); elevationReject.current?.(new Error('已取消二次验证')); elevationResolve.current = null; elevationReject.current = null; } }, "\u53D6\u6D88"),
                             React.createElement(Button, { type: "submit", tone: "primary" }, "\u9A8C\u8BC1\u5E76\u7EE7\u7EED"))) });
             });
             return () => { elevationHandler = null; };
-        }, [notify, presentModal]);
+        }, [identity?.totp_enabled, notify, presentModal]);
         useEffect(() => {
             const query = window.matchMedia('(max-width: 900px)');
             const update = () => setCompactLayout(query.matches);
@@ -3272,7 +3271,7 @@
                         React.createElement("strong", null, text(identity.username, '管理员')),
                         React.createElement("small", null, "\u672C\u673A\u7BA1\u7406\u5458")),
                     React.createElement("button", { className: "icon-button", onClick: logout, "aria-label": "\u9000\u51FA\u767B\u5F55" },
-                        React.createElement(Icon, { name: "back" })))),
+                        React.createElement(Icon, { name: "logout" })))),
             drawer ? React.createElement("button", { className: "drawer-scrim", "aria-label": "\u5173\u95ED\u83DC\u5355", onClick: () => setDrawer(false) }) : null,
             React.createElement("section", { className: "workspace" },
                 React.createElement("header", { className: "mobile-topbar" },

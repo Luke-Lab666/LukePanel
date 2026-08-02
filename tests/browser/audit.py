@@ -25,7 +25,7 @@ class MockState:
         ('POST','/api/v1/auth/elevate'), ('POST','/api/v1/auth/logout'),
         ('PATCH','/api/v1/auth/account'), ('POST','/api/v1/auth/password'),
         ('DELETE','/api/v1/auth/sessions'), ('DELETE','/api/v1/auth/passkeys'),
-        ('DELETE','/api/v1/auth/trusted-devices'), ('POST','/api/v1/auth/totp/setup'),
+        ('POST','/api/v1/auth/totp/setup'),
         ('POST','/api/v1/auth/totp/confirm'), ('POST','/api/v1/auth/totp/disable'),
         ('POST','/api/v1/auth/totp/recovery'), ('POST','/api/v1/auth/passkey/register/begin'),
         ('POST','/api/v1/auth/passkey/register/finish'), ('PATCH','/api/v1/settings'),
@@ -99,7 +99,7 @@ class MockState:
         forced=self.force_failures.get((method,path))
         if forced: return forced
         if path=='/api/v1/auth/me' and not self.authenticated:
-            return self.response(401,{'error':'unauthorized','message':'请登录'})
+            return self.response(401,{'error':'未登录','code':'session_required'})
         if path=='/api/v1/auth/login' and method=='POST':
             self.authenticated=True
             return self.response(200,{'username':'admin','csrf_token':'audit-csrf','session_id':'audit-session'})
@@ -208,6 +208,11 @@ async def setup_page(browser,w,h,path,authenticated=True,context=None):
     await page.set_content('<!doctype html><html lang="zh-CN"><head><base href="http://lukepanel.test/"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body><div id="app"></div></body></html>')
     await page.add_style_tag(path=str(WEB/'assets/app.css'))
     await page.evaluate("""({path})=>{ const store={}; Object.defineProperty(window,'localStorage',{configurable:true,value:{getItem:k=>Object.prototype.hasOwnProperty.call(store,k)?store[k]:null,setItem:(k,v)=>{store[k]=String(v)},removeItem:k=>{delete store[k]},clear:()=>{for(const k of Object.keys(store))delete store[k]}}}); window.__LUKEPANEL_VERSION__='v2.0.0'; window.__LUKEPANEL_TEST_PATH__=path; window.fetch=async (input,init={})=>{const url=typeof input==='string'?input:(input&&input.url)||''; const result=await window.__mockRequest({url,method:init.method||'GET',body:init.body||null,headers:{}}); return new Response(JSON.stringify(result.payload),{status:result.status,headers:{'content-type':'application/json'}})}; }""",{'path':path})
+    if not authenticated:
+      await page.evaluate("""()=>{
+        window.PublicKeyCredential=function PublicKeyCredential(){};
+        Object.defineProperty(navigator,'credentials',{configurable:true,value:{get:async()=>null}});
+      }""")
     for name in SCRIPTS: await page.add_script_tag(path=str(WEB/'assets'/name))
     target='.app-shell' if authenticated else '.login-layout'
     await page.wait_for_selector(target,timeout=8000)
@@ -314,8 +319,11 @@ async def interaction_tests():
         if ctx: await ctx.close()
     try:
       async def login(p,s):
+        passkey=p.get_by_role('button',name='使用 Passkey 登录',exact=True)
+        await passkey.click(); await p.wait_for_timeout(80)
+        begin=reqs(s,'/api/v1/auth/passkey/login/begin','POST')
         await p.locator('input[name="username"]').fill('admin'); await p.locator('input[name="password"]').fill('StrongPass!123'); await p.locator('button[type="submit"]').click(); await p.wait_for_selector('.app-shell',timeout=5000)
-        r=reqs(s,'/api/v1/auth/login','POST'); return True if r and r[-1]['body']=={'username':'admin','password':'StrongPass!123','otp':''} else [r[-1:] ]
+        r=reqs(s,'/api/v1/auth/login','POST'); return True if begin and begin[-1]['body']=={} and r and r[-1]['body']=={'username':'admin','password':'StrongPass!123','otp':''} else [{'passkey_begin':begin[-1:]},{'login':r[-1:]}]
       await case('登录请求契约与成功跳转','/',login,authenticated=False)
 
       async def dashboard(p,s):
@@ -452,8 +460,8 @@ async def interaction_tests():
       await case('安全子系统读取失败显示真实错误','/security',security_error)
 
       async def settings(p,s):
-        inputs=p.locator('.settings-grid input'); await inputs.nth(0).fill('admin2'); await inputs.nth(1).fill('CurrentPass!123'); await p.get_by_role('button',name='保存用户名',exact=True).click(); await p.wait_for_timeout(100); pref=p.locator('input[type="number"]'); await pref.fill('15'); await p.get_by_role('button',name='保存偏好',exact=True).click(); await p.wait_for_timeout(100)
-        a=reqs(s,'/api/v1/auth/account','PATCH'); b=reqs(s,'/api/v1/settings','PATCH'); return True if a and a[-1]['body']=={'username':'admin2','current_password':'CurrentPass!123'} and b and b[-1]['body']=={'auto_refresh_seconds':15} else [{'account':a[-1:]},{'settings':b[-1:]}]
+        inputs=p.locator('.settings-grid input'); await inputs.nth(0).fill('admin2'); await inputs.nth(1).fill('CurrentPass!123'); await inputs.nth(2).fill('123456'); await p.get_by_role('button',name='保存用户名',exact=True).click(); await p.wait_for_timeout(100); pref=p.locator('input[type="number"]'); await pref.fill('15'); await p.get_by_role('button',name='保存偏好',exact=True).click(); await p.wait_for_timeout(100)
+        a=reqs(s,'/api/v1/auth/account','PATCH'); b=reqs(s,'/api/v1/settings','PATCH'); return True if a and a[-1]['body']=={'username':'admin2','current_password':'CurrentPass!123','otp':'123456'} and b and b[-1]['body']=={'auto_refresh_seconds':15} else [{'account':a[-1:]},{'settings':b[-1:]}]
       await case('账户与刷新偏好保存契约','/settings',settings,w=1440,h=900)
 
       async def drawer(p,s):
@@ -519,14 +527,21 @@ async def interaction_tests():
       await case('UFW limit+UDP 前端阻止无效请求','/security',firewall_limit)
 
       async def password_change(p,s):
-        card=p.locator('.setting-card').nth(1); fields=card.locator('input[type="password"]'); await fields.nth(0).fill('OldPass!123'); await fields.nth(1).fill('NewPass!456'); await fields.nth(2).fill('NewPass!456'); await card.get_by_role('button',name='修改密码',exact=True).click(); await p.wait_for_timeout(100); r=reqs(s,'/api/v1/auth/password','POST')
-        return True if r and r[-1]['body']=={'current_password':'OldPass!123','new_password':'NewPass!456'} else [r[-1:]]
+        card=p.locator('.setting-card').nth(1); fields=card.locator('input[type="password"]'); await fields.nth(0).fill('OldPass!123'); await fields.nth(1).fill('NewPass!456'); await fields.nth(2).fill('NewPass!456'); await card.locator('input[autocomplete="one-time-code"]').fill('123456'); await card.get_by_role('button',name='修改密码',exact=True).click(); await p.wait_for_timeout(100); r=reqs(s,'/api/v1/auth/password','POST')
+        return True if r and r[-1]['body']=={'current_password':'OldPass!123','new_password':'NewPass!456','otp':'123456'} else [r[-1:]]
       await case('管理员密码修改契约','/settings',password_change,w=1440,h=900)
 
-      async def trusted_device(p,s):
-        await p.get_by_role('button',name='撤销可信设备 iPhone',exact=True).click(); await p.wait_for_timeout(100); r=reqs(s,'/api/v1/auth/trusted-devices','DELETE')
-        return True if r and r[-1]['body']=={'id':'dev1'} else [r[-1:]]
-      await case('可信设备单独撤销契约','/settings',trusted_device,w=1440,h=900)
+      async def password_totp(p,s):
+        s.force_sequences[('POST','/api/v1/auth/login')]=[
+          s.response(401,{'error':'请输入身份验证器验证码或恢复码','code':'totp_required'}),
+          s.response(200,{'username':'admin','csrf_token':'audit-csrf','session_id':'audit-session','totp_enabled':True})
+        ]
+        await p.locator('input[name="username"]').fill('admin'); await p.locator('input[name="password"]').fill('StrongPass!123'); await p.locator('button[type="submit"]').click(); await p.wait_for_selector('input[name="otp"]')
+        await p.locator('input[name="otp"]').fill('123456'); await p.locator('button[type="submit"]').click(); await p.wait_for_selector('.app-shell',timeout=5000)
+        r=reqs(s,'/api/v1/auth/login','POST')
+        expected=[{'username':'admin','password':'StrongPass!123','otp':''},{'username':'admin','password':'StrongPass!123','otp':'123456'}]
+        return True if [item['body'] for item in r[-2:]]==expected else [r[-2:]]
+      await case('密码登录强制两步验证流程','/',password_totp,authenticated=False,w=390,h=844)
 
       async def host_basics(p,s):
         base=p.locator('form').filter(has=p.locator('input[name="hostname"]')); await base.locator('input[name="hostname"]').fill('luke-node'); await base.locator('input[name="timezone"]').fill('UTC'); await base.get_by_role('button',name='保存基础设置',exact=True).click(); await p.wait_for_timeout(120); dns=p.locator('form').filter(has=p.locator('textarea[name="servers"]')); await dns.locator('textarea[name="servers"]').fill('1.1.1.1\n9.9.9.9'); await dns.get_by_role('button',name='保存 DNS',exact=True).click(); await p.wait_for_timeout(100); h=reqs(s,'/api/v1/system/host/hostname','POST'); t=reqs(s,'/api/v1/system/host/timezone','POST'); d=reqs(s,'/api/v1/system/host/dns','POST')
@@ -568,7 +583,7 @@ async def interaction_tests():
       await case('弹窗焦点锁定与关闭后恢复','/docker',modal_focus,w=390,h=844)
 
       async def session_expiry(p,s):
-        s.force_sequences[('GET','/api/v1/system/overview')]=[s.response(401,{'error':'unauthorized','message':'会话已过期'})]
+        s.force_sequences[('GET','/api/v1/system/overview')]=[s.response(401,{'error':'会话已过期','code':'session_expired'})]
         await p.get_by_role('button',name='刷新',exact=True).click(); await p.wait_for_selector('.login-layout',timeout=3000)
         return True if await p.locator('.app-shell').count()==0 else ['401 后仍保留已登录应用壳']
       await case('401 会话过期立即返回登录页','/',session_expiry,w=390,h=844)
@@ -576,11 +591,17 @@ async def interaction_tests():
       async def elevation_retry(p,s):
         key=('POST','/api/v1/system/services/action')
         s.force_sequences[key]=[s.response(403,{'error':'需要二次验证','code':'elevation_required'})]
+        s.force_sequences[('POST','/api/v1/auth/elevate')]=[
+          s.response(401,{'error':'验证码或恢复码不正确','code':'totp_invalid'}),
+          s.response(200,{'ok':True,'expires_in':300})
+        ]
         await p.get_by_role('button',name='重启',exact=True).first.click(); modal=p.locator('.modal'); await modal.wait_for();
-        await modal.locator('input[name="password"]').fill('StrongPass!123'); await modal.get_by_role('button',name='验证并继续',exact=True).click(); await p.wait_for_timeout(180)
+        await modal.locator('input[name="password"]').fill('StrongPass!123'); await modal.locator('input[name="otp"]').fill('000000'); await modal.get_by_role('button',name='验证并继续',exact=True).click(); await p.wait_for_timeout(120)
+        stayed=await p.locator('.app-shell').count()==1 and await modal.count()==1
+        await modal.locator('input[name="otp"]').fill('123456'); await modal.get_by_role('button',name='验证并继续',exact=True).click(); await p.wait_for_timeout(180)
         elevated=reqs(s,'/api/v1/auth/elevate','POST'); actions=reqs(s,'/api/v1/system/services/action','POST')
         expected={'name':'lukepanel.service','action':'restart'}
-        return True if len(actions)==2 and actions[-1]['body']==expected and elevated and elevated[-1]['body']=={'password':'StrongPass!123','otp':''} and await p.locator('.modal').count()==0 else [{'actions':actions},{'elevate':elevated}]
+        return True if stayed and len(actions)==2 and actions[-1]['body']==expected and len(elevated)==2 and elevated[-1]['body']=={'password':'StrongPass!123','otp':'123456'} and await p.locator('.modal').count()==0 else [{'stayed':stayed},{'actions':actions},{'elevate':elevated}]
       await case('403 二次验证成功后只重试原请求一次','/system/services',elevation_retry,w=390,h=844)
 
       async def elevation_cancel(p,s):

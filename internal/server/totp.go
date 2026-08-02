@@ -129,16 +129,6 @@ func (s *Server) totpDisable(w http.ResponseWriter, r *http.Request) {
 	if !s.requireElevation(w, r) {
 		return
 	}
-	var req struct {
-		Code string `json:"code"`
-	}
-	if decodeJSON(w, r, 4096, &req) != nil {
-		return
-	}
-	if ok, _, err := s.verifySecondFactor(req.Code, true); err != nil || !ok {
-		writeError(w, http.StatusUnauthorized, "验证码或恢复码不正确")
-		return
-	}
 	s.configMu.Lock()
 	updated := s.cfg
 	updated.TOTPSecret = ""
@@ -163,16 +153,6 @@ func (s *Server) totpRegenerateRecovery(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !s.requireElevation(w, r) {
-		return
-	}
-	var req struct {
-		Code string `json:"code"`
-	}
-	if decodeJSON(w, r, 4096, &req) != nil {
-		return
-	}
-	if ok, _, err := s.verifySecondFactor(req.Code, true); err != nil || !ok {
-		writeError(w, http.StatusUnauthorized, "验证码或恢复码不正确")
 		return
 	}
 	codes, err := auth.GenerateRecoveryCodes(10)

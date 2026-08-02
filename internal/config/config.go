@@ -25,15 +25,6 @@ type InitOptions struct {
 	DataDir   string
 }
 
-type TrustedDevice struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	TokenHash string    `json:"token_hash"`
-	CreatedAt time.Time `json:"created_at"`
-	LastUsed  time.Time `json:"last_used"`
-	LastIP    string    `json:"last_ip,omitempty"`
-}
-
 var adminUserPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{2,31}$`)
 
 type Config struct {
@@ -51,7 +42,6 @@ type Config struct {
 	TOTPSecret         string                   `json:"totp_secret,omitempty"`
 	RecoveryCodeHashes []string                 `json:"recovery_code_hashes,omitempty"`
 	Passkeys           []auth.PasskeyCredential `json:"passkeys,omitempty"`
-	TrustedDevices     []TrustedDevice          `json:"trusted_devices,omitempty"`
 	IPAllowlistEnabled bool                     `json:"ip_allowlist_enabled,omitempty"`
 	IPAllowlist        []string                 `json:"ip_allowlist,omitempty"`
 	IPRecoveryHash     string                   `json:"ip_recovery_hash,omitempty"`
@@ -96,7 +86,10 @@ func LoadOrCreateWithOptions(path string, options InitOptions) (Config, string, 
 		if err := json.Unmarshal(raw, &cfg); err != nil {
 			return Config{}, "", fmt.Errorf("parse config: %w", err)
 		}
-		changed := false
+		legacyFields := map[string]json.RawMessage{}
+		_ = json.Unmarshal(raw, &legacyFields)
+		_, hadLegacyTrustedDevices := legacyFields["trusted_devices"]
+		changed := hadLegacyTrustedDevices
 		if cfg.AgentSocket == "" {
 			cfg.AgentSocket = Default().AgentSocket
 			changed = true

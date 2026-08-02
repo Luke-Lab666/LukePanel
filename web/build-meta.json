@@ -4,12 +4,12 @@
   "react": "18.2.0",
   "files": {
     "assets/app.css": {
-      "bytes": 45946,
-      "sha256": "4be8fb911a5155c89e15e1779b5f636f7a2ea9f724c2b80a311ea171b7b3b8c8"
+      "bytes": 47295,
+      "sha256": "c11803aa2e24072bbf49640df0b313910943c434ffa299c9a15efb451b0122b7"
     },
     "assets/app.js": {
-      "bytes": 304376,
-      "sha256": "4bbacb461a7852f71578a5823a2b437c939b3e3472edcf890af8e31f3883cacd"
+      "bytes": 305299,
+      "sha256": "eedce36322b237c49418482958bd4363fec8be30fb6931d1080759bdb024eaea"
     },
     "assets/apple-touch-icon.png": {
       "bytes": 34268,

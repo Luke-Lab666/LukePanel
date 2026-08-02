@@ -4,7 +4,8 @@
     "payload": {
       "username": "admin",
       "csrf_token": "audit-csrf",
-      "session_id": "audit-session"
+      "session_id": "audit-session",
+      "totp_enabled": true
     }
   },
   "/api/v1/settings": {
@@ -601,19 +602,6 @@
           "id": "pk1",
           "name": "iPhone Passkey",
           "last_used": "2026-08-02T07:37:10.704101+00:00"
-        }
-      ]
-    }
-  },
-  "/api/v1/auth/trusted-devices": {
-    "status": 200,
-    "payload": {
-      "devices": [
-        {
-          "id": "dev1",
-          "name": "iPhone",
-          "ip": "127.0.0.1",
-          "last_used": "2026-08-02T07:37:10.704126+00:00"
         }
       ]
     }

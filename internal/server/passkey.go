@@ -32,18 +32,12 @@ func (s *Server) passkeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "当前 IP 不在面板允许列表中")
 		return
 	}
-	var req struct {
-		Username string `json:"username"`
-	}
-	if decodeJSON(w, r, 4096, &req) != nil {
-		return
-	}
 	s.configMu.RLock()
 	adminUser := s.cfg.AdminUser
 	credentials := append([]auth.PasskeyCredential{}, s.cfg.Passkeys...)
 	s.configMu.RUnlock()
-	if req.Username != adminUser || len(credentials) == 0 {
-		writeError(w, http.StatusBadRequest, "这个账号尚未配置 Passkey")
+	if len(credentials) == 0 {
+		writeError(w, http.StatusBadRequest, "当前面板尚未配置 Passkey")
 		return
 	}
 	challenge, _ := auth.RandomChallenge(32)
@@ -57,7 +51,7 @@ func (s *Server) passkeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 	for _, credential := range credentials {
 		allow = append(allow, map[string]any{"type": "public-key", "id": credential.ID, "transports": []string{"internal", "hybrid", "usb", "nfc", "ble"}})
 	}
-	writeJSON(w, 200, map[string]any{"flow_id": flowID, "challenge": challenge, "rp_id": rpID, "timeout": 60000, "user_verification": "preferred", "allow_credentials": allow})
+	writeJSON(w, 200, map[string]any{"flow_id": flowID, "challenge": challenge, "rp_id": rpID, "timeout": 60000, "user_verification": "required", "allow_credentials": allow})
 }
 
 func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +154,7 @@ func (s *Server) passkeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
 		exclude = append(exclude, map[string]any{"type": "public-key", "id": credential.ID})
 	}
 	s.configMu.RUnlock()
-	writeJSON(w, 200, map[string]any{"flow_id": flowID, "challenge": challenge, "rp": map[string]any{"name": "LukePanel", "id": rpID}, "user": map[string]any{"id": userID, "name": session.Username, "display_name": session.Username}, "pub_key_cred_params": []map[string]any{{"type": "public-key", "alg": -7}}, "timeout": 60000, "attestation": "none", "authenticator_selection": map[string]any{"resident_key": "preferred", "user_verification": "preferred"}, "exclude_credentials": exclude, "name": strings.TrimSpace(req.Name)})
+	writeJSON(w, 200, map[string]any{"flow_id": flowID, "challenge": challenge, "rp": map[string]any{"name": "LukePanel", "id": rpID}, "user": map[string]any{"id": userID, "name": session.Username, "display_name": session.Username}, "pub_key_cred_params": []map[string]any{{"type": "public-key", "alg": -7}}, "timeout": 60000, "attestation": "none", "authenticator_selection": map[string]any{"resident_key": "required", "user_verification": "required"}, "exclude_credentials": exclude, "name": strings.TrimSpace(req.Name)})
 }
 
 func (s *Server) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
@@ -281,10 +275,11 @@ func (s *Server) establishSession(w http.ResponseWriter, r *http.Request, userna
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: "lukepanel_session", Value: token, Path: "/", HttpOnly: true, Secure: s.cfg.SecureCookie, SameSite: http.SameSiteStrictMode, MaxAge: 86400})
+	s.expireLegacyTrustedDeviceCookie(w)
 	ip := clientIP(r, s.cfg.TrustedProxy)
 	s.audit.Write(AuditEvent{IP: ip, User: username, Action: action, Target: session.ID, Result: "success"})
 	s.notifyLoginAsync(username, ip, r.UserAgent(), action)
-	writeJSON(w, 200, map[string]any{"username": username, "csrf_token": session.CSRFToken})
+	writeJSON(w, 200, map[string]any{"username": username, "csrf_token": session.CSRFToken, "session_id": session.ID, "totp_enabled": s.totpEnabled()})
 }
 
 func (s *Server) webauthnContext(r *http.Request) (string, string) {

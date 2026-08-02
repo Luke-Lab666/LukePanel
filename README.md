@@ -33,7 +33,7 @@ Web 服务以普通系统用户运行；需要 root 权限的操作由独立 Age
 - Docker 容器、镜像、网络、存储卷和 Compose 管理
 - 从 `/` 开始的文件管理、回收站和历史版本
 - SSH 用户、公钥和安全设置管理
-- Passkey、TOTP、恢复码、会话和登录保护
+- 无用户名 Passkey、强制 TOTP、恢复码、会话和登录保护
 - UFW、Fail2ban、安全体检和审计日志
 - 可选 GitHub 仓库、Actions、Pull Request 和 Release 工作流
 - React 18 + TypeScript 前端，构建产物随 Go 单二进制内嵌；服务器运行时不依赖 Node.js、CDN、Redis 或外部数据库
@@ -154,8 +154,9 @@ rm -f /root/.lukepanel-password
 - 登录用户和 `authorized_keys` 管理
 - ED25519 密钥生成与一次性私钥下载
 - 密码登录、Root 登录与转发设置
-- Passkey / WebAuthn 登录
-- TOTP、恢复码和可信设备
+- Passkey / WebAuthn 无用户名登录；浏览器直接选择设备凭据
+- 账户密码登录在开启 TOTP 后每次强制验证，不提供免验证码可信设备
+- 一次性恢复码和高风险操作二次验证
 - 活跃会话管理
 - 带限时恢复入口的 IP 允许列表
 - UFW 规则与受保护的首次启用流程
@@ -193,7 +194,7 @@ LukePanel 将浏览器服务和高权限操作分离：
 - 密码使用 PBKDF2-HMAC-SHA256 哈希保存
 - 会话 Cookie 使用 HttpOnly、SameSite 与 Secure 属性
 - 修改操作使用 CSRF 校验
-- 高风险操作需要短时有效的密码二次验证
+- 高风险操作需要短时有效的管理员密码二次验证；启用 TOTP 时同时要求验证码或恢复码
 - 密码、Cookie、私钥和访问令牌不会写入审计内容
 
 公网部署前请阅读 [SECURITY.md](SECURITY.md)。

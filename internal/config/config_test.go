@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Luke-Lab666/LukePanel/internal/auth"
@@ -105,5 +106,38 @@ func TestLoadOrCreateWithOptionsInitializesCustomAccountAndPort(t *testing.T) {
 	}
 	if returned != "" || loaded.AdminUser != "LukeAdmin" || loaded.Listen != "127.0.0.1:7788" {
 		t.Fatalf("existing configuration was unexpectedly replaced: %#v password=%q", loaded, returned)
+	}
+}
+
+func TestLoadOrCreateRemovesLegacyTrustedDevices(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	cfg := Default()
+	cfg.DataDir = filepath.Join(dir, "data")
+	cfg.PasswordHash, _ = auth.HashPassword("valid-long-password-2026")
+	cfg.SessionSecret = "session-secret"
+	cfg.AgentSecret = "agent-secret"
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	document["trusted_devices"] = []map[string]any{{"id": "legacy", "token_hash": "obsolete"}}
+	raw, _ = json.Marshal(document)
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := LoadOrCreate(path); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(migrated), "trusted_devices") {
+		t.Fatalf("legacy trusted_devices survived migration: %s", migrated)
 	}
 }

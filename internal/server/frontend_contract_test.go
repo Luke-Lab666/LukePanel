@@ -64,3 +64,15 @@ func TestPageBackButtonOnlyUsesExplicitParentRoute(t *testing.T) {
 		t.Fatal("audit must remain a first-level route")
 	}
 }
+
+func TestFrontendOnlyClearsAuthenticationForExpiredSessions(t *testing.T) {
+	content := readReactSource(t)
+	for _, required := range []string{"session_required", "session_expired", "elevation_required", "totp_invalid"} {
+		if !strings.Contains(content, required) {
+			t.Fatalf("React auth state machine is missing %q", required)
+		}
+	}
+	if strings.Contains(content, "if (response.status === 401) unauthorizedHandler?.()") {
+		t.Fatal("frontend still logs out for every 401 response")
+	}
+}
