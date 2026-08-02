@@ -1,0 +1,111 @@
+[1/3] 迁移器单元测试
+test_full_apply_and_rollback (__main__.MigrationTests.test_full_apply_and_rollback) ... ok
+test_generated_firewall_go_tests_compile_and_run (__main__.MigrationTests.test_generated_firewall_go_tests_compile_and_run) ... ok
+test_patch_app_contract_and_cards (__main__.MigrationTests.test_patch_app_contract_and_cards) ... ok
+test_patch_firewall_command_order (__main__.MigrationTests.test_patch_firewall_command_order) ... ok
+test_patched_javascript_parses (__main__.MigrationTests.test_patched_javascript_parses) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.227s
+
+OK
+
+[2/3] 真实 Chromium UI 回归
+{
+  "engine": "chromium",
+  "mode": "real Chromium via Chrome DevTools Protocol",
+  "generated_at": "2026-08-02T03:13:33Z",
+  "devices": [
+    {
+      "name": "phone-320",
+      "width": 320,
+      "height": 900,
+      "mobile_emulation": true
+    },
+    {
+      "name": "android-360",
+      "width": 360,
+      "height": 800,
+      "mobile_emulation": true
+    },
+    {
+      "name": "iphone-se-375",
+      "width": 375,
+      "height": 667,
+      "mobile_emulation": true
+    },
+    {
+      "name": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "mobile_emulation": true
+    },
+    {
+      "name": "iphone-max-430",
+      "width": 430,
+      "height": 932,
+      "mobile_emulation": true
+    },
+    {
+      "name": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "mobile_emulation": true
+    },
+    {
+      "name": "ipad-768",
+      "width": 768,
+      "height": 1024,
+      "mobile_emulation": true
+    },
+    {
+      "name": "tablet-1024",
+      "width": 1024,
+      "height": 768,
+      "mobile_emulation": false
+    },
+    {
+      "name": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "mobile_emulation": false
+    },
+    {
+      "name": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "mobile_emulation": false
+    },
+    {
+      "name": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "mobile_emulation": false
+    }
+  ],
+  "scenarios": [
+    "/login",
+    "/",
+    "/security",
+    "/docker",
+    "/files",
+    "/ssh",
+    "/settings",
+    "/dialog"
+  ],
+  "screenshots": 88,
+  "checks": [
+    "horizontal overflow",
+    "desktop/mobile navigation breakpoint",
+    "unresolved values",
+    "iOS 16px form font",
+    "touch target sizing",
+    "firewall card count and overlap",
+    "firewall responsive columns",
+    "modal viewport containment",
+    "login viewport containment"
+  ],
+  "failures": []
+}
+
+[3/3] 未提供目标仓库，跳过仓库内 Go 测试。

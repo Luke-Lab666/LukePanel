@@ -1,0 +1,978 @@
+{
+  "engine": "chromium",
+  "mode": "real Chromium via Chrome DevTools Protocol",
+  "generated_at": "2026-08-02T03:13:33Z",
+  "devices": [
+    {
+      "name": "phone-320",
+      "width": 320,
+      "height": 900,
+      "mobile_emulation": true
+    },
+    {
+      "name": "android-360",
+      "width": 360,
+      "height": 800,
+      "mobile_emulation": true
+    },
+    {
+      "name": "iphone-se-375",
+      "width": 375,
+      "height": 667,
+      "mobile_emulation": true
+    },
+    {
+      "name": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "mobile_emulation": true
+    },
+    {
+      "name": "iphone-max-430",
+      "width": 430,
+      "height": 932,
+      "mobile_emulation": true
+    },
+    {
+      "name": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "mobile_emulation": true
+    },
+    {
+      "name": "ipad-768",
+      "width": 768,
+      "height": 1024,
+      "mobile_emulation": true
+    },
+    {
+      "name": "tablet-1024",
+      "width": 1024,
+      "height": 768,
+      "mobile_emulation": false
+    },
+    {
+      "name": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "mobile_emulation": false
+    },
+    {
+      "name": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "mobile_emulation": false
+    },
+    {
+      "name": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "mobile_emulation": false
+    }
+  ],
+  "scenarios": [
+    "/login",
+    "/",
+    "/security",
+    "/docker",
+    "/files",
+    "/ssh",
+    "/settings",
+    "/dialog"
+  ],
+  "screenshots": 88,
+  "checks": [
+    "horizontal overflow",
+    "desktop/mobile navigation breakpoint",
+    "unresolved values",
+    "iOS 16px form font",
+    "touch target sizing",
+    "firewall card count and overlap",
+    "firewall responsive columns",
+    "modal viewport containment",
+    "login viewport containment"
+  ],
+  "failures": [],
+  "measurements": [
+    {
+      "scenario": "/login",
+      "device": "phone-320",
+      "width": 320,
+      "height": 900,
+      "sw": 320,
+      "iw": 320,
+      "sh": 900,
+      "ih": 900
+    },
+    {
+      "scenario": "/",
+      "device": "phone-320",
+      "width": 320,
+      "height": 900,
+      "sw": 320,
+      "iw": 320,
+      "sh": 2353,
+      "ih": 900
+    },
+    {
+      "scenario": "/security",
+      "device": "phone-320",
+      "width": 320,
+      "height": 900,
+      "sw": 320,
+      "iw": 320,
+      "sh": 2137,
+      "ih": 900
+    },
+    {
+      "scenario": "/docker",
+      "device": "phone-320",
+      "width": 320,
+      "height": 900,
+      "sw": 320,
+      "iw": 320,
+      "sh": 1234,
+      "ih": 900
+    },
+    {
+      "scenario": "/files",
+      "device": "phone-320",
+      "width": 320,
+      "height": 900,
+      "sw": 320,
+      "iw": 320,
+      "sh": 992,
+      "ih": 900
+    },
+    {
+      "scenario": "/ssh",
+      "device": "phone-320",
+      "width": 320,
+      "height": 900,
+      "sw": 320,
+      "iw": 320,
+      "sh": 1338,
+      "ih": 900
+    },
+    {
+      "scenario": "/settings",
+      "device": "phone-320",
+      "width": 320,
+      "height": 900,
+      "sw": 320,
+      "iw": 320,
+      "sh": 1440,
+      "ih": 900
+    },
+    {
+      "scenario": "/dialog",
+      "device": "phone-320",
+      "width": 320,
+      "height": 900,
+      "sw": 320,
+      "iw": 320,
+      "sh": 900,
+      "ih": 900
+    },
+    {
+      "scenario": "/login",
+      "device": "android-360",
+      "width": 360,
+      "height": 800,
+      "sw": 360,
+      "iw": 360,
+      "sh": 800,
+      "ih": 800
+    },
+    {
+      "scenario": "/",
+      "device": "android-360",
+      "width": 360,
+      "height": 800,
+      "sw": 360,
+      "iw": 360,
+      "sh": 2353,
+      "ih": 800
+    },
+    {
+      "scenario": "/security",
+      "device": "android-360",
+      "width": 360,
+      "height": 800,
+      "sw": 360,
+      "iw": 360,
+      "sh": 2137,
+      "ih": 800
+    },
+    {
+      "scenario": "/docker",
+      "device": "android-360",
+      "width": 360,
+      "height": 800,
+      "sw": 360,
+      "iw": 360,
+      "sh": 1234,
+      "ih": 800
+    },
+    {
+      "scenario": "/files",
+      "device": "android-360",
+      "width": 360,
+      "height": 800,
+      "sw": 360,
+      "iw": 360,
+      "sh": 982,
+      "ih": 800
+    },
+    {
+      "scenario": "/ssh",
+      "device": "android-360",
+      "width": 360,
+      "height": 800,
+      "sw": 360,
+      "iw": 360,
+      "sh": 1338,
+      "ih": 800
+    },
+    {
+      "scenario": "/settings",
+      "device": "android-360",
+      "width": 360,
+      "height": 800,
+      "sw": 360,
+      "iw": 360,
+      "sh": 1440,
+      "ih": 800
+    },
+    {
+      "scenario": "/dialog",
+      "device": "android-360",
+      "width": 360,
+      "height": 800,
+      "sw": 360,
+      "iw": 360,
+      "sh": 800,
+      "ih": 800
+    },
+    {
+      "scenario": "/login",
+      "device": "iphone-se-375",
+      "width": 375,
+      "height": 667,
+      "sw": 375,
+      "iw": 375,
+      "sh": 667,
+      "ih": 667
+    },
+    {
+      "scenario": "/",
+      "device": "iphone-se-375",
+      "width": 375,
+      "height": 667,
+      "sw": 375,
+      "iw": 375,
+      "sh": 2368,
+      "ih": 667
+    },
+    {
+      "scenario": "/security",
+      "device": "iphone-se-375",
+      "width": 375,
+      "height": 667,
+      "sw": 375,
+      "iw": 375,
+      "sh": 2143,
+      "ih": 667
+    },
+    {
+      "scenario": "/docker",
+      "device": "iphone-se-375",
+      "width": 375,
+      "height": 667,
+      "sw": 375,
+      "iw": 375,
+      "sh": 1209,
+      "ih": 667
+    },
+    {
+      "scenario": "/files",
+      "device": "iphone-se-375",
+      "width": 375,
+      "height": 667,
+      "sw": 375,
+      "iw": 375,
+      "sh": 982,
+      "ih": 667
+    },
+    {
+      "scenario": "/ssh",
+      "device": "iphone-se-375",
+      "width": 375,
+      "height": 667,
+      "sw": 375,
+      "iw": 375,
+      "sh": 1338,
+      "ih": 667
+    },
+    {
+      "scenario": "/settings",
+      "device": "iphone-se-375",
+      "width": 375,
+      "height": 667,
+      "sw": 375,
+      "iw": 375,
+      "sh": 1440,
+      "ih": 667
+    },
+    {
+      "scenario": "/dialog",
+      "device": "iphone-se-375",
+      "width": 375,
+      "height": 667,
+      "sw": 375,
+      "iw": 375,
+      "sh": 667,
+      "ih": 667
+    },
+    {
+      "scenario": "/login",
+      "device": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "sw": 390,
+      "iw": 390,
+      "sh": 844,
+      "ih": 844
+    },
+    {
+      "scenario": "/",
+      "device": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "sw": 390,
+      "iw": 390,
+      "sh": 2368,
+      "ih": 844
+    },
+    {
+      "scenario": "/security",
+      "device": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "sw": 390,
+      "iw": 390,
+      "sh": 2122,
+      "ih": 844
+    },
+    {
+      "scenario": "/docker",
+      "device": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "sw": 390,
+      "iw": 390,
+      "sh": 1209,
+      "ih": 844
+    },
+    {
+      "scenario": "/files",
+      "device": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "sw": 390,
+      "iw": 390,
+      "sh": 982,
+      "ih": 844
+    },
+    {
+      "scenario": "/ssh",
+      "device": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "sw": 390,
+      "iw": 390,
+      "sh": 1338,
+      "ih": 844
+    },
+    {
+      "scenario": "/settings",
+      "device": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "sw": 390,
+      "iw": 390,
+      "sh": 1440,
+      "ih": 844
+    },
+    {
+      "scenario": "/dialog",
+      "device": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "sw": 390,
+      "iw": 390,
+      "sh": 844,
+      "ih": 844
+    },
+    {
+      "scenario": "/login",
+      "device": "iphone-max-430",
+      "width": 430,
+      "height": 932,
+      "sw": 430,
+      "iw": 430,
+      "sh": 932,
+      "ih": 932
+    },
+    {
+      "scenario": "/",
+      "device": "iphone-max-430",
+      "width": 430,
+      "height": 932,
+      "sw": 430,
+      "iw": 430,
+      "sh": 2368,
+      "ih": 932
+    },
+    {
+      "scenario": "/security",
+      "device": "iphone-max-430",
+      "width": 430,
+      "height": 932,
+      "sw": 430,
+      "iw": 430,
+      "sh": 2122,
+      "ih": 932
+    },
+    {
+      "scenario": "/docker",
+      "device": "iphone-max-430",
+      "width": 430,
+      "height": 932,
+      "sw": 430,
+      "iw": 430,
+      "sh": 1185,
+      "ih": 932
+    },
+    {
+      "scenario": "/files",
+      "device": "iphone-max-430",
+      "width": 430,
+      "height": 932,
+      "sw": 430,
+      "iw": 430,
+      "sh": 982,
+      "ih": 932
+    },
+    {
+      "scenario": "/ssh",
+      "device": "iphone-max-430",
+      "width": 430,
+      "height": 932,
+      "sw": 430,
+      "iw": 430,
+      "sh": 1338,
+      "ih": 932
+    },
+    {
+      "scenario": "/settings",
+      "device": "iphone-max-430",
+      "width": 430,
+      "height": 932,
+      "sw": 430,
+      "iw": 430,
+      "sh": 1440,
+      "ih": 932
+    },
+    {
+      "scenario": "/dialog",
+      "device": "iphone-max-430",
+      "width": 430,
+      "height": 932,
+      "sw": 430,
+      "iw": 430,
+      "sh": 932,
+      "ih": 932
+    },
+    {
+      "scenario": "/login",
+      "device": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "sw": 844,
+      "iw": 844,
+      "sh": 578,
+      "ih": 390
+    },
+    {
+      "scenario": "/",
+      "device": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "sw": 844,
+      "iw": 844,
+      "sh": 1648,
+      "ih": 390
+    },
+    {
+      "scenario": "/security",
+      "device": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "sw": 844,
+      "iw": 844,
+      "sh": 1419,
+      "ih": 390
+    },
+    {
+      "scenario": "/docker",
+      "device": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "sw": 844,
+      "iw": 844,
+      "sh": 670,
+      "ih": 390
+    },
+    {
+      "scenario": "/files",
+      "device": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "sw": 844,
+      "iw": 844,
+      "sh": 786,
+      "ih": 390
+    },
+    {
+      "scenario": "/ssh",
+      "device": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "sw": 844,
+      "iw": 844,
+      "sh": 941,
+      "ih": 390
+    },
+    {
+      "scenario": "/settings",
+      "device": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "sw": 844,
+      "iw": 844,
+      "sh": 1217,
+      "ih": 390
+    },
+    {
+      "scenario": "/dialog",
+      "device": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "sw": 844,
+      "iw": 844,
+      "sh": 390,
+      "ih": 390
+    },
+    {
+      "scenario": "/login",
+      "device": "ipad-768",
+      "width": 768,
+      "height": 1024,
+      "sw": 768,
+      "iw": 768,
+      "sh": 1024,
+      "ih": 1024
+    },
+    {
+      "scenario": "/",
+      "device": "ipad-768",
+      "width": 768,
+      "height": 1024,
+      "sw": 768,
+      "iw": 768,
+      "sh": 1656,
+      "ih": 1024
+    },
+    {
+      "scenario": "/security",
+      "device": "ipad-768",
+      "width": 768,
+      "height": 1024,
+      "sw": 768,
+      "iw": 768,
+      "sh": 1427,
+      "ih": 1024
+    },
+    {
+      "scenario": "/docker",
+      "device": "ipad-768",
+      "width": 768,
+      "height": 1024,
+      "sw": 768,
+      "iw": 768,
+      "sh": 1024,
+      "ih": 1024
+    },
+    {
+      "scenario": "/files",
+      "device": "ipad-768",
+      "width": 768,
+      "height": 1024,
+      "sw": 768,
+      "iw": 768,
+      "sh": 1024,
+      "ih": 1024
+    },
+    {
+      "scenario": "/ssh",
+      "device": "ipad-768",
+      "width": 768,
+      "height": 1024,
+      "sw": 768,
+      "iw": 768,
+      "sh": 1024,
+      "ih": 1024
+    },
+    {
+      "scenario": "/settings",
+      "device": "ipad-768",
+      "width": 768,
+      "height": 1024,
+      "sw": 768,
+      "iw": 768,
+      "sh": 1225,
+      "ih": 1024
+    },
+    {
+      "scenario": "/dialog",
+      "device": "ipad-768",
+      "width": 768,
+      "height": 1024,
+      "sw": 768,
+      "iw": 768,
+      "sh": 1024,
+      "ih": 1024
+    },
+    {
+      "scenario": "/login",
+      "device": "tablet-1024",
+      "width": 1024,
+      "height": 768,
+      "sw": 1024,
+      "iw": 1024,
+      "sh": 768,
+      "ih": 768
+    },
+    {
+      "scenario": "/",
+      "device": "tablet-1024",
+      "width": 1024,
+      "height": 768,
+      "sw": 1014,
+      "iw": 1024,
+      "sh": 1476,
+      "ih": 768
+    },
+    {
+      "scenario": "/security",
+      "device": "tablet-1024",
+      "width": 1024,
+      "height": 768,
+      "sw": 1014,
+      "iw": 1024,
+      "sh": 1027,
+      "ih": 768
+    },
+    {
+      "scenario": "/docker",
+      "device": "tablet-1024",
+      "width": 1024,
+      "height": 768,
+      "sw": 1024,
+      "iw": 1024,
+      "sh": 768,
+      "ih": 768
+    },
+    {
+      "scenario": "/files",
+      "device": "tablet-1024",
+      "width": 1024,
+      "height": 768,
+      "sw": 1024,
+      "iw": 1024,
+      "sh": 768,
+      "ih": 768
+    },
+    {
+      "scenario": "/ssh",
+      "device": "tablet-1024",
+      "width": 1024,
+      "height": 768,
+      "sw": 1024,
+      "iw": 1024,
+      "sh": 768,
+      "ih": 768
+    },
+    {
+      "scenario": "/settings",
+      "device": "tablet-1024",
+      "width": 1024,
+      "height": 768,
+      "sw": 1014,
+      "iw": 1024,
+      "sh": 885,
+      "ih": 768
+    },
+    {
+      "scenario": "/dialog",
+      "device": "tablet-1024",
+      "width": 1024,
+      "height": 768,
+      "sw": 1024,
+      "iw": 1024,
+      "sh": 768,
+      "ih": 768
+    },
+    {
+      "scenario": "/login",
+      "device": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "sw": 1280,
+      "iw": 1280,
+      "sh": 800,
+      "ih": 800
+    },
+    {
+      "scenario": "/",
+      "device": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "sw": 1270,
+      "iw": 1280,
+      "sh": 1091,
+      "ih": 800
+    },
+    {
+      "scenario": "/security",
+      "device": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "sw": 1270,
+      "iw": 1280,
+      "sh": 935,
+      "ih": 800
+    },
+    {
+      "scenario": "/docker",
+      "device": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "sw": 1280,
+      "iw": 1280,
+      "sh": 800,
+      "ih": 800
+    },
+    {
+      "scenario": "/files",
+      "device": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "sw": 1280,
+      "iw": 1280,
+      "sh": 800,
+      "ih": 800
+    },
+    {
+      "scenario": "/ssh",
+      "device": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "sw": 1280,
+      "iw": 1280,
+      "sh": 800,
+      "ih": 800
+    },
+    {
+      "scenario": "/settings",
+      "device": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "sw": 1270,
+      "iw": 1280,
+      "sh": 888,
+      "ih": 800
+    },
+    {
+      "scenario": "/dialog",
+      "device": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "sw": 1280,
+      "iw": 1280,
+      "sh": 800,
+      "ih": 800
+    },
+    {
+      "scenario": "/login",
+      "device": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "sw": 1440,
+      "iw": 1440,
+      "sh": 900,
+      "ih": 900
+    },
+    {
+      "scenario": "/",
+      "device": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "sw": 1430,
+      "iw": 1440,
+      "sh": 1095,
+      "ih": 900
+    },
+    {
+      "scenario": "/security",
+      "device": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "sw": 1430,
+      "iw": 1440,
+      "sh": 939,
+      "ih": 900
+    },
+    {
+      "scenario": "/docker",
+      "device": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "sw": 1440,
+      "iw": 1440,
+      "sh": 900,
+      "ih": 900
+    },
+    {
+      "scenario": "/files",
+      "device": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "sw": 1440,
+      "iw": 1440,
+      "sh": 900,
+      "ih": 900
+    },
+    {
+      "scenario": "/ssh",
+      "device": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "sw": 1440,
+      "iw": 1440,
+      "sh": 900,
+      "ih": 900
+    },
+    {
+      "scenario": "/settings",
+      "device": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "sw": 1440,
+      "iw": 1440,
+      "sh": 900,
+      "ih": 900
+    },
+    {
+      "scenario": "/dialog",
+      "device": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "sw": 1440,
+      "iw": 1440,
+      "sh": 900,
+      "ih": 900
+    },
+    {
+      "scenario": "/login",
+      "device": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "sw": 1920,
+      "iw": 1920,
+      "sh": 1080,
+      "ih": 1080
+    },
+    {
+      "scenario": "/",
+      "device": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "sw": 1910,
+      "iw": 1920,
+      "sh": 1096,
+      "ih": 1080
+    },
+    {
+      "scenario": "/security",
+      "device": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "sw": 1920,
+      "iw": 1920,
+      "sh": 1080,
+      "ih": 1080
+    },
+    {
+      "scenario": "/docker",
+      "device": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "sw": 1920,
+      "iw": 1920,
+      "sh": 1080,
+      "ih": 1080
+    },
+    {
+      "scenario": "/files",
+      "device": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "sw": 1920,
+      "iw": 1920,
+      "sh": 1080,
+      "ih": 1080
+    },
+    {
+      "scenario": "/ssh",
+      "device": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "sw": 1920,
+      "iw": 1920,
+      "sh": 1080,
+      "ih": 1080
+    },
+    {
+      "scenario": "/settings",
+      "device": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "sw": 1920,
+      "iw": 1920,
+      "sh": 1080,
+      "ih": 1080
+    },
+    {
+      "scenario": "/dialog",
+      "device": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "sw": 1920,
+      "iw": 1920,
+      "sh": 1080,
+      "ih": 1080
+    }
+  ]
+}
