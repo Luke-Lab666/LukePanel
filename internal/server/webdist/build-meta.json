@@ -1,0 +1,59 @@
+{
+  "version": "v2.0.0",
+  "framework": "React",
+  "react": "18.2.0",
+  "files": {
+    "assets/app.css": {
+      "bytes": 47295,
+      "sha256": "c11803aa2e24072bbf49640df0b313910943c434ffa299c9a15efb451b0122b7"
+    },
+    "assets/app.js": {
+      "bytes": 305299,
+      "sha256": "eedce36322b237c49418482958bd4363fec8be30fb6931d1080759bdb024eaea"
+    },
+    "assets/apple-touch-icon.png": {
+      "bytes": 34268,
+      "sha256": "bf6c11e256480ef6173c9007cf3dcb5fbe27eebcc3bd679f09fe14121630cdd6"
+    },
+    "assets/favicon-32.png": {
+      "bytes": 2413,
+      "sha256": "b3bdf5a48e1f34f1ac7cf1cfddfc2df0baa4ceefe707c4721cc5b94b95bfd6d3"
+    },
+    "assets/favicon-64.png": {
+      "bytes": 6820,
+      "sha256": "dbd6000fa62df77a7c9bf35a6cbd978eb15346c312cc25979fe61855a610ddd5"
+    },
+    "assets/lukepanel-icon-192.png": {
+      "bytes": 37860,
+      "sha256": "4996fbd22c07e2951b3e82ee5be0efef8d538d67b760f25d96f7352d8f28f95d"
+    },
+    "assets/lukepanel-icon-512.png": {
+      "bytes": 233572,
+      "sha256": "bb814edfec49424a11bf6ba5bc576f9825bc009f55ff948f809d7d029ff1f1a3"
+    },
+    "assets/react-18.2.0.js": {
+      "bytes": 6719,
+      "sha256": "6af644f0b2def8b62db1935a15c97c97cc1c9d0fa1f70af1ffd83a5cca080b61"
+    },
+    "assets/react-bootstrap.js": {
+      "bytes": 486,
+      "sha256": "f086feef429fdf3044e68ec4a29033214a64f5641428dd5dc22ed475bd1a5801"
+    },
+    "assets/react-dom-18.2.0.js": {
+      "bytes": 135510,
+      "sha256": "4c0e5031d01762064070ac8f272fcb191164fea351f61bdd6477f584ea829b15"
+    },
+    "assets/vendor-runtime.js": {
+      "bytes": 1006,
+      "sha256": "0ce2613de3df250ba6258085aa3274c1d9a126071f3068b4d17f55ba06ed4a40"
+    },
+    "index.html": {
+      "bytes": 1221,
+      "sha256": "9ce72c38d1328481449e67131ae835c9f056b3c36bab4458e008d01b532d97b3"
+    },
+    "manifest.webmanifest": {
+      "bytes": 544,
+      "sha256": "f1d73b4915e5cc9667227771569b17ebefce4a49a8376f05e1ef05891f57bb42"
+    }
+  }
+}

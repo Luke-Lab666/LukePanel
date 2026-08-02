@@ -1,0 +1,737 @@
+{
+  "version": "v2.0.0",
+  "package": "auth-ui-audited-complete-source",
+  "frontend": "React 18.2.0 + TypeScript",
+  "files": [
+    {
+      "path": ".github/workflows/build.yml",
+      "bytes": 2229,
+      "sha256": "a330b39757657ccec9a76890298758f37a564969b6d7de60bb06d3d52c5f8fa7"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "bytes": 3411,
+      "sha256": "928584b9d81f13223dceadb23e12d63e2d75e7a04b7790c36345cff745948239"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 115,
+      "sha256": "a1d99df521599f6ff847d69de47ada9301bb2030800d009dca4d0f188126553d"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "bytes": 19414,
+      "sha256": "cd3970db17ffa7888509962def5cd20870ac469433dfa3be4a76877529e1c2a6"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 1068,
+      "sha256": "791e1d9e66b5604eaf482d5f203a652d50e4da53c73ef34a6b81077ffee72da6"
+    },
+    {
+      "path": "Makefile",
+      "bytes": 959,
+      "sha256": "2d70f9e7867665eca770cf9fbb89a1a2cd1e7306ec6f7ca036273be1fa1da3cf"
+    },
+    {
+      "path": "README.md",
+      "bytes": 9519,
+      "sha256": "adde5e5815475ffce10b099abeed53df3541f3827291b104d6f6412d71ce2406"
+    },
+    {
+      "path": "SECURITY.md",
+      "bytes": 4023,
+      "sha256": "9d3111e52383840d3b19b7fa61826beb28bbd273117af35c6220a6d05ccd27f7"
+    },
+    {
+      "path": "UPLOAD.md",
+      "bytes": 659,
+      "sha256": "aefc0097b094d446efd875a00a1c48d61bf603c7c1e273f0e2d6a9434b99b3fe"
+    },
+    {
+      "path": "VERSION",
+      "bytes": 7,
+      "sha256": "f236e6393995b5a6d004b455f2aa83b5d903876e07cfabddcf7255671e645974"
+    },
+    {
+      "path": "cmd/lukepanel/main.go",
+      "bytes": 3561,
+      "sha256": "b817597d5b3f5d9427df35226881ca9f53d93ae2b07d6287b1cf212a53c86403"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "bytes": 4842,
+      "sha256": "e6ed3969dec196c5476e17a6d144fae53c37819b71b70654a0f0b267ddab3fe7"
+    },
+    {
+      "path": "docs/ROADMAP.md",
+      "bytes": 7013,
+      "sha256": "36a12c374e8982a9771938e90f6aca3d21ab334b94a96406a64dd6e7d2a68240"
+    },
+    {
+      "path": "docs/SOURCE_PACKAGE.md",
+      "bytes": 592,
+      "sha256": "af91d41e8c6c4ad20072cc1649ece38e274cb6c2b07ababbf9e66279c557927f"
+    },
+    {
+      "path": "docs/UI_AND_INTERACTION.md",
+      "bytes": 3666,
+      "sha256": "c2a5a20792c4a5f67376bcb4d4428b3bb0060ab19c9e066c290501afb56e287b"
+    },
+    {
+      "path": "docs/VERIFICATION.md",
+      "bytes": 1277,
+      "sha256": "0766fcfd91d9116094fea0417192726d6323cab915dc9942c2d42f0cc1d71875"
+    },
+    {
+      "path": "frontend/index.html",
+      "bytes": 1221,
+      "sha256": "9ce72c38d1328481449e67131ae835c9f056b3c36bab4458e008d01b532d97b3"
+    },
+    {
+      "path": "frontend/package.json",
+      "bytes": 507,
+      "sha256": "d4615c434f58d23f14a0e671769e4c9cce4e74a26cd3dcf9f41c934f8582341d"
+    },
+    {
+      "path": "frontend/public/assets/apple-touch-icon.png",
+      "bytes": 34268,
+      "sha256": "bf6c11e256480ef6173c9007cf3dcb5fbe27eebcc3bd679f09fe14121630cdd6"
+    },
+    {
+      "path": "frontend/public/assets/favicon-32.png",
+      "bytes": 2413,
+      "sha256": "b3bdf5a48e1f34f1ac7cf1cfddfc2df0baa4ceefe707c4721cc5b94b95bfd6d3"
+    },
+    {
+      "path": "frontend/public/assets/favicon-64.png",
+      "bytes": 6820,
+      "sha256": "dbd6000fa62df77a7c9bf35a6cbd978eb15346c312cc25979fe61855a610ddd5"
+    },
+    {
+      "path": "frontend/public/assets/lukepanel-icon-192.png",
+      "bytes": 37860,
+      "sha256": "4996fbd22c07e2951b3e82ee5be0efef8d538d67b760f25d96f7352d8f28f95d"
+    },
+    {
+      "path": "frontend/public/assets/lukepanel-icon-512.png",
+      "bytes": 233572,
+      "sha256": "bb814edfec49424a11bf6ba5bc576f9825bc009f55ff948f809d7d029ff1f1a3"
+    },
+    {
+      "path": "frontend/public/manifest.webmanifest",
+      "bytes": 544,
+      "sha256": "f1d73b4915e5cc9667227771569b17ebefce4a49a8376f05e1ef05891f57bb42"
+    },
+    {
+      "path": "frontend/src/app.css",
+      "bytes": 47295,
+      "sha256": "c11803aa2e24072bbf49640df0b313910943c434ffa299c9a15efb451b0122b7"
+    },
+    {
+      "path": "frontend/src/app.tsx",
+      "bytes": 211496,
+      "sha256": "e63ebeeb995b1257d14b39d3f4d2a5f770da7359874ee2df8426b6de180ca725"
+    },
+    {
+      "path": "frontend/src/global.d.ts",
+      "bytes": 1630,
+      "sha256": "13f32834fc7bee83b42cf6b8a922cda76c1ef297fc2eb1c422fed63641cd7377"
+    },
+    {
+      "path": "frontend/tsconfig.json",
+      "bytes": 441,
+      "sha256": "0875b12bb67f8ba29ef629fd94b33b01fc94644fdeaf9c7476a6068c4e2ff0c4"
+    },
+    {
+      "path": "frontend/vendor/react-18.2.0.LICENSE.txt",
+      "bytes": 237,
+      "sha256": "cd1b8bde90ea9eea77b30ccfa335dbe4f69ab2dd76f9ff59758c1008ce366269"
+    },
+    {
+      "path": "frontend/vendor/react-18.2.0.chunk.js",
+      "bytes": 6719,
+      "sha256": "6af644f0b2def8b62db1935a15c97c97cc1c9d0fa1f70af1ffd83a5cca080b61"
+    },
+    {
+      "path": "frontend/vendor/react-bootstrap.js",
+      "bytes": 486,
+      "sha256": "f086feef429fdf3044e68ec4a29033214a64f5641428dd5dc22ed475bd1a5801"
+    },
+    {
+      "path": "frontend/vendor/react-dom-18.2.0.LICENSE.txt",
+      "bytes": 483,
+      "sha256": "2dfa0ccb9d0eea73a682d9b55bc9b83da81d0af09dd193ee037e8dfe82ab2c39"
+    },
+    {
+      "path": "frontend/vendor/react-dom-18.2.0.chunk.js",
+      "bytes": 135510,
+      "sha256": "4c0e5031d01762064070ac8f272fcb191164fea351f61bdd6477f584ea829b15"
+    },
+    {
+      "path": "frontend/vendor/webpack-runtime.js",
+      "bytes": 1006,
+      "sha256": "0ce2613de3df250ba6258085aa3274c1d9a126071f3068b4d17f55ba06ed4a40"
+    },
+    {
+      "path": "go.mod",
+      "bytes": 49,
+      "sha256": "b3328a195ef2a249433360e41644bd427aa7e27b48ce77dce47926d508161d12"
+    },
+    {
+      "path": "install.sh",
+      "bytes": 9304,
+      "sha256": "2eea7372e1103c1ebd78e9fdf5f8cf46defae631ce1ba3401564c5dd00303086"
+    },
+    {
+      "path": "internal/agent/client.go",
+      "bytes": 2219,
+      "sha256": "9a9ca54506fdc2810d2733079bd9074122994959cc973d925f7c293b9de1b60c"
+    },
+    {
+      "path": "internal/agent/client_test.go",
+      "bytes": 537,
+      "sha256": "1a275d003a0170ee248f4524b65833a730bcc55ad20cfaa16d08e65b97189013"
+    },
+    {
+      "path": "internal/agent/jobs.go",
+      "bytes": 2747,
+      "sha256": "c9211c45c5c70abd10ccd17a97a6fe7a1763e754023e8f327c7e4334d2ff17cc"
+    },
+    {
+      "path": "internal/agent/jobs_test.go",
+      "bytes": 1170,
+      "sha256": "ab3d7da81ee7822c77ccb1c156cf1053ce200cf1eb872e4833f3ed5cbc622691"
+    },
+    {
+      "path": "internal/agent/server.go",
+      "bytes": 60344,
+      "sha256": "0db3fdd1db788d0148aa1d9b8a500f9fa07f416458f64b7469609ebf5ca1b022"
+    },
+    {
+      "path": "internal/aptadmin/manager.go",
+      "bytes": 12311,
+      "sha256": "7aa8b075b01210a7d9a702de0e531f391cee17c2943e76165ab01db6a74eec75"
+    },
+    {
+      "path": "internal/aptadmin/manager_test.go",
+      "bytes": 859,
+      "sha256": "69197946fcbb3f26da17eb17a4af4d37d614eee5c2c5f7b3aaf96be41e3e9e67"
+    },
+    {
+      "path": "internal/auth/password.go",
+      "bytes": 4946,
+      "sha256": "ca65fc1d925bb3a4299dcf453d30d60acd756185341c6733e703b66b8489e35f"
+    },
+    {
+      "path": "internal/auth/password_test.go",
+      "bytes": 902,
+      "sha256": "d33d4ac77d82a97c0997e10384dbe8df1c35b43a4e19c7fb29284df1036d3951"
+    },
+    {
+      "path": "internal/auth/ratelimit.go",
+      "bytes": 960,
+      "sha256": "0c9cea61614f5dc95203626725816c92273c822d3971bba7792bb1ec10edeb01"
+    },
+    {
+      "path": "internal/auth/session.go",
+      "bytes": 3211,
+      "sha256": "12408dd01b8388e0637e0f8bfb23fc73e1ff4e3f6cf3f6d9554fed9ef0f666b8"
+    },
+    {
+      "path": "internal/auth/totp.go",
+      "bytes": 3169,
+      "sha256": "cc9e2b841cdd0677bebfae9749493f6577b89d38461082252044471e57ce6cf2"
+    },
+    {
+      "path": "internal/auth/totp_test.go",
+      "bytes": 1024,
+      "sha256": "afd2d25f25ee2fdb091003584856edc23726c5b29756e9b27b212cd2b0205149"
+    },
+    {
+      "path": "internal/auth/webauthn.go",
+      "bytes": 11017,
+      "sha256": "f75aff88b7f7ede533262790ff2fff9a539cf67270f0222bfe6749bd5856e94a"
+    },
+    {
+      "path": "internal/auth/webauthn_test.go",
+      "bytes": 1800,
+      "sha256": "ff363804e71425db499ee04e775ebb1ef1d300b9f06bee737e8c39e5efcd6209"
+    },
+    {
+      "path": "internal/config/config.go",
+      "bytes": 7482,
+      "sha256": "871adf404021da8068ad7a2cbab989c5b69f4578e9600f757c6a08a228629e6a"
+    },
+    {
+      "path": "internal/config/config_test.go",
+      "bytes": 4217,
+      "sha256": "88d58dc450b8f785ac18f932bf8773828239edc4e0ef98c9ff1a9ae7a071bca0"
+    },
+    {
+      "path": "internal/dockerapi/client.go",
+      "bytes": 64464,
+      "sha256": "3d05b5533ea3b303606cb993a7bbc527917e3712b1dca0cd630b65789ac962fd"
+    },
+    {
+      "path": "internal/dockerapi/client_test.go",
+      "bytes": 1813,
+      "sha256": "09a2381d8f581f297b8dca532252992f203cc81456cdf9ab07202a92b1a2129d"
+    },
+    {
+      "path": "internal/files/browser.go",
+      "bytes": 3426,
+      "sha256": "df0531beb52eed0780b55cc9f4bbf33709df2bbe97717c35978003508e9dce66"
+    },
+    {
+      "path": "internal/files/extras.go",
+      "bytes": 10216,
+      "sha256": "128229d3cad05841a72846a84459d74d41c1fb63fa83238c736800389fed736b"
+    },
+    {
+      "path": "internal/files/manager.go",
+      "bytes": 27731,
+      "sha256": "048ca4c7f2112f7ca68b2858a924e6a307850489ac6d8e2435bd2670e57aa26e"
+    },
+    {
+      "path": "internal/files/manager_test.go",
+      "bytes": 7408,
+      "sha256": "a594b61e8f3128fd44550db1f7bd934eb4a0527f7f4795d0885aac62161548ca"
+    },
+    {
+      "path": "internal/files/versions.go",
+      "bytes": 7694,
+      "sha256": "3f8f02fdd668654513a0dd66e0c6d26afdd3dc78c4203cd3f80663216cdc20ca"
+    },
+    {
+      "path": "internal/files/versions_test.go",
+      "bytes": 1242,
+      "sha256": "69e459053ceca8105b9796dfc2cf8ad9d1a1213e3790a9c04940d0c08922ba0d"
+    },
+    {
+      "path": "internal/githubhelper/client.go",
+      "bytes": 20460,
+      "sha256": "be5b1962307ee85e82b7766e47eeac55af04e65612d76c4fc05968dbe582052a"
+    },
+    {
+      "path": "internal/githubhelper/client_test.go",
+      "bytes": 6810,
+      "sha256": "218534b00b1acbc21cd922b08bcfd851f7809d838b7bb5a46a431ad5375cb911"
+    },
+    {
+      "path": "internal/githubhelper/importer.go",
+      "bytes": 15595,
+      "sha256": "873de8d6946f60f921c9ea183b1d86020469993fa73566b5b4183bd6f17ce3fb"
+    },
+    {
+      "path": "internal/githubhelper/oauth.go",
+      "bytes": 5923,
+      "sha256": "645274f4d595a4e5b9a113e062f2ff8e1e8f5ddf0ef9c37e7118527f087ae908"
+    },
+    {
+      "path": "internal/hostadmin/fail2ban.go",
+      "bytes": 6306,
+      "sha256": "7b8d910f5e25ae8500d2fa9d7f312c2bba8efb253045b9d2ce201104a0ab937d"
+    },
+    {
+      "path": "internal/hostadmin/fail2ban_test.go",
+      "bytes": 1441,
+      "sha256": "84cefe5687e475d9f7ff7fc5ec36c45d269f605cd3b707dc1878592d348f29c8"
+    },
+    {
+      "path": "internal/hostadmin/firewall.go",
+      "bytes": 19960,
+      "sha256": "651bbeacb506a732890480fa7638bbdfb34c377ae74f36953286d0e78588f0e2"
+    },
+    {
+      "path": "internal/hostadmin/firewall_contract_test.go",
+      "bytes": 3443,
+      "sha256": "3cc6f1b5249a938f8816938d1472e3bb56063dc0477950e61a224d4fb711a619"
+    },
+    {
+      "path": "internal/hostadmin/host.go",
+      "bytes": 12408,
+      "sha256": "11f51d0396fb79141c85af4c69243144e913bb7c2d42712abf0aad9d3f429ad4"
+    },
+    {
+      "path": "internal/hostadmin/ntp_status_test.go",
+      "bytes": 579,
+      "sha256": "18a1f65946f7e807d8ea47ac5261ad5d74c2a9a60823f95529be85ad299630c2"
+    },
+    {
+      "path": "internal/hostadmin/settings.go",
+      "bytes": 12616,
+      "sha256": "5665e783c64e292b99179b75fed98b05186f694741995ff4235b6a0a34161a2b"
+    },
+    {
+      "path": "internal/hostadmin/settings_status_test.go",
+      "bytes": 922,
+      "sha256": "abb91fac1238c4b35456b5735ea37ad898a42462b3a40b3aefb2093707785f81"
+    },
+    {
+      "path": "internal/server/audit.go",
+      "bytes": 13759,
+      "sha256": "cf6f7f0b6703461e0873b30294766d9ec5c23e5fae7ecfda6ac8c8eb1db0e879"
+    },
+    {
+      "path": "internal/server/audit_test.go",
+      "bytes": 2009,
+      "sha256": "5e202018b90501c57424b9974e5dba5b50420c207f3283e46de29c8126ed0101"
+    },
+    {
+      "path": "internal/server/auth_flow_test.go",
+      "bytes": 9218,
+      "sha256": "eef05b5ab3da4d97523731c00abd118b10a364c4ffafad09370991f893b10b1b"
+    },
+    {
+      "path": "internal/server/backup.go",
+      "bytes": 19015,
+      "sha256": "4ee07f2c6655fdfade531c9eef6384920575f08fe8b5db6f88a1042b49ee5153"
+    },
+    {
+      "path": "internal/server/backup_test.go",
+      "bytes": 5548,
+      "sha256": "40cb6b565ff61dc82a130f8968fc14e8de442e95b35de9406b497c50721fe220"
+    },
+    {
+      "path": "internal/server/clientip_test.go",
+      "bytes": 976,
+      "sha256": "ab9cf316419826f08b9120758b46ba0c86ec3ed8623212a2bed472136609fa94"
+    },
+    {
+      "path": "internal/server/context.go",
+      "bytes": 411,
+      "sha256": "68fc485309f4aab33997f513646dda8ce5b0d44ca7bea850137c3277cee1ee8a"
+    },
+    {
+      "path": "internal/server/fileprefs.go",
+      "bytes": 3622,
+      "sha256": "4b565241e97539f51e3963266091775bf5695ee868aa1441817e76049ab7c5a7"
+    },
+    {
+      "path": "internal/server/frontend_contract_test.go",
+      "bytes": 2758,
+      "sha256": "aaebf8125079aa5b6c5a302ab4530ad882704375645c46e9c8510145cf71bb12"
+    },
+    {
+      "path": "internal/server/github_auth.go",
+      "bytes": 11272,
+      "sha256": "bd2c05ff7f9c0c57c4cb81ba1e9432dc356c89122541296e582c604b2ec24414"
+    },
+    {
+      "path": "internal/server/github_auth_test.go",
+      "bytes": 2151,
+      "sha256": "e3899047d595ffa27f0bd8f76a0f2cc1a5ce7a75d0d9039ff8fb997e494eb408"
+    },
+    {
+      "path": "internal/server/github_extra.go",
+      "bytes": 3010,
+      "sha256": "fae854bac7f802623794745d04f361d5e6f7ac452add973184b274e21f5b9626"
+    },
+    {
+      "path": "internal/server/mobile_ui_test.go",
+      "bytes": 2411,
+      "sha256": "8a2303d1843975e0f3f9c57864278953a742abc9750d9da4fd3e5e499fcd5a57"
+    },
+    {
+      "path": "internal/server/passkey.go",
+      "bytes": 9957,
+      "sha256": "772e9ccb37a2bbf72fa3a740c81d815d1b219e4bc55a33108d144c430457dbd3"
+    },
+    {
+      "path": "internal/server/release_contract_test.go",
+      "bytes": 5944,
+      "sha256": "a6c56c8aeee51e0d5eca909b0299802eeb74d8b2e05e7e0b71184fa623b79076"
+    },
+    {
+      "path": "internal/server/security_auth.go",
+      "bytes": 10049,
+      "sha256": "3d56dd5eb965a5e9842834022deba457dba181177a4ddda4e20ade42676923af"
+    },
+    {
+      "path": "internal/server/server.go",
+      "bytes": 79228,
+      "sha256": "b46b520f49599be3779452a32b16641de0faed615c242bf7092a3b28f1595b94"
+    },
+    {
+      "path": "internal/server/spa_test.go",
+      "bytes": 2301,
+      "sha256": "2a10d6ff79e4348a0d6068ee61c45061182d9cdb68a4a202942f15a525505ee4"
+    },
+    {
+      "path": "internal/server/totp.go",
+      "bytes": 6198,
+      "sha256": "d893f6aadab2f87aa0ce1e060546574b9cebed1c19e74f12ea566dac5a98ca7c"
+    },
+    {
+      "path": "internal/server/webdist/assets/app.css",
+      "bytes": 47295,
+      "sha256": "c11803aa2e24072bbf49640df0b313910943c434ffa299c9a15efb451b0122b7"
+    },
+    {
+      "path": "internal/server/webdist/assets/app.js",
+      "bytes": 305299,
+      "sha256": "eedce36322b237c49418482958bd4363fec8be30fb6931d1080759bdb024eaea"
+    },
+    {
+      "path": "internal/server/webdist/assets/apple-touch-icon.png",
+      "bytes": 34268,
+      "sha256": "bf6c11e256480ef6173c9007cf3dcb5fbe27eebcc3bd679f09fe14121630cdd6"
+    },
+    {
+      "path": "internal/server/webdist/assets/favicon-32.png",
+      "bytes": 2413,
+      "sha256": "b3bdf5a48e1f34f1ac7cf1cfddfc2df0baa4ceefe707c4721cc5b94b95bfd6d3"
+    },
+    {
+      "path": "internal/server/webdist/assets/favicon-64.png",
+      "bytes": 6820,
+      "sha256": "dbd6000fa62df77a7c9bf35a6cbd978eb15346c312cc25979fe61855a610ddd5"
+    },
+    {
+      "path": "internal/server/webdist/assets/lukepanel-icon-192.png",
+      "bytes": 37860,
+      "sha256": "4996fbd22c07e2951b3e82ee5be0efef8d538d67b760f25d96f7352d8f28f95d"
+    },
+    {
+      "path": "internal/server/webdist/assets/lukepanel-icon-512.png",
+      "bytes": 233572,
+      "sha256": "bb814edfec49424a11bf6ba5bc576f9825bc009f55ff948f809d7d029ff1f1a3"
+    },
+    {
+      "path": "internal/server/webdist/assets/react-18.2.0.js",
+      "bytes": 6719,
+      "sha256": "6af644f0b2def8b62db1935a15c97c97cc1c9d0fa1f70af1ffd83a5cca080b61"
+    },
+    {
+      "path": "internal/server/webdist/assets/react-bootstrap.js",
+      "bytes": 486,
+      "sha256": "f086feef429fdf3044e68ec4a29033214a64f5641428dd5dc22ed475bd1a5801"
+    },
+    {
+      "path": "internal/server/webdist/assets/react-dom-18.2.0.js",
+      "bytes": 135510,
+      "sha256": "4c0e5031d01762064070ac8f272fcb191164fea351f61bdd6477f584ea829b15"
+    },
+    {
+      "path": "internal/server/webdist/assets/vendor-runtime.js",
+      "bytes": 1006,
+      "sha256": "0ce2613de3df250ba6258085aa3274c1d9a126071f3068b4d17f55ba06ed4a40"
+    },
+    {
+      "path": "internal/server/webdist/build-meta.json",
+      "bytes": 1949,
+      "sha256": "2b486dbc9c054143d2a75a10da4420e5a1d7901553b7e7604fbbe84e774ea49d"
+    },
+    {
+      "path": "internal/server/webdist/index.html",
+      "bytes": 1221,
+      "sha256": "9ce72c38d1328481449e67131ae835c9f056b3c36bab4458e008d01b532d97b3"
+    },
+    {
+      "path": "internal/server/webdist/manifest.webmanifest",
+      "bytes": 544,
+      "sha256": "f1d73b4915e5cc9667227771569b17ebefce4a49a8376f05e1ef05891f57bb42"
+    },
+    {
+      "path": "internal/services/manager.go",
+      "bytes": 4084,
+      "sha256": "8079ec66f2d819de7d1019c4859f93199185be5fe532628840234b97895f7b39"
+    },
+    {
+      "path": "internal/snapshots/manager.go",
+      "bytes": 8910,
+      "sha256": "1a83afe5ef59d5fa8c7c33949382523791f5e1e8bde69f2b1338b2d66395bca3"
+    },
+    {
+      "path": "internal/snapshots/manager_test.go",
+      "bytes": 1505,
+      "sha256": "fac37508e35dfc1107f78081c69296b301fa2406a4da2bd7bea8947c3acd3a1b"
+    },
+    {
+      "path": "internal/sshadmin/manager.go",
+      "bytes": 27363,
+      "sha256": "c708775dcd67a63b596b01d5a824985720caddb640296422b3a1ecafa01968b3"
+    },
+    {
+      "path": "internal/sshadmin/manager_test.go",
+      "bytes": 649,
+      "sha256": "9803a2183d29355bb7416d5464469034f112089bf42dedfe52f2b4b17f0650bd"
+    },
+    {
+      "path": "internal/system/overview.go",
+      "bytes": 5783,
+      "sha256": "4c0eff98fc9838c7f15f06634ed2387d8a766d0d95b71156971ca8a9bc3bc867"
+    },
+    {
+      "path": "internal/systemadmin/admin.go",
+      "bytes": 10599,
+      "sha256": "0ccec28ad86de29153f2f377344c062827f4a04b03304c9150afb45480f3a147"
+    },
+    {
+      "path": "internal/systemadmin/admin_test.go",
+      "bytes": 626,
+      "sha256": "46aa8b13e1aefbfa1ca4455252f788927803167f0099397240f95550d96bcf98"
+    },
+    {
+      "path": "internal/tasks/manager.go",
+      "bytes": 9964,
+      "sha256": "e509728f0e1b0d50e55229b4b3576d24d1884a7d042533a49f5c9920967b2ad8"
+    },
+    {
+      "path": "internal/tasks/manager_test.go",
+      "bytes": 2388,
+      "sha256": "a18b6e707dc679c891ba9f9e2567b198532bc03c577a55fcb29253652af45582"
+    },
+    {
+      "path": "internal/tools/tools.go",
+      "bytes": 6329,
+      "sha256": "b7a896e70b2c3e417c8b8d518de1af0369a1f3d7cead92d6046b3485063a07e7"
+    },
+    {
+      "path": "packaging/systemd/lukepanel-agent.service",
+      "bytes": 615,
+      "sha256": "f4878066d22891fb433118fc8082417b9e65732e314f8b9708fbe87f7f129a04"
+    },
+    {
+      "path": "packaging/systemd/lukepanel.service",
+      "bytes": 606,
+      "sha256": "05da21be86d82eff99d87fa4e313e3f80c4a5dee487e8d6bd13480d8993542d2"
+    },
+    {
+      "path": "scripts/build-frontend.sh",
+      "bytes": 2326,
+      "sha256": "a8c16a7140d5eb5c09dff1efaebc46b2823c3916e1da3156c49cabb4a90bdfe0"
+    },
+    {
+      "path": "tests/browser/accessibility.py",
+      "bytes": 2757,
+      "sha256": "f7bd764b778eb0d770437dedb836d1627483c57ea928e638564502dc0947384e"
+    },
+    {
+      "path": "tests/browser/audit.py",
+      "bytes": 65251,
+      "sha256": "3c8950baf8d4e36423cf80237ff9b97e6fe103140dd5bf71438c6c2db5f55a62"
+    },
+    {
+      "path": "tests/browser/capture_all.py",
+      "bytes": 1334,
+      "sha256": "f7c82970a0cc0d4662717a7d375c970a92f253c4a0d0a986af3b4a1e36258950"
+    },
+    {
+      "path": "tests/browser/merge_reports.py",
+      "bytes": 2194,
+      "sha256": "3d8cc5d918241805ceddc5e3d292b4414d7b01c45a88b013a02b89fc8d6f60cb"
+    },
+    {
+      "path": "tests/browser/merge_truth.py",
+      "bytes": 1315,
+      "sha256": "5bf7898d080ea8ec96c7e7c6998124338b6d4e40ef5e7fb5c2aefc899d1fe851"
+    },
+    {
+      "path": "tests/browser/mock_api.json",
+      "bytes": 17527,
+      "sha256": "865d02837827bb28653676dcbafa4a10794f0e9b57a4e55e577a4af13a9757c9"
+    },
+    {
+      "path": "tests/browser/truth_all.py",
+      "bytes": 674,
+      "sha256": "72ab7bd811721ed554e8098b3c8a7fb19cda69e2ea6bf837e5e68d4940eeb2ab"
+    },
+    {
+      "path": "tests/browser/truth_worker.py",
+      "bytes": 5680,
+      "sha256": "be672ec2fbb1a73259b51bd7c997d4b1a47ed941c7247fad8f06ba1aab8a8e5f"
+    },
+    {
+      "path": "tests/browser/worker.py",
+      "bytes": 5891,
+      "sha256": "275600e7fdd089f5c74bc0aba01de23ee4b984da330d2002aadebdbd7f165c87"
+    },
+    {
+      "path": "tests/mock_server.py",
+      "bytes": 1394,
+      "sha256": "5f9cb3dae78a8d1211bfc32783846dc15cb4e720fc5ddee3164b99219cf69c63"
+    },
+    {
+      "path": "tests/static/validate.py",
+      "bytes": 5219,
+      "sha256": "5b283c4621443633d1c3670a808824d8428a0562b49a4bdfa50a1465e1c07b40"
+    },
+    {
+      "path": "uninstall.sh",
+      "bytes": 2051,
+      "sha256": "3ce367e07b0615001990b57ffc74937e5b8439acf01b5c646ec3e3cf972dd16a"
+    },
+    {
+      "path": "web/assets/app.css",
+      "bytes": 47295,
+      "sha256": "c11803aa2e24072bbf49640df0b313910943c434ffa299c9a15efb451b0122b7"
+    },
+    {
+      "path": "web/assets/app.js",
+      "bytes": 305299,
+      "sha256": "eedce36322b237c49418482958bd4363fec8be30fb6931d1080759bdb024eaea"
+    },
+    {
+      "path": "web/assets/apple-touch-icon.png",
+      "bytes": 34268,
+      "sha256": "bf6c11e256480ef6173c9007cf3dcb5fbe27eebcc3bd679f09fe14121630cdd6"
+    },
+    {
+      "path": "web/assets/favicon-32.png",
+      "bytes": 2413,
+      "sha256": "b3bdf5a48e1f34f1ac7cf1cfddfc2df0baa4ceefe707c4721cc5b94b95bfd6d3"
+    },
+    {
+      "path": "web/assets/favicon-64.png",
+      "bytes": 6820,
+      "sha256": "dbd6000fa62df77a7c9bf35a6cbd978eb15346c312cc25979fe61855a610ddd5"
+    },
+    {
+      "path": "web/assets/lukepanel-icon-192.png",
+      "bytes": 37860,
+      "sha256": "4996fbd22c07e2951b3e82ee5be0efef8d538d67b760f25d96f7352d8f28f95d"
+    },
+    {
+      "path": "web/assets/lukepanel-icon-512.png",
+      "bytes": 233572,
+      "sha256": "bb814edfec49424a11bf6ba5bc576f9825bc009f55ff948f809d7d029ff1f1a3"
+    },
+    {
+      "path": "web/assets/react-18.2.0.js",
+      "bytes": 6719,
+      "sha256": "6af644f0b2def8b62db1935a15c97c97cc1c9d0fa1f70af1ffd83a5cca080b61"
+    },
+    {
+      "path": "web/assets/react-bootstrap.js",
+      "bytes": 486,
+      "sha256": "f086feef429fdf3044e68ec4a29033214a64f5641428dd5dc22ed475bd1a5801"
+    },
+    {
+      "path": "web/assets/react-dom-18.2.0.js",
+      "bytes": 135510,
+      "sha256": "4c0e5031d01762064070ac8f272fcb191164fea351f61bdd6477f584ea829b15"
+    },
+    {
+      "path": "web/assets/vendor-runtime.js",
+      "bytes": 1006,
+      "sha256": "0ce2613de3df250ba6258085aa3274c1d9a126071f3068b4d17f55ba06ed4a40"
+    },
+    {
+      "path": "web/build-meta.json",
+      "bytes": 1949,
+      "sha256": "2b486dbc9c054143d2a75a10da4420e5a1d7901553b7e7604fbbe84e774ea49d"
+    },
+    {
+      "path": "web/index.html",
+      "bytes": 1221,
+      "sha256": "9ce72c38d1328481449e67131ae835c9f056b3c36bab4458e008d01b532d97b3"
+    },
+    {
+      "path": "web/manifest.webmanifest",
+      "bytes": 544,
+      "sha256": "f1d73b4915e5cc9667227771569b17ebefce4a49a8376f05e1ef05891f57bb42"
+    }
+  ]
+}
