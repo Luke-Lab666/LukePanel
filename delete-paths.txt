@@ -1,0 +1,16 @@
+# 旧原生前端：React 构建后不再参与任何运行或发布流程
+web/app.js
+web/index.html
+web/styles.css
+
+# 旧的已生成嵌入资源：由 make frontend 从 React 源码重新生成
+internal/server/webdist
+
+# 历史构建产物：不应提交到源码仓库
+dist
+
+# 旧 UI 审计产物与截图：对应已删除的原生前端
+reports
+tests/browser
+docs/UI_AND_INTERACTION.md
+FULL-PACKAGE-MANIFEST.txt
