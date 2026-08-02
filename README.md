@@ -9,12 +9,20 @@
 </p>
 
 <p align="center">
-  当前版本：<code>v1.1.1</code>
+  当前版本：<code>v2.0.0</code>
 </p>
 
 LukePanel 面向需要维护单台 Debian 或 Ubuntu 服务器的个人用户和小型团队。它提供系统、Docker、文件、SSH、安全与审计管理，同时避免把浏览器变成任意 root WebShell。
 
 Web 服务以普通系统用户运行；需要 root 权限的操作由独立 Agent 通过本地 Unix Socket 执行。Agent 只接受经过校验的固定动作，不接收浏览器传入的任意 Shell 命令。
+
+
+## v2.0.0 React 全量重构
+
+- 前端使用 React 18 与 TypeScript 重新实现，旧手写 DOM 与过渡前端不进入运行链路。
+- React 与 ReactDOM 固定版本随源码提供，离线构建后由 Go `embed` 内嵌，VPS 运行时不访问 CDN。
+- 路由层级、表单、弹窗、错误提示、加载状态和手机端导航均由统一组件管理。
+- 只有带明确父路由的二级页面显示返回按钮；日志中心是独立一级页面。
 
 ## 主要特点
 
@@ -28,7 +36,7 @@ Web 服务以普通系统用户运行；需要 root 权限的操作由独立 Age
 - Passkey、TOTP、恢复码、会话和登录保护
 - UFW、Fail2ban、安全体检和审计日志
 - 可选 GitHub 仓库、Actions、Pull Request 和 Release 工作流
-- Go 单二进制运行，不依赖 Node.js、Redis 或外部数据库
+- React 18 + TypeScript 前端，构建产物随 Go 单二进制内嵌；服务器运行时不依赖 Node.js、CDN、Redis 或外部数据库
 
 ## 支持范围
 
@@ -246,28 +254,24 @@ ls -l /run/lukepanel/agent.sock
 要求：
 
 - Go 1.23 或更高版本
+- Node.js 20 或更高版本；执行 `npm --prefix frontend install` 安装固定版本的 TypeScript 编译器
 - 完整系统集成测试需要 Linux
-- 前端不需要 npm
+
+React 前端运行时已固定随仓库提交，正式构建不访问 CDN。开发机首次构建先安装固定版本的 TypeScript；目标 VPS 使用发行版二进制，不需要 Node.js：
 
 ```bash
+npm --prefix frontend install --ignore-scripts --no-audit --no-fund
 make frontend
 make test
-make build VERSION=dev
+make verify
+make build
 ```
 
-`web/` 目录中的资源会复制到 `internal/server/webdist` 并嵌入 Go 二进制。修改前端后需要先执行 `make frontend`。
-
-## v2.0.0 UI 与防火墙可靠性重构
-
-- 以 CSS Cascade Layers、统一设计令牌和响应式组件替换旧的全局样式堆叠。
-- 保留全部现有业务功能与安全模型，不以占位页面替换真实操作。
-- 修复 Web / Agent 防火墙协议、UFW 命令顺序、真实错误输出和规则即时刷新。
-- 防火墙表单与规则列表在手机、平板和桌面均使用独立卡片布局。
-- 增加源码契约测试与 Chromium 多尺寸 UI 回归。
+`make frontend` 会严格编译 `frontend/src/app.tsx`，生成 `web/`，再同步到 `internal/server/webdist`。Go 二进制只嵌入这份经过校验的 React 成品。
 
 ## 项目状态
 
-LukePanel v2.0.0 是完整 UI 与防火墙可靠性重构版本。它保留 v1.0.0 的全部功能边界和安全模型，后续版本继续优先修复安全、兼容性和可靠性问题。
+LukePanel v2.0.0 已将页面、路由、状态、API 调用和弹窗完整迁移到 React 18 + TypeScript。React 与 ReactDOM 固定版本随仓库内嵌，生产运行不依赖 CDN；旧版手写 DOM 与过渡前端均不进入正式资源链路。
 
 执行软件升级、防火墙、SSH、Docker 和文件系统操作前，仍应保留服务器级备份。项目会尽量使用验证、快照和回滚降低风险，但任何具备 root 管理能力的面板都无法消除错误操作和系统差异带来的风险。
 

@@ -1,0 +1,786 @@
+{
+  "/api/v1/auth/me": {
+    "status": 200,
+    "payload": {
+      "username": "admin",
+      "csrf_token": "audit-csrf",
+      "session_id": "audit-session"
+    }
+  },
+  "/api/v1/settings": {
+    "status": 200,
+    "payload": {
+      "version": "v2.0.0",
+      "listen": "127.0.0.1:8080",
+      "secure_cookie": true,
+      "agent_socket": "/run/lukepanel/agent.sock",
+      "admin_user": "admin",
+      "auto_refresh_seconds": 5
+    }
+  },
+  "/api/v1/system/overview": {
+    "status": 200,
+    "payload": {
+      "hostname": "lukepanel-audit",
+      "platform": "Debian GNU/Linux 13",
+      "os": "Debian GNU/Linux 13",
+      "kernel": "6.12.0-amd64",
+      "architecture": "amd64",
+      "uptime_seconds": 345678,
+      "load": [
+        0.42,
+        0.36,
+        0.31
+      ],
+      "cpu_percent": 23.5,
+      "cpu": {
+        "percent": 23.5,
+        "cores": 4,
+        "model": "AMD EPYC 7B13"
+      },
+      "memory": {
+        "used": 2147483648,
+        "total": 4294967296,
+        "percent": 50.0
+      },
+      "swap": {
+        "used": 134217728,
+        "total": 2147483648,
+        "percent": 6.25
+      },
+      "disks": [
+        {
+          "mountpoint": "/",
+          "filesystem": "ext4",
+          "used": 32212254720,
+          "total": 85899345920,
+          "percent": 37.5
+        }
+      ],
+      "network": [
+        {
+          "name": "eth0",
+          "received_bps": 524288,
+          "sent_bps": 131072
+        }
+      ],
+      "collected_at": "2026-08-02T07:37:10.703422+00:00"
+    }
+  },
+  "/api/v1/system/services": {
+    "status": 200,
+    "payload": {
+      "services": [
+        {
+          "name": "lukepanel.service",
+          "description": "LukePanel Web service",
+          "active": "active",
+          "sub": "running",
+          "enabled": "enabled"
+        },
+        {
+          "name": "docker.service",
+          "description": "Docker Engine",
+          "active": "active",
+          "sub": "running",
+          "enabled": "enabled"
+        },
+        {
+          "name": "example-failed.service",
+          "description": "Failure sample",
+          "active": "failed",
+          "sub": "failed",
+          "enabled": "disabled"
+        }
+      ]
+    }
+  },
+  "/api/v1/system/processes": {
+    "status": 200,
+    "payload": {
+      "processes": [
+        {
+          "pid": 1001,
+          "user": "root",
+          "cpu_percent": 18.2,
+          "memory_bytes": 134217728,
+          "state": "S",
+          "command": "lukepanel-agent"
+        },
+        {
+          "pid": 1002,
+          "user": "lukepanel",
+          "cpu_percent": 5.4,
+          "memory_bytes": 94371840,
+          "state": "S",
+          "command": "lukepanel"
+        }
+      ]
+    }
+  },
+  "/api/v1/system/network": {
+    "status": 200,
+    "payload": {
+      "interfaces": [
+        {
+          "name": "eth0",
+          "flags": "up,broadcast,running",
+          "addresses": [
+            "10.0.0.8/24",
+            "2001:db8::8/64"
+          ],
+          "mtu": 1500,
+          "received_bytes": 9876543210,
+          "sent_bytes": 3456789012
+        },
+        {
+          "name": "lo",
+          "flags": "up,loopback,running",
+          "addresses": [
+            "127.0.0.1/8"
+          ],
+          "mtu": 65536,
+          "received_bytes": 102400,
+          "sent_bytes": 102400
+        }
+      ],
+      "listening": "tcp LISTEN 0 4096 0.0.0.0:22\ntcp LISTEN 0 4096 127.0.0.1:8080\nudp UNCONN 0 0 0.0.0.0:53"
+    }
+  },
+  "/api/v1/system/storage": {
+    "status": 200,
+    "payload": {
+      "mounts": [
+        {
+          "mountpoint": "/",
+          "filesystem": "ext4",
+          "device": "/dev/vda1",
+          "total": 85899345920,
+          "used": 32212254720,
+          "virtual": false
+        },
+        {
+          "mountpoint": "/boot/efi",
+          "filesystem": "vfat",
+          "device": "/dev/vda15",
+          "total": 536870912,
+          "used": 67108864,
+          "virtual": false
+        },
+        {
+          "mountpoint": "/proc",
+          "filesystem": "proc",
+          "device": "proc",
+          "total": 0,
+          "used": 0,
+          "virtual": true
+        }
+      ]
+    }
+  },
+  "/api/v1/system/tasks": {
+    "status": 200,
+    "payload": {
+      "tasks": [
+        {
+          "id": "backup-daily",
+          "name": "每日完整备份",
+          "type": "panel-backup",
+          "target": "safe",
+          "frequency": "daily",
+          "hour": 4,
+          "minute": 0,
+          "weekday": 1,
+          "enabled": true,
+          "next_run": "明天 04:00"
+        },
+        {
+          "id": "docker-clean",
+          "name": "每周安全清理",
+          "type": "docker-cleanup-safe",
+          "target": "safe",
+          "frequency": "weekly",
+          "hour": 5,
+          "minute": 15,
+          "weekday": 0,
+          "enabled": false,
+          "next_run": "未启用"
+        }
+      ]
+    }
+  },
+  "/api/v1/system/timers": {
+    "status": 200,
+    "payload": {
+      "timers": "NEXT LEFT LAST PASSED UNIT ACTIVATES\nMon 04:00 12h Sun 04:00 lukepanel-backup.timer"
+    }
+  },
+  "/api/v1/system/apt/preflight": {
+    "status": 200,
+    "payload": {
+      "available": true,
+      "locked": false,
+      "upgrade_count": 12,
+      "install_count": 1,
+      "remove_count": 0,
+      "download_bytes": 125829120,
+      "disk_delta_bytes": 67108864,
+      "reboot_required": false,
+      "packages": [
+        "curl",
+        "openssl",
+        "systemd",
+        "linux-image-amd64"
+      ]
+    }
+  },
+  "/api/v1/system/apt/sources": {
+    "status": 200,
+    "payload": {
+      "sources": [
+        {
+          "name": "sources.list",
+          "path": "/etc/apt/sources.list",
+          "enabled": true,
+          "content": "deb https://deb.debian.org/debian trixie main"
+        },
+        {
+          "name": "docker.list",
+          "path": "/etc/apt/sources.list.d/docker.list",
+          "enabled": true,
+          "content": "deb https://download.docker.com/linux/debian trixie stable"
+        }
+      ]
+    }
+  },
+  "/api/v1/system/host": {
+    "status": 200,
+    "payload": {
+      "hostname": "lukepanel-audit",
+      "timezone": "Asia/Shanghai",
+      "systemd_resolved": true,
+      "dns": [
+        "1.1.1.1",
+        "8.8.8.8"
+      ],
+      "swap": {
+        "enabled": true,
+        "managed": true,
+        "total": 2147483648,
+        "used": 134217728
+      },
+      "bbr": true,
+      "sysctl": {
+        "preset": "network",
+        "label": "网络吞吐",
+        "bbr": true,
+        "managed": true,
+        "congestion_control": "bbr",
+        "default_qdisc": "fq",
+        "swappiness": 10,
+        "config_path": "/etc/sysctl.d/99-lukepanel.conf"
+      }
+    }
+  },
+  "/api/v1/system/host/ntp": {
+    "status": 200,
+    "payload": {
+      "available": true,
+      "enabled": true,
+      "synchronized": true,
+      "service": "systemd-timesyncd",
+      "service_active": true,
+      "service_unit": "systemd-timesyncd.service",
+      "timezone": "Asia/Shanghai",
+      "server_name": "ntp.tencent.com",
+      "server_address": "203.107.6.88",
+      "last_sync": "刚刚"
+    }
+  },
+  "/api/v1/system/snapshots": {
+    "status": 200,
+    "payload": {
+      "snapshots": [
+        {
+          "id": "snap-1",
+          "kind": "ssh",
+          "name": "SSH 修改前",
+          "note": "自动快照",
+          "created_at": "2026-08-02T07:37:10.703707+00:00",
+          "size": 4096,
+          "items": [
+            {
+              "original": "/etc/ssh/sshd_config",
+              "exists": true
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "/api/v1/backup/scheduled": {
+    "status": 200,
+    "payload": {
+      "backups": [
+        {
+          "name": "lukepanel-backup-20260802.tar.gz",
+          "modified_at": "2026-08-02T07:37:10.703732+00:00",
+          "size": 524288
+        }
+      ],
+      "retention": 7
+    }
+  },
+  "/api/v1/docker/status": {
+    "status": 200,
+    "payload": {
+      "available": true,
+      "version": "28.3.3",
+      "status": "running",
+      "containers": 2,
+      "running": 1
+    }
+  },
+  "/api/v1/docker/containers": {
+    "status": 200,
+    "payload": {
+      "containers": [
+        {
+          "id": "abcdef0123456789",
+          "names": [
+            "/adguardhome"
+          ],
+          "image": "adguard/adguardhome:latest",
+          "state": "running",
+          "status": "Up 3 days",
+          "ports": [
+            {
+              "PublicPort": 53,
+              "PrivatePort": 53,
+              "Type": "udp"
+            },
+            {
+              "PublicPort": 3000,
+              "PrivatePort": 3000,
+              "Type": "tcp"
+            }
+          ]
+        },
+        {
+          "id": "0123456789abcdef",
+          "names": [
+            "/nginx"
+          ],
+          "image": "nginx:alpine",
+          "state": "exited",
+          "status": "Exited (0) 2 hours ago",
+          "ports": []
+        }
+      ]
+    }
+  },
+  "/api/v1/docker/images": {
+    "status": 200,
+    "payload": {
+      "images": [
+        {
+          "id": "sha256:1234567890abcdef",
+          "repo_tags": [
+            "nginx:alpine"
+          ],
+          "size": 52428800,
+          "created": 1785600000,
+          "containers": 1
+        }
+      ]
+    }
+  },
+  "/api/v1/docker/networks": {
+    "status": 200,
+    "payload": {
+      "networks": [
+        {
+          "id": "network123456789",
+          "name": "bridge",
+          "driver": "bridge",
+          "scope": "local",
+          "internal": false,
+          "containers": 2
+        },
+        {
+          "id": "custom123456789",
+          "name": "app-network",
+          "driver": "bridge",
+          "scope": "local",
+          "internal": false,
+          "containers": 1
+        }
+      ]
+    }
+  },
+  "/api/v1/docker/volumes": {
+    "status": 200,
+    "payload": {
+      "volumes": [
+        {
+          "name": "app-data",
+          "driver": "local",
+          "mountpoint": "/var/lib/docker/volumes/app-data/_data",
+          "scope": "local"
+        }
+      ]
+    }
+  },
+  "/api/v1/docker/volumes/usage": {
+    "status": 200,
+    "payload": {
+      "volumes": [
+        {
+          "name": "app-data",
+          "size": 1073741824,
+          "ref_count": 1
+        }
+      ]
+    }
+  },
+  "/api/v1/docker/compose": {
+    "status": 200,
+    "payload": {
+      "projects": [
+        {
+          "name": "dns-stack",
+          "running": 1,
+          "total": 1,
+          "working_dir": "/opt/dns-stack",
+          "config_files": [
+            "/opt/dns-stack/compose.yaml"
+          ],
+          "containers": [
+            {
+              "service": "adguard",
+              "name": "adguardhome",
+              "state": "running"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "/api/v1/docker/stats": {
+    "status": 200,
+    "payload": {
+      "stats": [
+        {
+          "id": "abcdef0123456789",
+          "cpu_percent": 2.3,
+          "memory_usage": 67108864,
+          "memory_limit": 1073741824,
+          "network_rx": 1048576,
+          "network_tx": 524288
+        }
+      ]
+    }
+  },
+  "/api/v1/files": {
+    "status": 200,
+    "payload": {
+      "path": "/",
+      "parent": null,
+      "entries": [
+        {
+          "name": "etc",
+          "path": "/etc",
+          "is_dir": true,
+          "size": 4096,
+          "modified_at": "2026-08-02T07:37:10.703962+00:00",
+          "mode": "drwxr-xr-x"
+        },
+        {
+          "name": "opt",
+          "path": "/opt",
+          "is_dir": true,
+          "size": 4096,
+          "modified_at": "2026-08-02T07:37:10.703963+00:00",
+          "mode": "drwxr-xr-x"
+        },
+        {
+          "name": "README.txt",
+          "path": "/README.txt",
+          "is_dir": false,
+          "size": 1280,
+          "modified_at": "2026-08-02T07:37:10.703966+00:00",
+          "mode": "-rw-r--r--"
+        }
+      ]
+    }
+  },
+  "/api/v1/files/preferences": {
+    "status": 200,
+    "payload": {
+      "favorites": [
+        {
+          "path": "/opt",
+          "name": "opt",
+          "is_dir": true
+        }
+      ],
+      "recent": [
+        {
+          "path": "/etc",
+          "name": "etc",
+          "is_dir": true,
+          "last_access": "2026-08-02T07:37:10.703981+00:00"
+        }
+      ]
+    }
+  },
+  "/api/v1/files/recycle": {
+    "status": 200,
+    "payload": {
+      "entries": []
+    }
+  },
+  "/api/v1/auth/sessions": {
+    "status": 200,
+    "payload": {
+      "sessions": [
+        {
+          "id": "audit-session",
+          "current": true,
+          "ip": "127.0.0.1",
+          "created_at": "2026-08-02T07:37:10.704031+00:00"
+        }
+      ]
+    }
+  },
+  "/api/v1/auth/totp/status": {
+    "status": 200,
+    "payload": {
+      "enabled": true,
+      "recovery_codes_remaining": 8
+    }
+  },
+  "/api/v1/security/status": {
+    "status": 200,
+    "payload": {
+      "score": 92,
+      "checks": [
+        {
+          "id": "https",
+          "title": "HTTPS",
+          "status": "good",
+          "detail": "安全连接已启用"
+        },
+        {
+          "id": "firewall",
+          "title": "UFW 防火墙",
+          "status": "good",
+          "detail": "防火墙正在运行"
+        },
+        {
+          "id": "fail2ban",
+          "title": "Fail2ban",
+          "status": "good",
+          "detail": "SSH 防暴力破解已启用"
+        },
+        {
+          "id": "auto-updates",
+          "title": "安全更新",
+          "status": "advice",
+          "detail": "建议启用自动安全更新",
+          "recommendation": "不会自动重启"
+        }
+      ]
+    }
+  },
+  "/api/v1/auth/passkeys": {
+    "status": 200,
+    "payload": {
+      "passkeys": [
+        {
+          "id": "pk1",
+          "name": "iPhone Passkey",
+          "last_used": "2026-08-02T07:37:10.704101+00:00"
+        }
+      ]
+    }
+  },
+  "/api/v1/auth/trusted-devices": {
+    "status": 200,
+    "payload": {
+      "devices": [
+        {
+          "id": "dev1",
+          "name": "iPhone",
+          "ip": "127.0.0.1",
+          "last_used": "2026-08-02T07:37:10.704126+00:00"
+        }
+      ]
+    }
+  },
+  "/api/v1/security/ip-allowlist": {
+    "status": 200,
+    "payload": {
+      "enabled": false,
+      "entries": [],
+      "current_ip": "127.0.0.1"
+    }
+  },
+  "/api/v1/security/login-notifications": {
+    "status": 200,
+    "payload": {
+      "enabled": false,
+      "chat_id": ""
+    }
+  },
+  "/api/v1/security/fail2ban": {
+    "status": 200,
+    "payload": {
+      "installed": true,
+      "active": true,
+      "currently_failed": 0,
+      "total_failed": 12,
+      "currently_banned": 0,
+      "total_banned": 2,
+      "banned_ips": [],
+      "ignore_ips": [
+        "127.0.0.1",
+        "10.0.0.0/8"
+      ]
+    }
+  },
+  "/api/v1/security/firewall": {
+    "status": 200,
+    "payload": {
+      "installed": true,
+      "enabled": true,
+      "recovery_pending": false,
+      "default_incoming": "deny",
+      "default_outgoing": "allow",
+      "rules": [
+        {
+          "number": 1,
+          "to": "22/tcp",
+          "action": "ALLOW IN",
+          "from": "203.0.113.0/24"
+        },
+        {
+          "number": 2,
+          "to": "443/tcp",
+          "action": "ALLOW IN",
+          "from": "Anywhere"
+        },
+        {
+          "number": 3,
+          "to": "53/udp",
+          "action": "ALLOW IN",
+          "from": "Anywhere"
+        }
+      ]
+    }
+  },
+  "/api/v1/ssh/status": {
+    "status": 200,
+    "payload": {
+      "available": true,
+      "running": true,
+      "port": "22",
+      "permit_root_login": "prohibit-password",
+      "password_authentication": "no",
+      "allow_tcp_forwarding": "yes",
+      "allow_agent_forwarding": "no",
+      "x11_forwarding": "no"
+    }
+  },
+  "/api/v1/ssh/users": {
+    "status": 200,
+    "payload": {
+      "users": [
+        {
+          "name": "root",
+          "uid": 0,
+          "home": "/root",
+          "shell": "/bin/bash",
+          "key_count": 2,
+          "sudo": true
+        },
+        {
+          "name": "deploy",
+          "uid": 1000,
+          "home": "/home/deploy",
+          "shell": "/bin/bash",
+          "key_count": 1,
+          "sudo": true
+        }
+      ]
+    }
+  },
+  "/api/v1/ssh/keys": {
+    "status": 200,
+    "payload": {
+      "keys": [
+        {
+          "id": "key1",
+          "type": "ssh-ed25519",
+          "comment": "iPhone",
+          "fingerprint": "SHA256:audittest",
+          "preview": "ssh-ed25519 AAAAC3... iPhone"
+        }
+      ]
+    }
+  },
+  "/api/v1/audit": {
+    "status": 200,
+    "payload": {
+      "indexed": true,
+      "total": 3,
+      "events": [
+        {
+          "time": "2026-08-02T07:37:10.704349+00:00",
+          "result": "success",
+          "action": "firewall.rule.add",
+          "target": "443/tcp",
+          "user": "admin",
+          "ip": "127.0.0.1",
+          "detail": "规则已添加"
+        },
+        {
+          "time": "2026-08-02T07:37:10.704350+00:00",
+          "result": "success",
+          "action": "docker.restart",
+          "target": "adguardhome",
+          "user": "admin",
+          "ip": "127.0.0.1",
+          "detail": "容器已重启"
+        },
+        {
+          "time": "2026-08-02T07:37:10.704351+00:00",
+          "result": "failed",
+          "action": "login",
+          "target": "admin",
+          "user": "admin",
+          "ip": "198.51.100.9",
+          "detail": "密码错误"
+        }
+      ]
+    }
+  },
+  "/api/v1/logs/system": {
+    "status": 200,
+    "payload": {
+      "logs": "Aug 02 12:00:00 server lukepanel[1002]: service ready\nAug 02 12:00:01 server agent[1001]: agent ready"
+    }
+  },
+  "/api/v1/github/auth/status": {
+    "status": 200,
+    "payload": {
+      "connected": false
+    }
+  },
+  "/api/v1/jobs": {
+    "status": 200,
+    "payload": {
+      "jobs": []
+    }
+  }
+}

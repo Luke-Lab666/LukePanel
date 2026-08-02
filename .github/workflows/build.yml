@@ -1,0 +1,77 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: false
+      - name: Install pinned frontend compiler
+        run: npm --prefix frontend install --ignore-scripts --no-audit --no-fund
+      - name: Build React frontend
+        run: make frontend
+      - name: Static, Go and embed verification
+        run: |
+          python3 tests/static/validate.py
+          go test ./...
+          go vet ./...
+          diff -qr web internal/server/webdist
+      - name: Upload verified frontend
+        uses: actions/upload-artifact@v4
+        with:
+          name: lukepanel-react-frontend
+          path: |
+            web
+            internal/server/webdist
+          if-no-files-found: error
+
+  build-binaries:
+    needs: test
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: false
+      - name: Install pinned frontend compiler
+        run: npm --prefix frontend install --ignore-scripts --no-audit --no-fund
+      - name: Build embedded React frontend
+        run: make frontend
+      - name: Build binary
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+          GITHUB_OAUTH_CLIENT_ID: ${{ vars.LUKEPANEL_GITHUB_CLIENT_ID }}
+        run: |
+          mkdir -p dist
+          VERSION="$(cat VERSION)"
+          go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.githubOAuthClientID=${GITHUB_OAUTH_CLIENT_ID}" \
+            -o "dist/lukepanel-linux-${GOARCH}" ./cmd/lukepanel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lukepanel-linux-${{ matrix.goarch }}
+          path: dist/lukepanel-linux-${{ matrix.goarch }}
+          if-no-files-found: error

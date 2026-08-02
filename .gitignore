@@ -1,0 +1,10 @@
+dist/
+reports/
+*.log
+.DS_Store
+.env
+.dev/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+.frontend-stage.*/
