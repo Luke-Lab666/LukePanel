@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  当前版本：<code>v2.0.0</code>
+  当前版本：<code>v2.0.2</code>
 </p>
 
 LukePanel 面向需要维护单台 Debian 或 Ubuntu 服务器的个人用户和小型团队。它提供系统、Docker、文件、SSH、安全与审计管理，同时避免把浏览器变成任意 root WebShell。
@@ -17,7 +17,7 @@ LukePanel 面向需要维护单台 Debian 或 Ubuntu 服务器的个人用户和
 Web 服务以普通系统用户运行；需要 root 权限的操作由独立 Agent 通过本地 Unix Socket 执行。Agent 只接受经过校验的固定动作，不接收浏览器传入的任意 Shell 命令。
 
 
-## v2.0.0 React 全量重构
+## v2.0.2 React 全量重构
 
 - 前端使用 React 18 与 TypeScript 重新实现，旧手写 DOM 与过渡前端不进入运行链路。
 - React 与 ReactDOM 固定版本随源码提供，离线构建后由 Go `embed` 内嵌，VPS 运行时不访问 CDN。
@@ -272,7 +272,7 @@ make build
 
 ## 项目状态
 
-LukePanel v2.0.0 已将页面、路由、状态、API 调用和弹窗完整迁移到 React 18 + TypeScript。React 与 ReactDOM 固定版本随仓库内嵌，生产运行不依赖 CDN；旧版手写 DOM 与过渡前端均不进入正式资源链路。
+LukePanel v2.0.2 已将页面、路由、状态、API 调用和弹窗完整迁移到 React 18 + TypeScript。React 与 ReactDOM 固定版本随仓库内嵌，生产运行不依赖 CDN；旧版手写 DOM 与过渡前端均不进入正式资源链路。
 
 执行软件升级、防火墙、SSH、Docker 和文件系统操作前，仍应保留服务器级备份。项目会尽量使用验证、快照和回滚降低风险，但任何具备 root 管理能力的面板都无法消除错误操作和系统差异带来的风险。
 

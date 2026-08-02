@@ -1,4 +1,4 @@
-# v2.0.0 最终验证结果
+# v2.0.2 最终验证结果
 
 验证日期：2026-08-02
 
@@ -13,7 +13,7 @@
 - `go test -race ./internal/auth ./internal/config` 与认证关键链路：通过
 - Linux AMD64 静态二进制构建：通过
 - Linux ARM64 静态二进制构建：通过
-- AMD64 二进制 `-version`：`v2.0.0`
+- AMD64 二进制 `-version`：`v2.0.2`
 
 ## 浏览器与交互
 

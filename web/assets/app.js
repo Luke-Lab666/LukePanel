@@ -1,9 +1,9 @@
 "use strict";
-/* LukePanel v2.0.0 React 18 frontend. No runtime CDN, no direct DOM templating. */
+/* LukePanel v2.0.2 React 18 frontend. No runtime CDN, no direct DOM templating. */
 (() => {
     'use strict';
     const { useCallback, useEffect, useMemo, useRef, useState } = React;
-    const VERSION = window.__LUKEPANEL_VERSION__ || 'v2.0.0';
+    const VERSION = window.__LUKEPANEL_VERSION__ || 'v2.0.2';
     const ROUTES = [
         { path: '/', title: '概览', subtitle: '服务器状态与关键指标', level: 1, nav: true, icon: 'dashboard' },
         { path: '/system', title: '系统', subtitle: '主机、服务、网络与维护', level: 1, nav: true, icon: 'system' },

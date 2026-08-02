@@ -19,7 +19,7 @@ for path in expected_files:
 if interaction_checks != interaction_count:
     raise SystemExit(f'expected {interaction_count} interaction checks, got {interaction_checks}')
 failures.extend({'device':'interaction','route':t['name'],'issues':t['issues']} for t in interaction_tests if not t['passed'])
-report={'version':'v2.0.0','framework':'React 18.2.0','render_checks':len(rows),'render_passed':sum(1 for r in rows if r['passed']),'interaction_checks':interaction_checks,'interaction_passed':interaction_passed,'failures':failures,'interactions':interaction_tests,'results':rows,'duration_seconds':round(duration,2)}
+report={'version':'v2.0.2','framework':'React 18.2.0','render_checks':len(rows),'render_passed':sum(1 for r in rows if r['passed']),'interaction_checks':interaction_checks,'interaction_passed':interaction_passed,'failures':failures,'interactions':interaction_tests,'results':rows,'duration_seconds':round(duration,2)}
 (reports/'browser-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
 print(json.dumps({k:report[k] for k in ('render_checks','render_passed','interaction_checks','interaction_passed','duration_seconds')},ensure_ascii=False))
 if failures: raise SystemExit(1)
