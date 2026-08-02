@@ -1,978 +1,2002 @@
 {
-  "engine": "chromium",
-  "mode": "real Chromium via Chrome DevTools Protocol",
-  "generated_at": "2026-08-02T03:13:33Z",
-  "devices": [
+  "generated_at": "2026-08-02T03:48:38.237924+00:00",
+  "chromium": "144.0.7559.96",
+  "route_count": 18,
+  "viewport_count": 11,
+  "render_checks": 198,
+  "records": [
     {
-      "name": "phone-320",
+      "viewport": "phone-320",
       "width": 320,
       "height": 900,
-      "mobile_emulation": true
+      "route": "/",
+      "expected_heading": "概览",
+      "duration_ms": 405,
+      "passed": true,
+      "failures": []
     },
     {
-      "name": "android-360",
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/system",
+      "expected_heading": "系统管理",
+      "duration_ms": 270,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/services",
+      "expected_heading": "服务管理",
+      "duration_ms": 257,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/processes",
+      "expected_heading": "进程管理",
+      "duration_ms": 247,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/network",
+      "expected_heading": "网络管理",
+      "duration_ms": 237,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/storage",
+      "expected_heading": "存储管理",
+      "duration_ms": 248,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/tasks",
+      "expected_heading": "计划任务",
+      "duration_ms": 258,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/updates",
+      "expected_heading": "软件管理",
+      "duration_ms": 308,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/host",
+      "expected_heading": "主机设置",
+      "duration_ms": 304,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/snapshots",
+      "expected_heading": "配置快照",
+      "duration_ms": 245,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/files",
+      "expected_heading": "文件管理",
+      "duration_ms": 309,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/docker",
+      "expected_heading": "Docker",
+      "duration_ms": 275,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/tools",
+      "expected_heading": "常用工具",
+      "duration_ms": 241,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/github",
+      "expected_heading": "GitHub 助手",
+      "duration_ms": 251,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/ssh",
+      "expected_heading": "SSH 管理",
+      "duration_ms": 296,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/audit",
+      "expected_heading": "日志审计",
+      "duration_ms": 274,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/security",
+      "expected_heading": "我的与安全",
+      "duration_ms": 498,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-320",
+      "width": 320,
+      "height": 900,
+      "route": "/login",
+      "expected_heading": "欢迎回来",
+      "duration_ms": 248,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
       "width": 360,
       "height": 800,
-      "mobile_emulation": true
+      "route": "/",
+      "expected_heading": "概览",
+      "duration_ms": 456,
+      "passed": true,
+      "failures": []
     },
     {
-      "name": "iphone-se-375",
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/system",
+      "expected_heading": "系统管理",
+      "duration_ms": 251,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/services",
+      "expected_heading": "服务管理",
+      "duration_ms": 263,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/processes",
+      "expected_heading": "进程管理",
+      "duration_ms": 251,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/network",
+      "expected_heading": "网络管理",
+      "duration_ms": 239,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/storage",
+      "expected_heading": "存储管理",
+      "duration_ms": 242,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/tasks",
+      "expected_heading": "计划任务",
+      "duration_ms": 243,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/updates",
+      "expected_heading": "软件管理",
+      "duration_ms": 287,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/host",
+      "expected_heading": "主机设置",
+      "duration_ms": 298,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/snapshots",
+      "expected_heading": "配置快照",
+      "duration_ms": 241,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/files",
+      "expected_heading": "文件管理",
+      "duration_ms": 246,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/docker",
+      "expected_heading": "Docker",
+      "duration_ms": 267,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/tools",
+      "expected_heading": "常用工具",
+      "duration_ms": 240,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/github",
+      "expected_heading": "GitHub 助手",
+      "duration_ms": 242,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/ssh",
+      "expected_heading": "SSH 管理",
+      "duration_ms": 277,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/audit",
+      "expected_heading": "日志审计",
+      "duration_ms": 244,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/security",
+      "expected_heading": "我的与安全",
+      "duration_ms": 295,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-360",
+      "width": 360,
+      "height": 800,
+      "route": "/login",
+      "expected_heading": "欢迎回来",
+      "duration_ms": 240,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
       "width": 375,
       "height": 667,
-      "mobile_emulation": true
+      "route": "/",
+      "expected_heading": "概览",
+      "duration_ms": 405,
+      "passed": true,
+      "failures": []
     },
     {
-      "name": "iphone-390",
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/system",
+      "expected_heading": "系统管理",
+      "duration_ms": 256,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/services",
+      "expected_heading": "服务管理",
+      "duration_ms": 263,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/processes",
+      "expected_heading": "进程管理",
+      "duration_ms": 256,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/network",
+      "expected_heading": "网络管理",
+      "duration_ms": 236,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/storage",
+      "expected_heading": "存储管理",
+      "duration_ms": 245,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/tasks",
+      "expected_heading": "计划任务",
+      "duration_ms": 247,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/updates",
+      "expected_heading": "软件管理",
+      "duration_ms": 306,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/host",
+      "expected_heading": "主机设置",
+      "duration_ms": 310,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/snapshots",
+      "expected_heading": "配置快照",
+      "duration_ms": 256,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/files",
+      "expected_heading": "文件管理",
+      "duration_ms": 256,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/docker",
+      "expected_heading": "Docker",
+      "duration_ms": 265,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/tools",
+      "expected_heading": "常用工具",
+      "duration_ms": 253,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/github",
+      "expected_heading": "GitHub 助手",
+      "duration_ms": 237,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/ssh",
+      "expected_heading": "SSH 管理",
+      "duration_ms": 279,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/audit",
+      "expected_heading": "日志审计",
+      "duration_ms": 262,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/security",
+      "expected_heading": "我的与安全",
+      "duration_ms": 331,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-se",
+      "width": 375,
+      "height": 667,
+      "route": "/login",
+      "expected_heading": "欢迎回来",
+      "duration_ms": 243,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
       "width": 390,
       "height": 844,
-      "mobile_emulation": true
+      "route": "/",
+      "expected_heading": "概览",
+      "duration_ms": 495,
+      "passed": true,
+      "failures": []
     },
     {
-      "name": "iphone-max-430",
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/system",
+      "expected_heading": "系统管理",
+      "duration_ms": 267,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/services",
+      "expected_heading": "服务管理",
+      "duration_ms": 260,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/processes",
+      "expected_heading": "进程管理",
+      "duration_ms": 254,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/network",
+      "expected_heading": "网络管理",
+      "duration_ms": 247,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/storage",
+      "expected_heading": "存储管理",
+      "duration_ms": 246,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/tasks",
+      "expected_heading": "计划任务",
+      "duration_ms": 251,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/updates",
+      "expected_heading": "软件管理",
+      "duration_ms": 295,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/host",
+      "expected_heading": "主机设置",
+      "duration_ms": 309,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/snapshots",
+      "expected_heading": "配置快照",
+      "duration_ms": 249,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/files",
+      "expected_heading": "文件管理",
+      "duration_ms": 250,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/docker",
+      "expected_heading": "Docker",
+      "duration_ms": 264,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/tools",
+      "expected_heading": "常用工具",
+      "duration_ms": 247,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/github",
+      "expected_heading": "GitHub 助手",
+      "duration_ms": 239,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/ssh",
+      "expected_heading": "SSH 管理",
+      "duration_ms": 287,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/audit",
+      "expected_heading": "日志审计",
+      "duration_ms": 249,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/security",
+      "expected_heading": "我的与安全",
+      "duration_ms": 321,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-390",
+      "width": 390,
+      "height": 844,
+      "route": "/login",
+      "expected_heading": "欢迎回来",
+      "duration_ms": 262,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
       "width": 430,
       "height": 932,
-      "mobile_emulation": true
+      "route": "/",
+      "expected_heading": "概览",
+      "duration_ms": 428,
+      "passed": true,
+      "failures": []
     },
     {
-      "name": "phone-landscape",
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/system",
+      "expected_heading": "系统管理",
+      "duration_ms": 253,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/services",
+      "expected_heading": "服务管理",
+      "duration_ms": 256,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/processes",
+      "expected_heading": "进程管理",
+      "duration_ms": 263,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/network",
+      "expected_heading": "网络管理",
+      "duration_ms": 252,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/storage",
+      "expected_heading": "存储管理",
+      "duration_ms": 236,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/tasks",
+      "expected_heading": "计划任务",
+      "duration_ms": 250,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/updates",
+      "expected_heading": "软件管理",
+      "duration_ms": 307,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/host",
+      "expected_heading": "主机设置",
+      "duration_ms": 325,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/snapshots",
+      "expected_heading": "配置快照",
+      "duration_ms": 261,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/files",
+      "expected_heading": "文件管理",
+      "duration_ms": 278,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/docker",
+      "expected_heading": "Docker",
+      "duration_ms": 278,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/tools",
+      "expected_heading": "常用工具",
+      "duration_ms": 253,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/github",
+      "expected_heading": "GitHub 助手",
+      "duration_ms": 241,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/ssh",
+      "expected_heading": "SSH 管理",
+      "duration_ms": 306,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/audit",
+      "expected_heading": "日志审计",
+      "duration_ms": 251,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/security",
+      "expected_heading": "我的与安全",
+      "duration_ms": 302,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "iphone-430",
+      "width": 430,
+      "height": 932,
+      "route": "/login",
+      "expected_heading": "欢迎回来",
+      "duration_ms": 245,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
       "width": 844,
       "height": 390,
-      "mobile_emulation": true
+      "route": "/",
+      "expected_heading": "概览",
+      "duration_ms": 407,
+      "passed": true,
+      "failures": []
     },
     {
-      "name": "ipad-768",
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/system",
+      "expected_heading": "系统管理",
+      "duration_ms": 254,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/services",
+      "expected_heading": "服务管理",
+      "duration_ms": 261,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/processes",
+      "expected_heading": "进程管理",
+      "duration_ms": 251,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/network",
+      "expected_heading": "网络管理",
+      "duration_ms": 242,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/storage",
+      "expected_heading": "存储管理",
+      "duration_ms": 245,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/tasks",
+      "expected_heading": "计划任务",
+      "duration_ms": 242,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/updates",
+      "expected_heading": "软件管理",
+      "duration_ms": 282,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/host",
+      "expected_heading": "主机设置",
+      "duration_ms": 315,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/snapshots",
+      "expected_heading": "配置快照",
+      "duration_ms": 252,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/files",
+      "expected_heading": "文件管理",
+      "duration_ms": 267,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/docker",
+      "expected_heading": "Docker",
+      "duration_ms": 253,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/tools",
+      "expected_heading": "常用工具",
+      "duration_ms": 233,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/github",
+      "expected_heading": "GitHub 助手",
+      "duration_ms": 232,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/ssh",
+      "expected_heading": "SSH 管理",
+      "duration_ms": 293,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/audit",
+      "expected_heading": "日志审计",
+      "duration_ms": 246,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/security",
+      "expected_heading": "我的与安全",
+      "duration_ms": 510,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "phone-landscape",
+      "width": 844,
+      "height": 390,
+      "route": "/login",
+      "expected_heading": "欢迎回来",
+      "duration_ms": 248,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
       "width": 768,
       "height": 1024,
-      "mobile_emulation": true
+      "route": "/",
+      "expected_heading": "概览",
+      "duration_ms": 427,
+      "passed": true,
+      "failures": []
     },
     {
-      "name": "tablet-1024",
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/system",
+      "expected_heading": "系统管理",
+      "duration_ms": 246,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/services",
+      "expected_heading": "服务管理",
+      "duration_ms": 246,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/processes",
+      "expected_heading": "进程管理",
+      "duration_ms": 256,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/network",
+      "expected_heading": "网络管理",
+      "duration_ms": 262,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/storage",
+      "expected_heading": "存储管理",
+      "duration_ms": 240,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/tasks",
+      "expected_heading": "计划任务",
+      "duration_ms": 242,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/updates",
+      "expected_heading": "软件管理",
+      "duration_ms": 288,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/host",
+      "expected_heading": "主机设置",
+      "duration_ms": 314,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/snapshots",
+      "expected_heading": "配置快照",
+      "duration_ms": 252,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/files",
+      "expected_heading": "文件管理",
+      "duration_ms": 244,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/docker",
+      "expected_heading": "Docker",
+      "duration_ms": 257,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/tools",
+      "expected_heading": "常用工具",
+      "duration_ms": 239,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/github",
+      "expected_heading": "GitHub 助手",
+      "duration_ms": 247,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/ssh",
+      "expected_heading": "SSH 管理",
+      "duration_ms": 277,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/audit",
+      "expected_heading": "日志审计",
+      "duration_ms": 240,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/security",
+      "expected_heading": "我的与安全",
+      "duration_ms": 286,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-768",
+      "width": 768,
+      "height": 1024,
+      "route": "/login",
+      "expected_heading": "欢迎回来",
+      "duration_ms": 244,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
       "width": 1024,
       "height": 768,
-      "mobile_emulation": false
+      "route": "/",
+      "expected_heading": "概览",
+      "duration_ms": 448,
+      "passed": true,
+      "failures": []
     },
     {
-      "name": "desktop-1280",
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/system",
+      "expected_heading": "系统管理",
+      "duration_ms": 266,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/services",
+      "expected_heading": "服务管理",
+      "duration_ms": 264,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/processes",
+      "expected_heading": "进程管理",
+      "duration_ms": 266,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/network",
+      "expected_heading": "网络管理",
+      "duration_ms": 253,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/storage",
+      "expected_heading": "存储管理",
+      "duration_ms": 253,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/tasks",
+      "expected_heading": "计划任务",
+      "duration_ms": 253,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/updates",
+      "expected_heading": "软件管理",
+      "duration_ms": 282,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/host",
+      "expected_heading": "主机设置",
+      "duration_ms": 324,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/snapshots",
+      "expected_heading": "配置快照",
+      "duration_ms": 258,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/files",
+      "expected_heading": "文件管理",
+      "duration_ms": 261,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/docker",
+      "expected_heading": "Docker",
+      "duration_ms": 278,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/tools",
+      "expected_heading": "常用工具",
+      "duration_ms": 253,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/github",
+      "expected_heading": "GitHub 助手",
+      "duration_ms": 259,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/ssh",
+      "expected_heading": "SSH 管理",
+      "duration_ms": 278,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/audit",
+      "expected_heading": "日志审计",
+      "duration_ms": 264,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/security",
+      "expected_heading": "我的与安全",
+      "duration_ms": 316,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "tablet-landscape",
+      "width": 1024,
+      "height": 768,
+      "route": "/login",
+      "expected_heading": "欢迎回来",
+      "duration_ms": 247,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
       "width": 1280,
       "height": 800,
-      "mobile_emulation": false
+      "route": "/",
+      "expected_heading": "概览",
+      "duration_ms": 462,
+      "passed": true,
+      "failures": []
     },
     {
-      "name": "desktop-1440",
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/system",
+      "expected_heading": "系统管理",
+      "duration_ms": 252,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/services",
+      "expected_heading": "服务管理",
+      "duration_ms": 240,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/processes",
+      "expected_heading": "进程管理",
+      "duration_ms": 257,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/network",
+      "expected_heading": "网络管理",
+      "duration_ms": 241,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/storage",
+      "expected_heading": "存储管理",
+      "duration_ms": 247,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/tasks",
+      "expected_heading": "计划任务",
+      "duration_ms": 249,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/updates",
+      "expected_heading": "软件管理",
+      "duration_ms": 281,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/host",
+      "expected_heading": "主机设置",
+      "duration_ms": 317,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/snapshots",
+      "expected_heading": "配置快照",
+      "duration_ms": 253,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/files",
+      "expected_heading": "文件管理",
+      "duration_ms": 257,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/docker",
+      "expected_heading": "Docker",
+      "duration_ms": 264,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/tools",
+      "expected_heading": "常用工具",
+      "duration_ms": 255,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/github",
+      "expected_heading": "GitHub 助手",
+      "duration_ms": 237,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/ssh",
+      "expected_heading": "SSH 管理",
+      "duration_ms": 288,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/audit",
+      "expected_heading": "日志审计",
+      "duration_ms": 245,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/security",
+      "expected_heading": "我的与安全",
+      "duration_ms": 293,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1280",
+      "width": 1280,
+      "height": 800,
+      "route": "/login",
+      "expected_heading": "欢迎回来",
+      "duration_ms": 239,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
       "width": 1440,
       "height": 900,
-      "mobile_emulation": false
+      "route": "/",
+      "expected_heading": "概览",
+      "duration_ms": 601,
+      "passed": true,
+      "failures": []
     },
     {
-      "name": "desktop-1920",
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/system",
+      "expected_heading": "系统管理",
+      "duration_ms": 266,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/services",
+      "expected_heading": "服务管理",
+      "duration_ms": 248,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/processes",
+      "expected_heading": "进程管理",
+      "duration_ms": 265,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/network",
+      "expected_heading": "网络管理",
+      "duration_ms": 246,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/storage",
+      "expected_heading": "存储管理",
+      "duration_ms": 243,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/tasks",
+      "expected_heading": "计划任务",
+      "duration_ms": 244,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/updates",
+      "expected_heading": "软件管理",
+      "duration_ms": 278,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/host",
+      "expected_heading": "主机设置",
+      "duration_ms": 309,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/snapshots",
+      "expected_heading": "配置快照",
+      "duration_ms": 246,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/files",
+      "expected_heading": "文件管理",
+      "duration_ms": 250,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/docker",
+      "expected_heading": "Docker",
+      "duration_ms": 251,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/tools",
+      "expected_heading": "常用工具",
+      "duration_ms": 241,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/github",
+      "expected_heading": "GitHub 助手",
+      "duration_ms": 237,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/ssh",
+      "expected_heading": "SSH 管理",
+      "duration_ms": 273,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/audit",
+      "expected_heading": "日志审计",
+      "duration_ms": 244,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/security",
+      "expected_heading": "我的与安全",
+      "duration_ms": 518,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/login",
+      "expected_heading": "欢迎回来",
+      "duration_ms": 240,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
       "width": 1920,
       "height": 1080,
-      "mobile_emulation": false
+      "route": "/",
+      "expected_heading": "概览",
+      "duration_ms": 415,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/system",
+      "expected_heading": "系统管理",
+      "duration_ms": 254,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/services",
+      "expected_heading": "服务管理",
+      "duration_ms": 240,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/processes",
+      "expected_heading": "进程管理",
+      "duration_ms": 269,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/network",
+      "expected_heading": "网络管理",
+      "duration_ms": 241,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/storage",
+      "expected_heading": "存储管理",
+      "duration_ms": 244,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/tasks",
+      "expected_heading": "计划任务",
+      "duration_ms": 241,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/updates",
+      "expected_heading": "软件管理",
+      "duration_ms": 281,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/host",
+      "expected_heading": "主机设置",
+      "duration_ms": 307,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/snapshots",
+      "expected_heading": "配置快照",
+      "duration_ms": 244,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/files",
+      "expected_heading": "文件管理",
+      "duration_ms": 250,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/docker",
+      "expected_heading": "Docker",
+      "duration_ms": 304,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/tools",
+      "expected_heading": "常用工具",
+      "duration_ms": 241,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/github",
+      "expected_heading": "GitHub 助手",
+      "duration_ms": 246,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/ssh",
+      "expected_heading": "SSH 管理",
+      "duration_ms": 273,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/audit",
+      "expected_heading": "日志审计",
+      "duration_ms": 241,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/security",
+      "expected_heading": "我的与安全",
+      "duration_ms": 312,
+      "passed": true,
+      "failures": []
+    },
+    {
+      "viewport": "desktop-1920",
+      "width": 1920,
+      "height": 1080,
+      "route": "/login",
+      "expected_heading": "欢迎回来",
+      "duration_ms": 243,
+      "passed": true,
+      "failures": []
     }
   ],
-  "scenarios": [
-    "/login",
-    "/",
-    "/security",
-    "/docker",
-    "/files",
-    "/ssh",
-    "/settings",
-    "/dialog"
-  ],
-  "screenshots": 88,
-  "checks": [
-    "horizontal overflow",
-    "desktop/mobile navigation breakpoint",
-    "unresolved values",
-    "iOS 16px form font",
-    "touch target sizing",
-    "firewall card count and overlap",
-    "firewall responsive columns",
-    "modal viewport containment",
-    "login viewport containment"
-  ],
-  "failures": [],
-  "measurements": [
+  "interactive_checks": [
     {
-      "scenario": "/login",
-      "device": "phone-320",
-      "width": 320,
-      "height": 900,
-      "sw": 320,
-      "iw": 320,
-      "sh": 900,
-      "ih": 900
+      "name": "interactive-firewall",
+      "failures": [],
+      "passed": true
     },
     {
-      "scenario": "/",
-      "device": "phone-320",
-      "width": 320,
-      "height": 900,
-      "sw": 320,
-      "iw": 320,
-      "sh": 2353,
-      "ih": 900
-    },
-    {
-      "scenario": "/security",
-      "device": "phone-320",
-      "width": 320,
-      "height": 900,
-      "sw": 320,
-      "iw": 320,
-      "sh": 2137,
-      "ih": 900
-    },
-    {
-      "scenario": "/docker",
-      "device": "phone-320",
-      "width": 320,
-      "height": 900,
-      "sw": 320,
-      "iw": 320,
-      "sh": 1234,
-      "ih": 900
-    },
-    {
-      "scenario": "/files",
-      "device": "phone-320",
-      "width": 320,
-      "height": 900,
-      "sw": 320,
-      "iw": 320,
-      "sh": 992,
-      "ih": 900
-    },
-    {
-      "scenario": "/ssh",
-      "device": "phone-320",
-      "width": 320,
-      "height": 900,
-      "sw": 320,
-      "iw": 320,
-      "sh": 1338,
-      "ih": 900
-    },
-    {
-      "scenario": "/settings",
-      "device": "phone-320",
-      "width": 320,
-      "height": 900,
-      "sw": 320,
-      "iw": 320,
-      "sh": 1440,
-      "ih": 900
-    },
-    {
-      "scenario": "/dialog",
-      "device": "phone-320",
-      "width": 320,
-      "height": 900,
-      "sw": 320,
-      "iw": 320,
-      "sh": 900,
-      "ih": 900
-    },
-    {
-      "scenario": "/login",
-      "device": "android-360",
-      "width": 360,
-      "height": 800,
-      "sw": 360,
-      "iw": 360,
-      "sh": 800,
-      "ih": 800
-    },
-    {
-      "scenario": "/",
-      "device": "android-360",
-      "width": 360,
-      "height": 800,
-      "sw": 360,
-      "iw": 360,
-      "sh": 2353,
-      "ih": 800
-    },
-    {
-      "scenario": "/security",
-      "device": "android-360",
-      "width": 360,
-      "height": 800,
-      "sw": 360,
-      "iw": 360,
-      "sh": 2137,
-      "ih": 800
-    },
-    {
-      "scenario": "/docker",
-      "device": "android-360",
-      "width": 360,
-      "height": 800,
-      "sw": 360,
-      "iw": 360,
-      "sh": 1234,
-      "ih": 800
-    },
-    {
-      "scenario": "/files",
-      "device": "android-360",
-      "width": 360,
-      "height": 800,
-      "sw": 360,
-      "iw": 360,
-      "sh": 982,
-      "ih": 800
-    },
-    {
-      "scenario": "/ssh",
-      "device": "android-360",
-      "width": 360,
-      "height": 800,
-      "sw": 360,
-      "iw": 360,
-      "sh": 1338,
-      "ih": 800
-    },
-    {
-      "scenario": "/settings",
-      "device": "android-360",
-      "width": 360,
-      "height": 800,
-      "sw": 360,
-      "iw": 360,
-      "sh": 1440,
-      "ih": 800
-    },
-    {
-      "scenario": "/dialog",
-      "device": "android-360",
-      "width": 360,
-      "height": 800,
-      "sw": 360,
-      "iw": 360,
-      "sh": 800,
-      "ih": 800
-    },
-    {
-      "scenario": "/login",
-      "device": "iphone-se-375",
-      "width": 375,
-      "height": 667,
-      "sw": 375,
-      "iw": 375,
-      "sh": 667,
-      "ih": 667
-    },
-    {
-      "scenario": "/",
-      "device": "iphone-se-375",
-      "width": 375,
-      "height": 667,
-      "sw": 375,
-      "iw": 375,
-      "sh": 2368,
-      "ih": 667
-    },
-    {
-      "scenario": "/security",
-      "device": "iphone-se-375",
-      "width": 375,
-      "height": 667,
-      "sw": 375,
-      "iw": 375,
-      "sh": 2143,
-      "ih": 667
-    },
-    {
-      "scenario": "/docker",
-      "device": "iphone-se-375",
-      "width": 375,
-      "height": 667,
-      "sw": 375,
-      "iw": 375,
-      "sh": 1209,
-      "ih": 667
-    },
-    {
-      "scenario": "/files",
-      "device": "iphone-se-375",
-      "width": 375,
-      "height": 667,
-      "sw": 375,
-      "iw": 375,
-      "sh": 982,
-      "ih": 667
-    },
-    {
-      "scenario": "/ssh",
-      "device": "iphone-se-375",
-      "width": 375,
-      "height": 667,
-      "sw": 375,
-      "iw": 375,
-      "sh": 1338,
-      "ih": 667
-    },
-    {
-      "scenario": "/settings",
-      "device": "iphone-se-375",
-      "width": 375,
-      "height": 667,
-      "sw": 375,
-      "iw": 375,
-      "sh": 1440,
-      "ih": 667
-    },
-    {
-      "scenario": "/dialog",
-      "device": "iphone-se-375",
-      "width": 375,
-      "height": 667,
-      "sw": 375,
-      "iw": 375,
-      "sh": 667,
-      "ih": 667
-    },
-    {
-      "scenario": "/login",
-      "device": "iphone-390",
-      "width": 390,
-      "height": 844,
-      "sw": 390,
-      "iw": 390,
-      "sh": 844,
-      "ih": 844
-    },
-    {
-      "scenario": "/",
-      "device": "iphone-390",
-      "width": 390,
-      "height": 844,
-      "sw": 390,
-      "iw": 390,
-      "sh": 2368,
-      "ih": 844
-    },
-    {
-      "scenario": "/security",
-      "device": "iphone-390",
-      "width": 390,
-      "height": 844,
-      "sw": 390,
-      "iw": 390,
-      "sh": 2122,
-      "ih": 844
-    },
-    {
-      "scenario": "/docker",
-      "device": "iphone-390",
-      "width": 390,
-      "height": 844,
-      "sw": 390,
-      "iw": 390,
-      "sh": 1209,
-      "ih": 844
-    },
-    {
-      "scenario": "/files",
-      "device": "iphone-390",
-      "width": 390,
-      "height": 844,
-      "sw": 390,
-      "iw": 390,
-      "sh": 982,
-      "ih": 844
-    },
-    {
-      "scenario": "/ssh",
-      "device": "iphone-390",
-      "width": 390,
-      "height": 844,
-      "sw": 390,
-      "iw": 390,
-      "sh": 1338,
-      "ih": 844
-    },
-    {
-      "scenario": "/settings",
-      "device": "iphone-390",
-      "width": 390,
-      "height": 844,
-      "sw": 390,
-      "iw": 390,
-      "sh": 1440,
-      "ih": 844
-    },
-    {
-      "scenario": "/dialog",
-      "device": "iphone-390",
-      "width": 390,
-      "height": 844,
-      "sw": 390,
-      "iw": 390,
-      "sh": 844,
-      "ih": 844
-    },
-    {
-      "scenario": "/login",
-      "device": "iphone-max-430",
-      "width": 430,
-      "height": 932,
-      "sw": 430,
-      "iw": 430,
-      "sh": 932,
-      "ih": 932
-    },
-    {
-      "scenario": "/",
-      "device": "iphone-max-430",
-      "width": 430,
-      "height": 932,
-      "sw": 430,
-      "iw": 430,
-      "sh": 2368,
-      "ih": 932
-    },
-    {
-      "scenario": "/security",
-      "device": "iphone-max-430",
-      "width": 430,
-      "height": 932,
-      "sw": 430,
-      "iw": 430,
-      "sh": 2122,
-      "ih": 932
-    },
-    {
-      "scenario": "/docker",
-      "device": "iphone-max-430",
-      "width": 430,
-      "height": 932,
-      "sw": 430,
-      "iw": 430,
-      "sh": 1185,
-      "ih": 932
-    },
-    {
-      "scenario": "/files",
-      "device": "iphone-max-430",
-      "width": 430,
-      "height": 932,
-      "sw": 430,
-      "iw": 430,
-      "sh": 982,
-      "ih": 932
-    },
-    {
-      "scenario": "/ssh",
-      "device": "iphone-max-430",
-      "width": 430,
-      "height": 932,
-      "sw": 430,
-      "iw": 430,
-      "sh": 1338,
-      "ih": 932
-    },
-    {
-      "scenario": "/settings",
-      "device": "iphone-max-430",
-      "width": 430,
-      "height": 932,
-      "sw": 430,
-      "iw": 430,
-      "sh": 1440,
-      "ih": 932
-    },
-    {
-      "scenario": "/dialog",
-      "device": "iphone-max-430",
-      "width": 430,
-      "height": 932,
-      "sw": 430,
-      "iw": 430,
-      "sh": 932,
-      "ih": 932
-    },
-    {
-      "scenario": "/login",
-      "device": "phone-landscape",
-      "width": 844,
-      "height": 390,
-      "sw": 844,
-      "iw": 844,
-      "sh": 578,
-      "ih": 390
-    },
-    {
-      "scenario": "/",
-      "device": "phone-landscape",
-      "width": 844,
-      "height": 390,
-      "sw": 844,
-      "iw": 844,
-      "sh": 1648,
-      "ih": 390
-    },
-    {
-      "scenario": "/security",
-      "device": "phone-landscape",
-      "width": 844,
-      "height": 390,
-      "sw": 844,
-      "iw": 844,
-      "sh": 1419,
-      "ih": 390
-    },
-    {
-      "scenario": "/docker",
-      "device": "phone-landscape",
-      "width": 844,
-      "height": 390,
-      "sw": 844,
-      "iw": 844,
-      "sh": 670,
-      "ih": 390
-    },
-    {
-      "scenario": "/files",
-      "device": "phone-landscape",
-      "width": 844,
-      "height": 390,
-      "sw": 844,
-      "iw": 844,
-      "sh": 786,
-      "ih": 390
-    },
-    {
-      "scenario": "/ssh",
-      "device": "phone-landscape",
-      "width": 844,
-      "height": 390,
-      "sw": 844,
-      "iw": 844,
-      "sh": 941,
-      "ih": 390
-    },
-    {
-      "scenario": "/settings",
-      "device": "phone-landscape",
-      "width": 844,
-      "height": 390,
-      "sw": 844,
-      "iw": 844,
-      "sh": 1217,
-      "ih": 390
-    },
-    {
-      "scenario": "/dialog",
-      "device": "phone-landscape",
-      "width": 844,
-      "height": 390,
-      "sw": 844,
-      "iw": 844,
-      "sh": 390,
-      "ih": 390
-    },
-    {
-      "scenario": "/login",
-      "device": "ipad-768",
-      "width": 768,
-      "height": 1024,
-      "sw": 768,
-      "iw": 768,
-      "sh": 1024,
-      "ih": 1024
-    },
-    {
-      "scenario": "/",
-      "device": "ipad-768",
-      "width": 768,
-      "height": 1024,
-      "sw": 768,
-      "iw": 768,
-      "sh": 1656,
-      "ih": 1024
-    },
-    {
-      "scenario": "/security",
-      "device": "ipad-768",
-      "width": 768,
-      "height": 1024,
-      "sw": 768,
-      "iw": 768,
-      "sh": 1427,
-      "ih": 1024
-    },
-    {
-      "scenario": "/docker",
-      "device": "ipad-768",
-      "width": 768,
-      "height": 1024,
-      "sw": 768,
-      "iw": 768,
-      "sh": 1024,
-      "ih": 1024
-    },
-    {
-      "scenario": "/files",
-      "device": "ipad-768",
-      "width": 768,
-      "height": 1024,
-      "sw": 768,
-      "iw": 768,
-      "sh": 1024,
-      "ih": 1024
-    },
-    {
-      "scenario": "/ssh",
-      "device": "ipad-768",
-      "width": 768,
-      "height": 1024,
-      "sw": 768,
-      "iw": 768,
-      "sh": 1024,
-      "ih": 1024
-    },
-    {
-      "scenario": "/settings",
-      "device": "ipad-768",
-      "width": 768,
-      "height": 1024,
-      "sw": 768,
-      "iw": 768,
-      "sh": 1225,
-      "ih": 1024
-    },
-    {
-      "scenario": "/dialog",
-      "device": "ipad-768",
-      "width": 768,
-      "height": 1024,
-      "sw": 768,
-      "iw": 768,
-      "sh": 1024,
-      "ih": 1024
-    },
-    {
-      "scenario": "/login",
-      "device": "tablet-1024",
-      "width": 1024,
-      "height": 768,
-      "sw": 1024,
-      "iw": 1024,
-      "sh": 768,
-      "ih": 768
-    },
-    {
-      "scenario": "/",
-      "device": "tablet-1024",
-      "width": 1024,
-      "height": 768,
-      "sw": 1014,
-      "iw": 1024,
-      "sh": 1476,
-      "ih": 768
-    },
-    {
-      "scenario": "/security",
-      "device": "tablet-1024",
-      "width": 1024,
-      "height": 768,
-      "sw": 1014,
-      "iw": 1024,
-      "sh": 1027,
-      "ih": 768
-    },
-    {
-      "scenario": "/docker",
-      "device": "tablet-1024",
-      "width": 1024,
-      "height": 768,
-      "sw": 1024,
-      "iw": 1024,
-      "sh": 768,
-      "ih": 768
-    },
-    {
-      "scenario": "/files",
-      "device": "tablet-1024",
-      "width": 1024,
-      "height": 768,
-      "sw": 1024,
-      "iw": 1024,
-      "sh": 768,
-      "ih": 768
-    },
-    {
-      "scenario": "/ssh",
-      "device": "tablet-1024",
-      "width": 1024,
-      "height": 768,
-      "sw": 1024,
-      "iw": 1024,
-      "sh": 768,
-      "ih": 768
-    },
-    {
-      "scenario": "/settings",
-      "device": "tablet-1024",
-      "width": 1024,
-      "height": 768,
-      "sw": 1014,
-      "iw": 1024,
-      "sh": 885,
-      "ih": 768
-    },
-    {
-      "scenario": "/dialog",
-      "device": "tablet-1024",
-      "width": 1024,
-      "height": 768,
-      "sw": 1024,
-      "iw": 1024,
-      "sh": 768,
-      "ih": 768
-    },
-    {
-      "scenario": "/login",
-      "device": "desktop-1280",
-      "width": 1280,
-      "height": 800,
-      "sw": 1280,
-      "iw": 1280,
-      "sh": 800,
-      "ih": 800
-    },
-    {
-      "scenario": "/",
-      "device": "desktop-1280",
-      "width": 1280,
-      "height": 800,
-      "sw": 1270,
-      "iw": 1280,
-      "sh": 1091,
-      "ih": 800
-    },
-    {
-      "scenario": "/security",
-      "device": "desktop-1280",
-      "width": 1280,
-      "height": 800,
-      "sw": 1270,
-      "iw": 1280,
-      "sh": 935,
-      "ih": 800
-    },
-    {
-      "scenario": "/docker",
-      "device": "desktop-1280",
-      "width": 1280,
-      "height": 800,
-      "sw": 1280,
-      "iw": 1280,
-      "sh": 800,
-      "ih": 800
-    },
-    {
-      "scenario": "/files",
-      "device": "desktop-1280",
-      "width": 1280,
-      "height": 800,
-      "sw": 1280,
-      "iw": 1280,
-      "sh": 800,
-      "ih": 800
-    },
-    {
-      "scenario": "/ssh",
-      "device": "desktop-1280",
-      "width": 1280,
-      "height": 800,
-      "sw": 1280,
-      "iw": 1280,
-      "sh": 800,
-      "ih": 800
-    },
-    {
-      "scenario": "/settings",
-      "device": "desktop-1280",
-      "width": 1280,
-      "height": 800,
-      "sw": 1270,
-      "iw": 1280,
-      "sh": 888,
-      "ih": 800
-    },
-    {
-      "scenario": "/dialog",
-      "device": "desktop-1280",
-      "width": 1280,
-      "height": 800,
-      "sw": 1280,
-      "iw": 1280,
-      "sh": 800,
-      "ih": 800
-    },
-    {
-      "scenario": "/login",
-      "device": "desktop-1440",
-      "width": 1440,
-      "height": 900,
-      "sw": 1440,
-      "iw": 1440,
-      "sh": 900,
-      "ih": 900
-    },
-    {
-      "scenario": "/",
-      "device": "desktop-1440",
-      "width": 1440,
-      "height": 900,
-      "sw": 1430,
-      "iw": 1440,
-      "sh": 1095,
-      "ih": 900
-    },
-    {
-      "scenario": "/security",
-      "device": "desktop-1440",
-      "width": 1440,
-      "height": 900,
-      "sw": 1430,
-      "iw": 1440,
-      "sh": 939,
-      "ih": 900
-    },
-    {
-      "scenario": "/docker",
-      "device": "desktop-1440",
-      "width": 1440,
-      "height": 900,
-      "sw": 1440,
-      "iw": 1440,
-      "sh": 900,
-      "ih": 900
-    },
-    {
-      "scenario": "/files",
-      "device": "desktop-1440",
-      "width": 1440,
-      "height": 900,
-      "sw": 1440,
-      "iw": 1440,
-      "sh": 900,
-      "ih": 900
-    },
-    {
-      "scenario": "/ssh",
-      "device": "desktop-1440",
-      "width": 1440,
-      "height": 900,
-      "sw": 1440,
-      "iw": 1440,
-      "sh": 900,
-      "ih": 900
-    },
-    {
-      "scenario": "/settings",
-      "device": "desktop-1440",
-      "width": 1440,
-      "height": 900,
-      "sw": 1440,
-      "iw": 1440,
-      "sh": 900,
-      "ih": 900
-    },
-    {
-      "scenario": "/dialog",
-      "device": "desktop-1440",
-      "width": 1440,
-      "height": 900,
-      "sw": 1440,
-      "iw": 1440,
-      "sh": 900,
-      "ih": 900
-    },
-    {
-      "scenario": "/login",
-      "device": "desktop-1920",
-      "width": 1920,
-      "height": 1080,
-      "sw": 1920,
-      "iw": 1920,
-      "sh": 1080,
-      "ih": 1080
-    },
-    {
-      "scenario": "/",
-      "device": "desktop-1920",
-      "width": 1920,
-      "height": 1080,
-      "sw": 1910,
-      "iw": 1920,
-      "sh": 1096,
-      "ih": 1080
-    },
-    {
-      "scenario": "/security",
-      "device": "desktop-1920",
-      "width": 1920,
-      "height": 1080,
-      "sw": 1920,
-      "iw": 1920,
-      "sh": 1080,
-      "ih": 1080
-    },
-    {
-      "scenario": "/docker",
-      "device": "desktop-1920",
-      "width": 1920,
-      "height": 1080,
-      "sw": 1920,
-      "iw": 1920,
-      "sh": 1080,
-      "ih": 1080
-    },
-    {
-      "scenario": "/files",
-      "device": "desktop-1920",
-      "width": 1920,
-      "height": 1080,
-      "sw": 1920,
-      "iw": 1920,
-      "sh": 1080,
-      "ih": 1080
-    },
-    {
-      "scenario": "/ssh",
-      "device": "desktop-1920",
-      "width": 1920,
-      "height": 1080,
-      "sw": 1920,
-      "iw": 1920,
-      "sh": 1080,
-      "ih": 1080
-    },
-    {
-      "scenario": "/settings",
-      "device": "desktop-1920",
-      "width": 1920,
-      "height": 1080,
-      "sw": 1920,
-      "iw": 1920,
-      "sh": 1080,
-      "ih": 1080
-    },
-    {
-      "scenario": "/dialog",
-      "device": "desktop-1920",
-      "width": 1920,
-      "height": 1080,
-      "sw": 1920,
-      "iw": 1920,
-      "sh": 1080,
-      "ih": 1080
+      "name": "phone-landscape-dialog",
+      "failures": [],
+      "passed": true
     }
-  ]
+  ],
+  "passed": true
 }
