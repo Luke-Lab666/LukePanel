@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -20,12 +21,19 @@ type passkeyChallenge struct {
 	Username  string
 	SessionID string
 	Kind      string
+	SourceIP  string
 	ExpiresAt time.Time
 }
 
 func (s *Server) passkeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
+		return
+	}
+	ip := clientIP(r, s.cfg.TrustedProxy)
+	if allowed, retry := s.limiter.Allowed(ip); !allowed {
+		w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+		writeError(w, http.StatusTooManyRequests, "登录尝试过多，请稍后再试")
 		return
 	}
 	if !s.ipAllowedRequest(r) {
@@ -40,12 +48,36 @@ func (s *Server) passkeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "当前面板尚未配置 Passkey")
 		return
 	}
-	challenge, _ := auth.RandomChallenge(32)
-	flowID, _ := auth.RandomChallenge(18)
+	challenge, err := auth.RandomChallenge(32)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "无法生成 Passkey 登录挑战")
+		return
+	}
+	flowID, err := auth.RandomChallenge(18)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "无法生成 Passkey 登录流程")
+		return
+	}
 	origin, rpID := s.webauthnContext(r)
 	s.passkeyMu.Lock()
 	s.cleanupPasskeyChallengesLocked()
-	s.passkeyPending[flowID] = passkeyChallenge{Challenge: challenge, Origin: origin, RPID: rpID, Username: adminUser, Kind: "login", ExpiresAt: time.Now().Add(5 * time.Minute)}
+	pendingForIP := 0
+	for _, item := range s.passkeyPending {
+		if item.Kind == "login" && item.SourceIP == ip {
+			pendingForIP++
+		}
+	}
+	if pendingForIP >= 5 {
+		s.passkeyMu.Unlock()
+		writeError(w, http.StatusTooManyRequests, "Passkey 登录请求过多，请完成或稍后重试")
+		return
+	}
+	if len(s.passkeyPending) >= 256 {
+		s.passkeyMu.Unlock()
+		writeError(w, http.StatusServiceUnavailable, "Passkey 登录暂时繁忙，请稍后重试")
+		return
+	}
+	s.passkeyPending[flowID] = passkeyChallenge{Challenge: challenge, Origin: origin, RPID: rpID, Username: adminUser, Kind: "login", SourceIP: ip, ExpiresAt: time.Now().Add(5 * time.Minute)}
 	s.passkeyMu.Unlock()
 	allow := make([]map[string]any, 0, len(credentials))
 	for _, credential := range credentials {
@@ -59,6 +91,12 @@ func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
+	ip := clientIP(r, s.cfg.TrustedProxy)
+	if allowed, retry := s.limiter.Allowed(ip); !allowed {
+		w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+		writeError(w, http.StatusTooManyRequests, "登录尝试过多，请稍后再试")
+		return
+	}
 	if !s.ipAllowedRequest(r) {
 		writeError(w, http.StatusForbidden, "当前 IP 不在面板允许列表中")
 		return
@@ -68,6 +106,7 @@ func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		Credential auth.PasskeyAssertionResponse `json:"credential"`
 	}
 	if decodeJSON(w, r, 1<<20, &req) != nil {
+		s.limiter.Fail(ip)
 		return
 	}
 	s.passkeyMu.Lock()
@@ -77,6 +116,8 @@ func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	s.passkeyMu.Unlock()
 	if !ok || challenge.Kind != "login" || time.Now().After(challenge.ExpiresAt) {
+		s.limiter.Fail(ip)
+		s.audit.Write(AuditEvent{IP: ip, User: "passkey", Action: "auth.passkey.login", Result: "failed", Detail: "expired or unknown flow"})
 		writeError(w, http.StatusUnauthorized, "Passkey 登录请求已过期")
 		return
 	}
@@ -95,22 +136,33 @@ func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if index < 0 {
+		s.limiter.Fail(ip)
 		writeError(w, http.StatusUnauthorized, "Passkey 不存在或已移除")
 		return
 	}
 	count, err := auth.VerifyPasskey(req.Credential, credentials[index], challenge.Challenge, challenge.Origin, challenge.RPID)
 	if err != nil {
-		s.audit.Write(AuditEvent{IP: clientIP(r, s.cfg.TrustedProxy), User: challenge.Username, Action: "auth.passkey.login", Result: "failed", Detail: err.Error()})
+		s.limiter.Fail(ip)
+		s.audit.Write(AuditEvent{IP: ip, User: challenge.Username, Action: "auth.passkey.login", Result: "failed", Detail: err.Error()})
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 	s.configMu.Lock()
-	updated := s.cfg
+	updated := s.cfg.Clone()
+	found := false
 	for i := range updated.Passkeys {
 		if updated.Passkeys[i].ID == credentials[index].ID {
 			updated.Passkeys[i].SignCount = count
 			updated.Passkeys[i].LastUsed = time.Now().UTC()
+			found = true
+			break
 		}
+	}
+	if !found {
+		s.configMu.Unlock()
+		s.limiter.Fail(ip)
+		writeError(w, http.StatusUnauthorized, "Passkey 已在登录过程中被移除")
+		return
 	}
 	saveErr := config.Save(s.configPath, updated)
 	if saveErr == nil {
@@ -139,21 +191,47 @@ func (s *Server) passkeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, _ := sessionFromContext(r)
-	challenge, _ := auth.RandomChallenge(32)
-	flowID, _ := auth.RandomChallenge(18)
+	challenge, err := auth.RandomChallenge(32)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "无法生成 Passkey 注册挑战")
+		return
+	}
+	flowID, err := auth.RandomChallenge(18)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "无法生成 Passkey 注册流程")
+		return
+	}
 	origin, rpID := s.webauthnContext(r)
-	userHash := sha256.Sum256([]byte("lukepanel:" + session.Username + ":" + s.cfg.SessionSecret))
+	s.configMu.RLock()
+	sessionSecret, trustedProxy := s.cfg.SessionSecret, s.cfg.TrustedProxy
+	credentials := append([]auth.PasskeyCredential(nil), s.cfg.Passkeys...)
+	s.configMu.RUnlock()
+	userHash := sha256.Sum256([]byte("lukepanel:" + session.Username + ":" + sessionSecret))
 	userID := base64.RawURLEncoding.EncodeToString(userHash[:16])
 	s.passkeyMu.Lock()
 	s.cleanupPasskeyChallengesLocked()
-	s.passkeyPending[flowID] = passkeyChallenge{Challenge: challenge, Origin: origin, RPID: rpID, Username: session.Username, SessionID: session.ID, Kind: "register", ExpiresAt: time.Now().Add(5 * time.Minute)}
+	pendingForSession := 0
+	for _, item := range s.passkeyPending {
+		if item.Kind == "register" && item.SessionID == session.ID {
+			pendingForSession++
+		}
+	}
+	if pendingForSession >= 5 {
+		s.passkeyMu.Unlock()
+		writeError(w, http.StatusTooManyRequests, "Passkey 注册请求过多，请完成或稍后重试")
+		return
+	}
+	if len(s.passkeyPending) >= 256 {
+		s.passkeyMu.Unlock()
+		writeError(w, http.StatusServiceUnavailable, "Passkey 服务暂时繁忙，请稍后重试")
+		return
+	}
+	s.passkeyPending[flowID] = passkeyChallenge{Challenge: challenge, Origin: origin, RPID: rpID, Username: session.Username, SessionID: session.ID, Kind: "register", SourceIP: clientIP(r, trustedProxy), ExpiresAt: time.Now().Add(5 * time.Minute)}
 	s.passkeyMu.Unlock()
-	s.configMu.RLock()
-	exclude := make([]map[string]any, 0, len(s.cfg.Passkeys))
-	for _, credential := range s.cfg.Passkeys {
+	exclude := make([]map[string]any, 0, len(credentials))
+	for _, credential := range credentials {
 		exclude = append(exclude, map[string]any{"type": "public-key", "id": credential.ID})
 	}
-	s.configMu.RUnlock()
 	writeJSON(w, 200, map[string]any{"flow_id": flowID, "challenge": challenge, "rp": map[string]any{"name": "LukePanel", "id": rpID}, "user": map[string]any{"id": userID, "name": session.Username, "display_name": session.Username}, "pub_key_cred_params": []map[string]any{{"type": "public-key", "alg": -7}}, "timeout": 60000, "attestation": "none", "authenticator_selection": map[string]any{"resident_key": "required", "user_verification": "required"}, "exclude_credentials": exclude, "name": strings.TrimSpace(req.Name)})
 }
 
@@ -190,7 +268,7 @@ func (s *Server) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.configMu.Lock()
-	updated := s.cfg
+	updated := s.cfg.Clone()
 	for _, existing := range updated.Passkeys {
 		if existing.ID == credential.ID {
 			s.configMu.Unlock()
@@ -235,7 +313,7 @@ func (s *Server) passkeyManagement(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.configMu.Lock()
-		updated := s.cfg
+		updated := s.cfg.Clone()
 		next := updated.Passkeys[:0]
 		found := false
 		for _, item := range updated.Passkeys {
@@ -287,14 +365,25 @@ func (s *Server) webauthnContext(r *http.Request) (string, string) {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	host = strings.Trim(host, "[]")
+	host = strings.TrimSuffix(strings.ToLower(strings.Trim(host, "[]")), ".")
+	s.configMu.RLock()
+	secureCookie, trustedProxy := s.cfg.SecureCookie, s.cfg.TrustedProxy
+	s.configMu.RUnlock()
 	scheme := "http"
-	if s.cfg.SecureCookie {
+	if secureCookie {
 		scheme = "https"
 	}
-	remote, _, _ := net.SplitHostPort(r.RemoteAddr)
-	if s.cfg.TrustedProxy != "" && remote == s.cfg.TrustedProxy {
-		if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded == "http" || forwarded == "https" {
+	remote, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		remote = strings.Trim(strings.TrimSpace(r.RemoteAddr), "[]")
+	}
+	remoteIP := net.ParseIP(remote)
+	trustedSource := remoteIP != nil && remoteIP.IsLoopback()
+	if !trustedSource && trustedProxy != "" {
+		trustedSource = proxyAddressMatches(remote, trustedProxy)
+	}
+	if trustedSource {
+		if forwarded := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))); forwarded == "http" || forwarded == "https" {
 			scheme = forwarded
 		}
 	}

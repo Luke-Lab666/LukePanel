@@ -11,7 +11,7 @@
   "/api/v1/settings": {
     "status": 200,
     "payload": {
-      "version": "v2.0.2",
+      "version": "v2.0.3",
       "listen": "127.0.0.1:8080",
       "secure_cookie": true,
       "agent_socket": "/run/lukepanel/agent.sock",
@@ -42,12 +42,9 @@
       "memory": {
         "used": 2147483648,
         "total": 4294967296,
-        "percent": 50.0
-      },
-      "swap": {
-        "used": 134217728,
-        "total": 2147483648,
-        "percent": 6.25
+        "percent": 50.0,
+        "SwapUsed": 134217728,
+        "SwapTotal": 2147483648
       },
       "disks": [
         {

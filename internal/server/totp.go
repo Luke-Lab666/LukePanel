@@ -99,7 +99,7 @@ func (s *Server) totpConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.configMu.Lock()
-	updated := s.cfg
+	updated := s.cfg.Clone()
 	updated.TOTPSecret = pending.Secret
 	updated.RecoveryCodeHashes = make([]string, 0, len(pending.Codes))
 	for _, code := range pending.Codes {
@@ -130,7 +130,7 @@ func (s *Server) totpDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.configMu.Lock()
-	updated := s.cfg
+	updated := s.cfg.Clone()
 	updated.TOTPSecret = ""
 	updated.RecoveryCodeHashes = nil
 	err := config.Save(s.configPath, updated)
@@ -161,7 +161,7 @@ func (s *Server) totpRegenerateRecovery(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.configMu.Lock()
-	updated := s.cfg
+	updated := s.cfg.Clone()
 	updated.RecoveryCodeHashes = make([]string, 0, len(codes))
 	for _, code := range codes {
 		updated.RecoveryCodeHashes = append(updated.RecoveryCodeHashes, auth.HashRecoveryCode(code, updated.SessionSecret))
@@ -199,13 +199,46 @@ func (s *Server) verifySecondFactor(code string, consumeRecovery bool) (bool, bo
 	if !consumeRecovery {
 		return true, true, nil
 	}
-	updated := s.cfg
+	updated := s.cfg.Clone()
 	updated.RecoveryCodeHashes = remaining
 	if err := config.Save(s.configPath, updated); err != nil {
 		return false, false, err
 	}
 	s.cfg = updated
 	return true, true, nil
+}
+
+// saveConfigWithSecondFactor verifies the currently configured second factor and
+// persists the requested mutation in one config transaction. Recovery codes are
+// consumed only when the final configuration save succeeds.
+func (s *Server) saveConfigWithSecondFactor(code string, mutate func(*config.Config) error) (bool, error) {
+	code = strings.TrimSpace(code)
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+
+	updated := s.cfg.Clone()
+	recoveryUsed := false
+	if updated.TOTPSecret != "" {
+		if code == "" {
+			return false, errSecondFactorRequired
+		}
+		if !auth.VerifyTOTP(updated.TOTPSecret, code, time.Now()) {
+			remaining, used := auth.ConsumeRecoveryCode(code, updated.SessionSecret, updated.RecoveryCodeHashes)
+			if !used {
+				return false, errSecondFactorInvalid
+			}
+			updated.RecoveryCodeHashes = remaining
+			recoveryUsed = true
+		}
+	}
+	if err := mutate(&updated); err != nil {
+		return false, err
+	}
+	if err := config.Save(s.configPath, updated); err != nil {
+		return false, err
+	}
+	s.cfg = updated
+	return recoveryUsed, nil
 }
 
 func (s *Server) totpEnabled() bool {
@@ -218,4 +251,8 @@ func isSecondFactorMissing(code string) bool {
 	return strings.TrimSpace(code) == ""
 }
 
-var errSecondFactorRequired = errors.New("second factor required")
+var (
+	errSecondFactorRequired = errors.New("second factor required")
+	errSecondFactorInvalid  = errors.New("second factor invalid")
+	errConfigChanged        = errors.New("configuration changed")
+)

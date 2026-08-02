@@ -415,7 +415,7 @@ func (s *Server) backupImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.configMu.RLock()
-	current := s.cfg
+	current := s.cfg.Clone()
 	s.configMu.RUnlock()
 	// Runtime endpoints and machine-local secrets never come from an uploaded archive.
 	restored.Listen = current.Listen

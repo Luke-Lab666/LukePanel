@@ -63,6 +63,18 @@ func Default() Config {
 	}
 }
 
+// Clone returns a mutation-safe copy of Config. Config contains slices, so a plain
+// struct assignment can otherwise share backing arrays and leak partial changes
+// into the live configuration when persistence fails.
+func (c Config) Clone() Config {
+	clone := c
+	clone.AllowedRoots = append([]string(nil), c.AllowedRoots...)
+	clone.RecoveryCodeHashes = append([]string(nil), c.RecoveryCodeHashes...)
+	clone.Passkeys = append([]auth.PasskeyCredential(nil), c.Passkeys...)
+	clone.IPAllowlist = append([]string(nil), c.IPAllowlist...)
+	return clone
+}
+
 func LoadOrCreate(path string) (Config, string, error) {
 	return LoadOrCreateWithOptions(path, InitOptions{})
 }

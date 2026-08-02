@@ -71,7 +71,7 @@ func TestStableReleaseMetadataIsConsistent(t *testing.T) {
 	version := repositoryVersion(t)
 	plainVersion := strings.TrimPrefix(version, "v")
 	checks := map[string][]string{
-		filepath.Join(root, "README.md"):    {"当前版本：<code>" + version + "</code>", "## " + version + " React 全量重构"},
+		filepath.Join(root, "README.md"):    {"当前版本：<code>" + version + "</code>", "## " + version},
 		filepath.Join(root, "SECURITY.md"):  {"LukePanel " + version},
 		filepath.Join(root, "CHANGELOG.md"): {"## " + version + " - "},
 	}

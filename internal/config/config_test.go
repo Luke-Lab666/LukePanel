@@ -141,3 +141,20 @@ func TestLoadOrCreateRemovesLegacyTrustedDevices(t *testing.T) {
 		t.Fatalf("legacy trusted_devices survived migration: %s", migrated)
 	}
 }
+
+func TestCloneDoesNotAliasSliceFields(t *testing.T) {
+	cfg := Default()
+	cfg.RecoveryCodeHashes = []string{"recovery-a"}
+	cfg.Passkeys = []auth.PasskeyCredential{{ID: "passkey-a", Name: "Phone"}}
+	cfg.IPAllowlist = []string{"192.0.2.1"}
+
+	clone := cfg.Clone()
+	clone.AllowedRoots[0] = "/tmp"
+	clone.RecoveryCodeHashes[0] = "recovery-b"
+	clone.Passkeys[0].Name = "Laptop"
+	clone.IPAllowlist[0] = "198.51.100.1"
+
+	if cfg.AllowedRoots[0] != "/" || cfg.RecoveryCodeHashes[0] != "recovery-a" || cfg.Passkeys[0].Name != "Phone" || cfg.IPAllowlist[0] != "192.0.2.1" {
+		t.Fatalf("Clone mutated original config: %#v", cfg)
+	}
+}

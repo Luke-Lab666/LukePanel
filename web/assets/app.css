@@ -119,11 +119,15 @@
   .drawer-scrim { display: none; }
 
   .page-stack { display: grid; gap: 18px; min-width: 0; }
-  .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; min-height: 58px; }
-  .page-heading { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+  .page-header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: flex-start; gap: 12px; min-height: 58px; }
+  .page-heading { display: flex; grid-column: 1; grid-row: 1; align-items: flex-start; gap: 10px; min-width: 0; }
   .page-heading h1 { font-size: clamp(24px, 2vw, 30px); line-height: 1.2; letter-spacing: -.035em; }
   .page-heading p { margin-top: 5px; color: var(--muted); }
-  .page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+  .page-actions { display: flex; grid-column: 2; grid-row: 1; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+  .page-header-refresh { display: flex; grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  .page-header:not(.has-custom-actions) .page-header-refresh { grid-column: 2 / 4; }
+  .header-refresh-button { border-color: var(--line-strong); background: var(--surface); color: var(--muted); box-shadow: var(--shadow-sm); }
+  .header-refresh-button:hover:not(:disabled), .header-refresh-button:focus-visible { border-color: color-mix(in srgb, var(--primary) 38%, var(--line)); background: var(--surface-soft); color: var(--text); }
   .back-button, .icon-button { display: inline-grid; place-items: center; flex: 0 0 auto; width: 40px; height: 40px; padding: 0; border-radius: 10px; background: transparent; color: var(--muted); }
   .back-button { margin-top: 0; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow-sm); }
   .back-button:hover, .icon-button:hover { background: var(--surface-soft); color: var(--text); }
@@ -272,7 +276,6 @@
   .login-hero { position: relative; z-index: 1; max-width: 580px; }
   .login-hero h1 { margin-bottom: 15px; font-size: clamp(38px, 5vw, 66px); line-height: 1.02; letter-spacing: -.055em; }
   .login-hero p { max-width: 540px; color: #c8d3e9; font-size: 16px; line-height: 1.8; }
-  .login-note { position: relative; z-index: 1; color: #aebddd; }
   .login-panel { display: grid; min-height: 100vh; place-items: center; padding: 30px; background: var(--bg); }
   .login-card { width: min(100%, 430px); padding: clamp(24px, 4vw, 38px); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-md); }
   .login-card > h2 { font-size: 26px; letter-spacing: -.035em; }
@@ -281,8 +284,7 @@
   .login-card-title h2 { font-size: 24px; letter-spacing: -.035em; }
   .login-card-title p { margin-top: 2px; color: var(--muted); }
   .login-card > p { margin: 7px 0 24px; color: var(--muted); }
-  .passkey-login-block { display: grid; gap: 8px; margin-bottom: 2px; text-align: center; }
-  .passkey-login-block small { color: var(--muted-2); font-size: 11px; line-height: 1.5; }
+  .passkey-login-block { display: grid; margin-bottom: 2px; }
   .login-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--muted-2); font-size: 11px; }
   .login-divider::before, .login-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 
@@ -307,6 +309,7 @@
   .resource-row { display: grid; gap: 7px; margin: 16px 0; }
   .resource-row > div { display: flex; justify-content: space-between; gap: 14px; }
   .resource-row > div span, .resource-row small { color: var(--muted); }
+  .resource-row-empty { gap: 3px; padding: 2px 0; }
   .shortcut-grid, .module-grid, .tools-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
   .shortcut, .module-card { display: flex; min-width: 0; align-items: center; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); text-align: left; transition: border-color .15s, transform .15s, background .15s; }
   .shortcut:hover, .module-card:hover { border-color: color-mix(in srgb, var(--primary) 36%, var(--line)); background: var(--primary-soft); transform: translateY(-1px); }
@@ -473,11 +476,11 @@
     .user-list { grid-template-columns: 1fr; }
     .content { padding: 16px 12px calc(52px + env(safe-area-inset-bottom)); }
     .page-stack { gap: 13px; }
-    .page-header { display: grid; min-height: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px 12px; }
+    .page-header { min-height: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px 12px; }
     .page-heading h1 { font-size: 24px; }
-    .page-actions { justify-content: flex-end; }
-    .page-header:not(.has-custom-actions) .page-actions .button { min-width: 76px; }
-    .page-header.has-custom-actions .page-actions { grid-column: 1 / -1; justify-content: flex-start; }
+    .page-header-refresh, .page-header:not(.has-custom-actions) .page-header-refresh { grid-column: 2; grid-row: 1; }
+    .page-header-refresh .button { min-width: 76px; }
+    .page-header.has-custom-actions .page-actions { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; }
     .page-header.has-custom-actions .page-actions > .button, .page-header.has-custom-actions .page-actions > .search-box, .page-header.has-custom-actions .page-actions > .input { flex: 1 1 auto; }
     .card { padding: 15px; border-radius: 13px; }
     .section-title { margin-bottom: 14px; }
@@ -520,7 +523,7 @@
     .login-layout { display: block; min-height: 100vh; background: var(--bg); }
     .login-brand { min-height: auto; padding: calc(22px + env(safe-area-inset-top)) 22px 66px; }
     .login-brand .login-hero { margin-top: 30px; }
-    .login-brand .login-note, .login-brand footer, .login-hero p { display: none; }
+    .login-brand footer, .login-hero p { display: none; }
     .login-hero h1 { margin-bottom: 0; font-size: 32px; line-height: 1.04; }
     .login-panel { min-height: auto; margin-top: -38px; padding: 0 12px calc(30px + env(safe-area-inset-bottom)); background: transparent; }
     .login-card { position: relative; z-index: 2; padding: 23px 18px; border-radius: 18px; }
@@ -549,7 +552,7 @@
   }
 }
 
-/* v2.0.2 responsive hardening: prevent min-content and hidden-file controls from escaping cards. */
+/* v2.0.3 responsive hardening: prevent min-content and hidden-file controls from escaping cards. */
 @layer components {
   .file-button { position: relative; overflow: hidden; }
   .file-button input[type="file"] { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }

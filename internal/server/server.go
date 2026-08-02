@@ -324,29 +324,15 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	session, _ := sessionFromContext(r)
 	ip := clientIP(r, s.cfg.TrustedProxy)
-	valid, err := auth.VerifyPassword(req.CurrentPassword, s.cfg.PasswordHash)
+	s.configMu.RLock()
+	passwordHash, adminUser := s.cfg.PasswordHash, s.cfg.AdminUser
+	s.configMu.RUnlock()
+	valid, err := auth.VerifyPassword(req.CurrentPassword, passwordHash)
 	if err != nil || !valid {
 		s.audit.Write(AuditEvent{IP: ip, User: session.Username, Action: "auth.password.change", Result: "failed"})
 		writeError(w, http.StatusUnauthorized, "当前密码错误")
 		return
 	}
-	if s.totpEnabled() {
-		if isSecondFactorMissing(req.OTP) {
-			writeErrorCode(w, http.StatusUnauthorized, "请输入身份验证器验证码或恢复码", "totp_required")
-			return
-		}
-		ok, recoveryUsed, verifyErr := s.verifySecondFactor(req.OTP, true)
-		if verifyErr != nil || !ok {
-			writeErrorCode(w, http.StatusUnauthorized, "验证码或恢复码不正确", "totp_invalid")
-			return
-		}
-		if recoveryUsed {
-			s.audit.Write(AuditEvent{IP: ip, User: session.Username, Action: "auth.password.change.recovery", Result: "success"})
-		}
-	}
-	s.configMu.RLock()
-	adminUser := s.cfg.AdminUser
-	s.configMu.RUnlock()
 	if err := auth.ValidatePasswordStrength(req.NewPassword, adminUser); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -356,18 +342,30 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.configMu.Lock()
-	updated := s.cfg
-	updated.PasswordHash = newHash
-	err = config.Save(s.configPath, updated)
-	if err == nil {
-		s.cfg = updated
-	}
-	s.configMu.Unlock()
-	if err != nil {
+	recoveryUsed, err := s.saveConfigWithSecondFactor(req.OTP, func(updated *config.Config) error {
+		if updated.PasswordHash != passwordHash {
+			return errConfigChanged
+		}
+		updated.PasswordHash = newHash
+		return nil
+	})
+	switch {
+	case errors.Is(err, errSecondFactorRequired):
+		writeErrorCode(w, http.StatusUnauthorized, "请输入身份验证器验证码或恢复码", "totp_required")
+		return
+	case errors.Is(err, errSecondFactorInvalid):
+		writeErrorCode(w, http.StatusUnauthorized, "验证码或恢复码不正确", "totp_invalid")
+		return
+	case errors.Is(err, errConfigChanged):
+		writeError(w, http.StatusConflict, "账户配置已变化，请刷新页面后重试")
+		return
+	case err != nil:
 		s.logger.Error("password configuration update failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "密码保存失败")
 		return
+	}
+	if recoveryUsed {
+		s.audit.Write(AuditEvent{IP: ip, User: session.Username, Action: "auth.password.change.recovery", Result: "success"})
 	}
 	s.sessions.DeleteAllExcept(session.ID)
 	s.audit.Write(AuditEvent{IP: ip, User: session.Username, Action: "auth.password.change", Result: "success"})
@@ -402,38 +400,35 @@ func (s *Server) changeAccount(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "当前密码错误")
 		return
 	}
-	if s.totpEnabled() {
-		if isSecondFactorMissing(req.OTP) {
-			writeErrorCode(w, http.StatusUnauthorized, "请输入身份验证器验证码或恢复码", "totp_required")
-			return
-		}
-		ok, recoveryUsed, verifyErr := s.verifySecondFactor(req.OTP, true)
-		if verifyErr != nil || !ok {
-			writeErrorCode(w, http.StatusUnauthorized, "验证码或恢复码不正确", "totp_invalid")
-			return
-		}
-		if recoveryUsed {
-			session, _ := sessionFromContext(r)
-			s.audit.Write(AuditEvent{IP: clientIP(r, s.cfg.TrustedProxy), User: session.Username, Action: "auth.username.change.recovery", Result: "success"})
-		}
-	}
 	if req.Username == oldUser {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": oldUser, "revoked": 0})
 		return
 	}
-	s.configMu.Lock()
-	updated := s.cfg
-	updated.AdminUser = req.Username
-	err = config.Save(s.configPath, updated)
-	if err == nil {
-		s.cfg = updated
-	}
-	s.configMu.Unlock()
-	if err != nil {
+	recoveryUsed, err := s.saveConfigWithSecondFactor(req.OTP, func(updated *config.Config) error {
+		if updated.PasswordHash != passwordHash || updated.AdminUser != oldUser {
+			return errConfigChanged
+		}
+		updated.AdminUser = req.Username
+		return nil
+	})
+	switch {
+	case errors.Is(err, errSecondFactorRequired):
+		writeErrorCode(w, http.StatusUnauthorized, "请输入身份验证器验证码或恢复码", "totp_required")
+		return
+	case errors.Is(err, errSecondFactorInvalid):
+		writeErrorCode(w, http.StatusUnauthorized, "验证码或恢复码不正确", "totp_invalid")
+		return
+	case errors.Is(err, errConfigChanged):
+		writeError(w, http.StatusConflict, "账户配置已变化，请刷新页面后重试")
+		return
+	case err != nil:
 		writeError(w, http.StatusInternalServerError, "用户名保存失败")
 		return
 	}
 	session, _ := sessionFromContext(r)
+	if recoveryUsed {
+		s.audit.Write(AuditEvent{IP: clientIP(r, s.cfg.TrustedProxy), User: session.Username, Action: "auth.username.change.recovery", Result: "success"})
+	}
 	revoked := s.sessions.RenameCurrentAndDeleteOthers(session.ID, req.Username)
 	s.configMu.RLock()
 	trustedProxy := s.cfg.TrustedProxy
@@ -1545,7 +1540,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		s.configMu.RLock()
-		cfg := s.cfg
+		cfg := s.cfg.Clone()
 		s.configMu.RUnlock()
 		writeJSON(w, http.StatusOK, map[string]any{"version": s.version, "listen": cfg.Listen, "secure_cookie": cfg.SecureCookie, "auto_refresh_seconds": cfg.AutoRefreshSeconds, "allowed_roots": cfg.AllowedRoots, "agent_socket": cfg.AgentSocket, "admin_user": cfg.AdminUser})
 	case http.MethodPatch:
@@ -1560,7 +1555,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.configMu.Lock()
-		updated := s.cfg
+		updated := s.cfg.Clone()
 		updated.AutoRefreshSeconds = req.AutoRefreshSeconds
 		err := config.Save(s.configPath, updated)
 		if err == nil {
@@ -1769,8 +1764,16 @@ func proxyAddressMatches(host, trusted string) bool {
 	return host == trusted
 }
 func decodeJSON(w http.ResponseWriter, r *http.Request, max int64, out any) error {
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, max)).Decode(out); err != nil {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, max))
+	if err := decoder.Decode(out); err != nil {
 		writeError(w, http.StatusBadRequest, "请求格式错误")
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("multiple JSON values")
+		}
+		writeError(w, http.StatusBadRequest, "请求只能包含一个 JSON 对象")
 		return err
 	}
 	return nil

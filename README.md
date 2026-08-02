@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  当前版本：<code>v2.0.2</code>
+  当前版本：<code>v2.0.3</code>
 </p>
 
 LukePanel 面向需要维护单台 Debian 或 Ubuntu 服务器的个人用户和小型团队。它提供系统、Docker、文件、SSH、安全与审计管理，同时避免把浏览器变成任意 root WebShell。
@@ -17,12 +17,14 @@ LukePanel 面向需要维护单台 Debian 或 Ubuntu 服务器的个人用户和
 Web 服务以普通系统用户运行；需要 root 权限的操作由独立 Agent 通过本地 Unix Socket 执行。Agent 只接受经过校验的固定动作，不接收浏览器传入的任意 Shell 命令。
 
 
-## v2.0.2 React 全量重构
+## v2.0.3 移动端 UI 与资源状态修复
 
-- 前端使用 React 18 与 TypeScript 重新实现，旧手写 DOM 与过渡前端不进入运行链路。
-- React 与 ReactDOM 固定版本随源码提供，离线构建后由 Go `embed` 内嵌，VPS 运行时不访问 CDN。
-- 路由层级、表单、弹窗、错误提示、加载状态和手机端导航均由统一组件管理。
-- 只有带明确父路由的二级页面显示返回按钮；日志中心是独立一级页面。
+- 刷新按钮在未点击时也保持完整按钮轮廓，避免 iOS 点击后样式突然变化。
+- 概览页按后端真实字段读取 Swap；已配置时显示容量和使用率，未配置时使用干净的文字空状态。
+- 登录页删除重复的 Passkey 和认证规则说明，只保留操作所需信息。
+- Passkey、内存、磁盘和刷新图标统一为语义明确的线性图标。
+- 延续 v2.0.2 的认证加固：密码登录开启 TOTP 后强制第二因素，Passkey 独立认证，高风险操作要求当前密码与 TOTP。
+- 前端使用 React 18 + TypeScript 离线构建，运行资源由 Go `embed` 内嵌且不依赖 CDN。
 
 ## 主要特点
 
@@ -33,7 +35,7 @@ Web 服务以普通系统用户运行；需要 root 权限的操作由独立 Age
 - Docker 容器、镜像、网络、存储卷和 Compose 管理
 - 从 `/` 开始的文件管理、回收站和历史版本
 - SSH 用户、公钥和安全设置管理
-- 无用户名 Passkey、强制 TOTP、恢复码、会话和登录保护
+- Passkey、TOTP、恢复码、会话和登录保护
 - UFW、Fail2ban、安全体检和审计日志
 - 可选 GitHub 仓库、Actions、Pull Request 和 Release 工作流
 - React 18 + TypeScript 前端，构建产物随 Go 单二进制内嵌；服务器运行时不依赖 Node.js、CDN、Redis 或外部数据库
@@ -154,9 +156,8 @@ rm -f /root/.lukepanel-password
 - 登录用户和 `authorized_keys` 管理
 - ED25519 密钥生成与一次性私钥下载
 - 密码登录、Root 登录与转发设置
-- Passkey / WebAuthn 无用户名登录；浏览器直接选择设备凭据
-- 账户密码登录在开启 TOTP 后每次强制验证，不提供免验证码可信设备
-- 一次性恢复码和高风险操作二次验证
+- Passkey / WebAuthn 登录
+- TOTP、一次性恢复码和无用户名 Passkey
 - 活跃会话管理
 - 带限时恢复入口的 IP 允许列表
 - UFW 规则与受保护的首次启用流程
@@ -194,7 +195,7 @@ LukePanel 将浏览器服务和高权限操作分离：
 - 密码使用 PBKDF2-HMAC-SHA256 哈希保存
 - 会话 Cookie 使用 HttpOnly、SameSite 与 Secure 属性
 - 修改操作使用 CSRF 校验
-- 高风险操作需要短时有效的管理员密码二次验证；启用 TOTP 时同时要求验证码或恢复码
+- 高风险操作需要短时有效的密码二次验证
 - 密码、Cookie、私钥和访问令牌不会写入审计内容
 
 公网部署前请阅读 [SECURITY.md](SECURITY.md)。
@@ -272,7 +273,7 @@ make build
 
 ## 项目状态
 
-LukePanel v2.0.2 已将页面、路由、状态、API 调用和弹窗完整迁移到 React 18 + TypeScript。React 与 ReactDOM 固定版本随仓库内嵌，生产运行不依赖 CDN；旧版手写 DOM 与过渡前端均不进入正式资源链路。
+LukePanel v2.0.3 的页面、路由、状态、API 调用和弹窗均使用 React 18 + TypeScript。React 与 ReactDOM 固定版本随仓库内嵌，生产运行不依赖 CDN；旧版手写 DOM 与过渡前端均不进入正式资源链路。
 
 执行软件升级、防火墙、SSH、Docker 和文件系统操作前，仍应保留服务器级备份。项目会尽量使用验证、快照和回滚降低风险，但任何具备 root 管理能力的面板都无法消除错误操作和系统差异带来的风险。
 

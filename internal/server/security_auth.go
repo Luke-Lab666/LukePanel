@@ -69,7 +69,7 @@ func (s *Server) ipAllowlist(w http.ResponseWriter, r *http.Request) {
 			expires = time.Now().Add(15 * time.Minute)
 		}
 		s.configMu.Lock()
-		updated := s.cfg
+		updated := s.cfg.Clone()
 		updated.IPAllowlistEnabled = req.Enabled
 		updated.IPAllowlist = entries
 		updated.IPRecoveryHash = hash
@@ -112,7 +112,7 @@ func (s *Server) ipAllowlistRecover(w http.ResponseWriter, r *http.Request) {
 		token = req.Token
 	}
 	s.configMu.Lock()
-	updated := s.cfg
+	updated := s.cfg.Clone()
 	if updated.IPRecoveryHash == "" || time.Now().After(updated.IPRecoveryExpires) || !subtleStringEqual(updated.IPRecoveryHash, hashToken(token)) {
 		s.configMu.Unlock()
 		writeError(w, 403, "恢复链接无效或已过期")
@@ -239,7 +239,7 @@ func (s *Server) loginNotifications(w http.ResponseWriter, r *http.Request) {
 		req.BotToken = strings.TrimSpace(req.BotToken)
 		req.ChatID = strings.TrimSpace(req.ChatID)
 		s.configMu.Lock()
-		updated := s.cfg
+		updated := s.cfg.Clone()
 		if req.BotToken != "" {
 			if !telegramTokenPattern.MatchString(req.BotToken) {
 				s.configMu.Unlock()

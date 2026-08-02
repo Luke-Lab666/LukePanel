@@ -1,9 +1,9 @@
 "use strict";
-/* LukePanel v2.0.2 React 18 frontend. No runtime CDN, no direct DOM templating. */
+/* LukePanel v2.0.3 React 18 frontend. No runtime CDN, no direct DOM templating. */
 (() => {
     'use strict';
     const { useCallback, useEffect, useMemo, useRef, useState } = React;
-    const VERSION = window.__LUKEPANEL_VERSION__ || 'v2.0.2';
+    const VERSION = window.__LUKEPANEL_VERSION__ || 'v2.0.3';
     const ROUTES = [
         { path: '/', title: '概览', subtitle: '服务器状态与关键指标', level: 1, nav: true, icon: 'dashboard' },
         { path: '/system', title: '系统', subtitle: '主机、服务、网络与维护', level: 1, nav: true, icon: 'system' },
@@ -51,14 +51,18 @@
         audit: ['M6 4h12v16H6z', 'M9 8h6', 'M9 12h6', 'M9 16h4'],
         security: ['M12 3 4 6v5c0 5.2 3.4 8.4 8 10 4.6-1.6 8-4.8 8-10V6l-8-3Z', 'm9 12 2 2 4-4'],
         settings: ['M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z', 'M4.9 19.1 7 17', 'M17 7l2.1-2.1', 'M4.9 4.9 7 7', 'M17 17l2.1 2.1', 'M2 12h3', 'M19 12h3', 'M12 2v3', 'M12 19v3'],
-        back: ['m15 18-6-6 6-6'], refresh: ['M20 11a8 8 0 1 0-2.3 5.7', 'M20 4v7h-7'], menu: ['M4 7h16', 'M4 12h16', 'M4 17h16'],
+        back: ['m15 18-6-6 6-6'], refresh: ['M20 6v5h-5', 'M4 18v-5h5', 'M18.4 9a7 7 0 0 0-12-2.5L4 11', 'M5.6 15a7 7 0 0 0 12 2.5L20 13'], menu: ['M4 7h16', 'M4 12h16', 'M4 17h16'],
         close: ['M6 6l12 12', 'M18 6 6 18'], search: ['M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z', 'm20 20-4-4'],
         plus: ['M12 5v14', 'M5 12h14'], play: ['m8 5 11 7-11 7Z'], stop: ['M7 7h10v10H7z'], restart: ['M20 11a8 8 0 1 0-2 5', 'm20 4v7h-7'],
         trash: ['M4 7h16', 'M9 7V4h6v3', 'm7 7 1 13h8l1-13', 'M10 11v5', 'M14 11v5'], edit: ['m4 20 4-1 10-10-3-3L5 16l-1 4Z', 'm13 5 3 3'],
         download: ['M12 3v12', 'm7 10 5 5 5-5', 'M5 21h14'], upload: ['M12 21V9', 'm7 14 5-5 5 5', 'M5 3h14'],
         chevron: ['m9 18 6-6-6-6'], check: ['m5 12 4 4L19 6'], warning: ['M12 3 2 21h20L12 3Z', 'M12 9v5', 'M12 18h.01'],
         terminal: ['m5 7 4 4-4 4', 'M11 17h8'], user: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M4 21a8 8 0 0 1 16 0'],
-        key: ['M21 2 13.6 9.4', 'M15 4l5 5', 'M11 13a5 5 0 1 1-7-7 5 5 0 0 1 7 7Z'], copy: ['M8 8h12v12H8z', 'M4 4h12v4', 'M4 4v12h4'],
+        key: ['M21 2l-2 2', 'm15 6 3 3', 'M14.5 9.5 9 15H6v3H3v3H1v-4.5l6.5-6.5', 'M15.5 8.5h.01'],
+        passkey: ['M12 11a1 1 0 0 0-1 1c0 2.6-.8 4.8-2.4 6.6', 'M12 7a5 5 0 0 0-5 5c0 1.2-.1 2.3-.4 3.4', 'M12 3a9 9 0 0 0-9 9c0 1.8-.3 3.5-.9 5', 'M12 15a3 3 0 0 0 3-3 3 3 0 0 0-6 0c0 3.8-1.2 6.7-3.5 8.8', 'M16.6 20.6c1.6-2.5 2.4-5.3 2.4-8.6a7 7 0 0 0-14 0c0 1.5-.2 2.9-.6 4.2'],
+        memory: ['M6 4h12v16H6z', 'M9 8h6v8H9z', 'M9 1v3', 'M15 1v3', 'M9 20v3', 'M15 20v3', 'M1 9h5', 'M1 15h5', 'M18 9h5', 'M18 15h5'],
+        disk: ['M4 5h16v14H4z', 'M7 9h10', 'M7 15h.01', 'M11 15h6'],
+        copy: ['M8 8h12v12H8z', 'M4 4h12v4', 'M4 4v12h4'],
         info: ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z', 'M12 10v7', 'M12 7h.01'], more: ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'], logout: ['M10 5H5v14h5', 'm15 16 4-4-4-4', 'M19 12H9']
     };
     function Icon({ name, size = 20, className = '' }) {
@@ -115,7 +119,28 @@
         const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
         return `${days[number(task.weekday)] || '每周'} ${hour}:${minute}`;
     } return `每天 ${hour}:${minute}`; }
-    function copyText(value) { return navigator.clipboard?.writeText(value) || Promise.reject(new Error('浏览器不支持剪贴板')); }
+    async function copyText(value) {
+        if (navigator.clipboard?.writeText) {
+            try {
+                await navigator.clipboard.writeText(value);
+                return;
+            }
+            catch { /* Fall back for local HTTP and older iOS WebKit. */ }
+        }
+        const area = document.createElement('textarea');
+        area.value = value;
+        area.readOnly = true;
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        area.style.pointerEvents = 'none';
+        document.body.appendChild(area);
+        area.select();
+        area.setSelectionRange(0, value.length);
+        const copied = document.execCommand('copy');
+        area.remove();
+        if (!copied)
+            throw new Error('浏览器未允许复制，请长按内容手动复制');
+    }
     class ApiError extends Error {
         constructor(message, status, payload) { super(message); this.name = 'ApiError'; this.status = status; this.code = text(payload.code, ''); this.command = text(payload.command || payload.details?.command, ''); this.output = text(payload.output || payload.details?.output, ''); }
         get detail() { return [this.message, this.command ? `执行命令：${this.command}` : '', this.output ? `命令输出：\n${this.output}` : ''].filter(Boolean).join('\n\n'); }
@@ -225,6 +250,7 @@
         children,
         hint ? React.createElement("small", null, hint) : null); }
     function TextInput(props) { return React.createElement("input", { ...props, className: `input ${props.className || ''}` }); }
+    function SecondFactorInput(props) { return React.createElement(TextInput, { inputMode: "text", autoCapitalize: "characters", autoCorrect: "off", spellCheck: false, autoComplete: "one-time-code", ...props }); }
     function SelectInput(props) { return React.createElement("select", { ...props, className: `input ${props.className || ''}` }, props.children); }
     function TextArea(props) { return React.createElement("textarea", { ...props, className: `input textarea ${props.className || ''}` }); }
     function Toggle({ checked, onChange, label, description, disabled = false }) {
@@ -267,9 +293,9 @@
                 React.createElement("div", null,
                     React.createElement("h1", null, route.title),
                     React.createElement("p", null, route.subtitle))),
-            React.createElement("div", { className: "page-actions" },
-                actions,
-                onRefresh ? React.createElement(Button, { tone: "ghost", icon: "refresh", busy: busy, onClick: onRefresh }, "\u5237\u65B0") : null));
+            actions ? React.createElement("div", { className: "page-actions" }, actions) : null,
+            onRefresh ? React.createElement("div", { className: "page-header-refresh" },
+                React.createElement(Button, { icon: "refresh", className: "header-refresh-button", busy: busy, onClick: onRefresh }, "\u5237\u65B0")) : null);
     }
     function Modal({ state, onClose, returnFocus }) {
         const dialogRef = useRef(null);
@@ -377,7 +403,7 @@
                 onAuthenticated(result);
             }
             catch (cause) {
-                if (cause instanceof DOMException && cause.name === 'NotAllowedError')
+                if (cause instanceof DOMException && (cause.name === 'NotAllowedError' || cause.name === 'AbortError'))
                     notify('info', '已取消 Passkey 登录');
                 else
                     notify('error', 'Passkey 登录失败', errorDetail(cause));
@@ -409,8 +435,7 @@
                             React.createElement("h2", null, "\u767B\u5F55 LukePanel"),
                             React.createElement("p", null, "\u9009\u62E9 Passkey \u6216\u7BA1\u7406\u5458\u8D26\u6237"))),
                     typeof PublicKeyCredential !== 'undefined' ? React.createElement("div", { className: "passkey-login-block" },
-                        React.createElement(Button, { icon: "key", tone: "primary", busy: busy, onClick: passkey, className: "full-width" }, "\u4F7F\u7528 Passkey \u767B\u5F55"),
-                        React.createElement("small", null, "\u65E0\u9700\u5148\u8F93\u5165\u7528\u6237\u540D\u3001\u5BC6\u7801\u6216\u4E24\u6B65\u9A8C\u8BC1\u7801")) : null,
+                        React.createElement(Button, { icon: "passkey", tone: "primary", busy: busy, onClick: passkey, className: "full-width" }, "\u4F7F\u7528 Passkey \u767B\u5F55")) : null,
                     React.createElement("div", { className: "login-divider" },
                         React.createElement("span", null, "\u4F7F\u7528\u7BA1\u7406\u5458\u8D26\u6237")),
                     React.createElement(Field, { label: "\u7528\u6237\u540D" },
@@ -418,11 +443,8 @@
                     React.createElement(Field, { label: "\u5BC6\u7801" },
                         React.createElement(TextInput, { name: "password", type: "password", autoComplete: "current-password", value: password, onChange: (event) => changePassword(event.target.value), required: true })),
                     totpRequired ? React.createElement(Field, { label: "\u4E24\u6B65\u9A8C\u8BC1\u7801", hint: "\u5BC6\u7801\u767B\u5F55\u5DF2\u5F3A\u5236\u542F\u7528\uFF1A\u8F93\u5165\u9A8C\u8BC1\u5668\u4E2D\u7684 6 \u4F4D\u9A8C\u8BC1\u7801\u6216\u4E00\u6B21\u6027\u6062\u590D\u7801" },
-                        React.createElement(TextInput, { name: "otp", inputMode: "numeric", autoComplete: "one-time-code", value: totp, onChange: (event) => setTotp(event.target.value), autoFocus: true, required: true })) : null,
-                    React.createElement(Button, { type: "submit", busy: busy, className: "full-width" }, "\u4F7F\u7528\u8D26\u6237\u5BC6\u7801\u767B\u5F55"),
-                    React.createElement("p", { className: "login-note" },
-                        React.createElement(Icon, { name: "security", size: 16 }),
-                        "Passkey \u72EC\u7ACB\u5B8C\u6210\u5F3A\u8BA4\u8BC1\uFF1B\u8D26\u6237\u5BC6\u7801\u767B\u5F55\u5728\u5F00\u542F TOTP \u540E\u6BCF\u6B21\u90FD\u5FC5\u987B\u9A8C\u8BC1"))));
+                        React.createElement(SecondFactorInput, { name: "otp", value: totp, onChange: (event) => setTotp(event.target.value), autoFocus: true, required: true })) : null,
+                    React.createElement(Button, { type: "submit", busy: busy, className: "full-width" }, totpRequired ? '验证并登录' : '使用账户密码登录'))));
     }
     function normalizeRequestOptions(options) {
         const allow = options.allowCredentials || options.allow_credentials || [];
@@ -489,8 +511,8 @@
         const memoryUsed = number(overview.memory?.used ?? overview.memory?.Used);
         const memoryTotal = number(overview.memory?.total ?? overview.memory?.Total);
         const memoryPct = number(overview.memory?.percent, memoryTotal ? memoryUsed / memoryTotal * 100 : 0);
-        const swapUsed = number(overview.swap?.used ?? overview.swap?.Used);
-        const swapTotal = number(overview.swap?.total ?? overview.swap?.Total);
+        const swapUsed = number(overview.swap?.used ?? overview.swap?.Used ?? overview.memory?.swap_used ?? overview.memory?.SwapUsed);
+        const swapTotal = number(overview.swap?.total ?? overview.swap?.Total ?? overview.memory?.swap_total ?? overview.memory?.SwapTotal);
         const swapPct = number(overview.swap?.percent, swapTotal ? swapUsed / swapTotal * 100 : 0);
         const disk = listOf(overview.disks)[0] || overview.disk || {};
         const diskPct = number(disk.percent, number(disk.total ?? disk.Total) ? number(disk.used ?? disk.Used) / number(disk.total ?? disk.Total) * 100 : 0);
@@ -505,15 +527,15 @@
                 React.createElement("section", { className: "metric-grid" },
                     React.createElement(Metric, { title: "\u8FD0\u884C\u65F6\u95F4", value: formatDuration(overview.uptime_seconds), detail: text(overview.platform || overview.os, 'Linux'), icon: "server" }),
                     React.createElement(Metric, { title: "CPU \u4F7F\u7528\u7387", value: `${cpu.toFixed(1)}%`, detail: `${text(overview.cpu_cores ?? overview.cpu?.cores, '—')} 核 · 负载 ${number(overview.load_1 ?? overview.load?.[0]).toFixed(2)}`, icon: "process", tone: cpu > 90 ? 'danger' : cpu > 70 ? 'warning' : 'normal' }),
-                    React.createElement(Metric, { title: "\u5185\u5B58\u4F7F\u7528\u7387", value: `${memoryPct.toFixed(1)}%`, detail: `${formatBytes(memoryUsed)} / ${formatBytes(memoryTotal)}`, icon: "storage", tone: memoryPct > 90 ? 'danger' : memoryPct > 75 ? 'warning' : 'normal' }),
-                    React.createElement(Metric, { title: "\u7CFB\u7EDF\u76D8", value: `${diskPct.toFixed(1)}%`, detail: `${formatBytes(disk.used ?? disk.Used)} / ${formatBytes(disk.total ?? disk.Total)}`, icon: "storage", tone: diskPct > 90 ? 'danger' : diskPct > 80 ? 'warning' : 'normal' })),
+                    React.createElement(Metric, { title: "\u5185\u5B58\u4F7F\u7528\u7387", value: `${memoryPct.toFixed(1)}%`, detail: `${formatBytes(memoryUsed)} / ${formatBytes(memoryTotal)}`, icon: "memory", tone: memoryPct > 90 ? 'danger' : memoryPct > 75 ? 'warning' : 'normal' }),
+                    React.createElement(Metric, { title: "\u7CFB\u7EDF\u76D8", value: `${diskPct.toFixed(1)}%`, detail: `${formatBytes(disk.used ?? disk.Used)} / ${formatBytes(disk.total ?? disk.Total)}`, icon: "disk", tone: diskPct > 90 ? 'danger' : diskPct > 80 ? 'warning' : 'normal' })),
                 React.createElement("section", { className: "dashboard-grid" },
                     React.createElement(Card, null,
                         React.createElement(SectionTitle, { title: "\u8D44\u6E90\u4F7F\u7528", subtitle: "\u670D\u52A1\u5668\u5F53\u524D\u8D44\u6E90\u5360\u7528", actions: React.createElement(Button, { tone: "ghost", onClick: () => props.navigate('/system/processes') }, "\u67E5\u770B\u8FDB\u7A0B") }),
                         React.createElement(ResourceRow, { label: "CPU", value: `${cpu.toFixed(1)}%`, detail: `${text(overview.cpu_cores ?? overview.cpu?.cores, '—')} 核心`, percent: cpu }),
                         React.createElement(ResourceRow, { label: "\u5185\u5B58", value: `${memoryPct.toFixed(1)}%`, detail: `${formatBytes(memoryUsed)} / ${formatBytes(memoryTotal)}`, percent: memoryPct }),
                         React.createElement(ResourceRow, { label: "\u7CFB\u7EDF\u76D8", value: `${diskPct.toFixed(1)}%`, detail: text(disk.mount ?? disk.mountpoint, '/'), percent: diskPct }),
-                        React.createElement(ResourceRow, { label: "Swap", value: swapTotal ? `${swapPct.toFixed(1)}%` : '未配置', detail: swapTotal ? `${formatBytes(swapUsed)} / ${formatBytes(swapTotal)}` : '可在主机设置中创建', percent: swapPct })),
+                        React.createElement(ResourceRow, { label: "Swap", value: swapTotal ? `${swapPct.toFixed(1)}%` : '未配置', detail: swapTotal ? `${formatBytes(swapUsed)} / ${formatBytes(swapTotal)}` : '可在主机设置中创建', percent: swapTotal ? swapPct : undefined })),
                     React.createElement(Card, null,
                         React.createElement(SectionTitle, { title: "\u8FD0\u884C\u73AF\u5883", subtitle: "\u57FA\u7840\u7CFB\u7EDF\u4E0E\u5B89\u5168\u72B6\u6001" }),
                         React.createElement("dl", { className: "key-value-list" },
@@ -552,11 +574,11 @@
             React.createElement("span", null, title),
             React.createElement("strong", null, value),
             React.createElement("small", null, detail))); }
-    function ResourceRow({ label, value, detail, percent }) { return React.createElement("div", { className: "resource-row" },
+    function ResourceRow({ label, value, detail, percent }) { const hasProgress = typeof percent === 'number' && Number.isFinite(percent); return React.createElement("div", { className: `resource-row ${hasProgress ? '' : 'resource-row-empty'}` },
         React.createElement("div", null,
             React.createElement("strong", null, label),
             React.createElement("span", null, value)),
-        React.createElement(Progress, { value: percent, tone: percent > 90 ? 'danger' : percent > 75 ? 'warning' : 'primary' }),
+        hasProgress ? React.createElement(Progress, { value: percent, tone: percent > 90 ? 'danger' : percent > 75 ? 'warning' : 'primary' }) : null,
         React.createElement("small", null, detail)); }
     function SystemPage(props) {
         const entries = ROUTES.filter(route => route.parent === '/system');
@@ -3038,7 +3060,7 @@
                             React.createElement(Field, { label: "\u5F53\u524D\u5BC6\u7801" },
                                 React.createElement(TextInput, { type: "password", value: account.current_password, onChange: (event) => setAccount(current => ({ ...current, current_password: event.target.value })), autoComplete: "current-password", required: true })),
                             totp.enabled ? React.createElement(Field, { label: "\u4E24\u6B65\u9A8C\u8BC1\u7801\u6216\u6062\u590D\u7801" },
-                                React.createElement(TextInput, { value: account.otp, onChange: (event) => setAccount(current => ({ ...current, otp: event.target.value })), inputMode: "numeric", autoComplete: "one-time-code", required: true })) : null,
+                                React.createElement(SecondFactorInput, { value: account.otp, onChange: (event) => setAccount(current => ({ ...current, otp: event.target.value })), required: true })) : null,
                             React.createElement(Button, { type: "submit", tone: "primary", busy: working }, "\u4FDD\u5B58\u7528\u6237\u540D"))),
                     React.createElement(Card, { className: "setting-card" },
                         React.createElement(SectionTitle, { title: "\u4FEE\u6539\u5BC6\u7801", subtitle: "\u65B0\u5BC6\u7801\u5FC5\u987B\u6EE1\u8DB3\u540E\u7AEF\u5B89\u5168\u5F3A\u5EA6\u8981\u6C42" }),
@@ -3053,7 +3075,7 @@
                             React.createElement(Field, { label: "\u786E\u8BA4\u65B0\u5BC6\u7801" },
                                 React.createElement(TextInput, { type: "password", value: password.confirm, onChange: (event) => setPassword(current => ({ ...current, confirm: event.target.value })), autoComplete: "new-password", required: true })),
                             totp.enabled ? React.createElement(Field, { label: "\u4E24\u6B65\u9A8C\u8BC1\u7801\u6216\u6062\u590D\u7801" },
-                                React.createElement(TextInput, { value: password.otp, onChange: (event) => setPassword(current => ({ ...current, otp: event.target.value })), inputMode: "numeric", autoComplete: "one-time-code", required: true })) : null,
+                                React.createElement(SecondFactorInput, { value: password.otp, onChange: (event) => setPassword(current => ({ ...current, otp: event.target.value })), required: true })) : null,
                             React.createElement(Button, { type: "submit", tone: "primary", busy: working }, "\u4FEE\u6539\u5BC6\u7801"))),
                     React.createElement(Card, { className: "setting-card" },
                         React.createElement(SectionTitle, { title: "\u4E24\u6B65\u9A8C\u8BC1", subtitle: "\u8EAB\u4EFD\u9A8C\u8BC1\u5668\u548C\u4E00\u6B21\u6027\u6062\u590D\u7801", actions: React.createElement(Badge, { tone: totp.enabled ? 'success' : 'neutral' }, totp.enabled ? '已开启' : '未开启') }),
@@ -3078,10 +3100,10 @@
                     React.createElement(SectionTitle, { title: "Passkey", subtitle: "\u65E0\u9700\u7528\u6237\u540D\uFF0C\u76F4\u63A5\u4F7F\u7528 Face ID\u3001Touch ID \u6216\u5B89\u5168\u5BC6\u94A5\u767B\u5F55" }),
                     React.createElement("div", { className: "inline-form" },
                         React.createElement(TextInput, { value: passkeyName, onChange: (event) => setPasskeyName(event.target.value), placeholder: "\u8BBE\u5907\u540D\u79F0\uFF0C\u4F8B\u5982 iPhone" }),
-                        React.createElement(Button, { tone: "primary", busy: working, onClick: registerPasskey }, "\u6DFB\u52A0 Passkey")),
+                        React.createElement(Button, { tone: "primary", icon: "passkey", busy: working, onClick: registerPasskey }, "\u6DFB\u52A0 Passkey")),
                     passkeys.length ? React.createElement("div", { className: "credential-list" }, passkeys.map(item => React.createElement("div", { className: "credential-row", key: item.id },
                         React.createElement("span", { className: "credential-icon" },
-                            React.createElement(Icon, { name: "key" })),
+                            React.createElement(Icon, { name: "passkey" })),
                         React.createElement("div", null,
                             React.createElement("strong", null, text(item.name, '未命名 Passkey')),
                             React.createElement("p", null,
@@ -3089,7 +3111,7 @@
                                 formatDate(item.created_at),
                                 item.last_used ? ` · 最近使用：${formatDate(item.last_used)}` : '')),
                         React.createElement(Button, { tone: "danger", onClick: async () => { if (await props.confirm('删除 Passkey', `确认删除“${text(item.name, '未命名 Passkey')}”？`, '删除', true))
-                                await run('删除失败', async () => { await secureApi('/api/v1/auth/passkeys', { method: 'DELETE', body: jsonBody({ id: item.id }) }); await reload(); props.notify('success', 'Passkey 已删除'); }); } }, "\u5220\u9664")))) : React.createElement(EmptyState, { icon: "key", title: "\u5C1A\u672A\u6DFB\u52A0 Passkey" })),
+                                await run('删除失败', async () => { await secureApi('/api/v1/auth/passkeys', { method: 'DELETE', body: jsonBody({ id: item.id }) }); await reload(); props.notify('success', 'Passkey 已删除'); }); } }, "\u5220\u9664")))) : React.createElement(EmptyState, { icon: "passkey", title: "\u5C1A\u672A\u6DFB\u52A0 Passkey" })),
                 React.createElement("div", { className: "settings-two-column" },
                     React.createElement(Card, null,
                         React.createElement(SectionTitle, { title: "\u767B\u5F55\u4F1A\u8BDD", subtitle: "\u5F53\u524D\u4F1A\u8BDD\u4E0D\u4F1A\u88AB\u6279\u91CF\u64A4\u9500", actions: React.createElement(Button, { tone: "danger", disabled: sessions.length <= 1, onClick: () => run('撤销失败', async () => { const out = asObject(await secureApi('/api/v1/auth/sessions', { method: 'DELETE', body: '{}' })); await reload(); props.notify('success', `已撤销 ${number(out.revoked)} 个其他会话`); }) }, "\u64A4\u9500\u5176\u4ED6\u4F1A\u8BDD") }),
@@ -3140,6 +3162,7 @@
         const confirmResolve = useRef(null);
         const elevationResolve = useRef(null);
         const elevationReject = useRef(null);
+        const elevationPromise = useRef(null);
         const modalReturnFocus = useRef(null);
         const toastId = useRef(0);
         const notify = useCallback((kind, title, detail) => { const id = ++toastId.current; setToasts(items => [...items.slice(-3), { id, kind, title, detail }]); window.setTimeout(() => setToasts(items => items.filter(item => item.id !== id)), kind === 'error' ? 10000 : 5000); }, []);
@@ -3163,7 +3186,7 @@
                         React.createElement(Button, { onClick: () => { confirmResolve.current?.(false); confirmResolve.current = null; setModal(null); } }, "\u53D6\u6D88"),
                         React.createElement(Button, { tone: destructive ? 'danger' : 'primary', onClick: () => { confirmResolve.current?.(true); confirmResolve.current = null; setModal(null); } }, actionLabel))) });
         }), [presentModal]);
-        const resetAuth = useCallback(() => { csrfToken = ''; setIdentity(null); setModal(null); }, []);
+        const resetAuth = useCallback(() => { csrfToken = ''; elevationReject.current?.(new Error('会话已结束')); elevationResolve.current = null; elevationReject.current = null; elevationPromise.current = null; setIdentity(null); setModal(null); }, []);
         const applyIdentity = useCallback((next) => { csrfToken = text(next.csrf_token, ''); setIdentity(next); setReady(true); localStorage.setItem('lukepanel:last-user', text(next.username, '')); }, []);
         useEffect(() => { unauthorizedHandler = resetAuth; return () => { unauthorizedHandler = null; }; }, [resetAuth]);
         useEffect(() => {
@@ -3176,32 +3199,36 @@
             return () => { active = false; };
         }, [applyIdentity, resetAuth]);
         useEffect(() => {
-            elevationHandler = () => new Promise((resolve, reject) => {
-                elevationResolve.current = resolve;
-                elevationReject.current = reject;
-                presentModal({ title: '需要二次验证', content: React.createElement("form", { className: "form-stack elevation-form", onSubmit: async (event) => { event.preventDefault(); const values = new FormData(event.currentTarget); const submit = event.currentTarget.querySelector('button[type="submit"]'); if (submit)
-                            submit.disabled = true; try {
-                            await api('/api/v1/auth/elevate', { method: 'POST', body: jsonBody({ password: values.get('password'), otp: values.get('otp') }) });
-                            setModal(null);
-                            elevationResolve.current?.();
-                            elevationResolve.current = null;
-                            elevationReject.current = null;
-                        }
-                        catch (cause) {
-                            notify('error', '二次验证失败', errorDetail(cause));
-                            if (submit)
-                                submit.disabled = false;
-                        } } },
-                        React.createElement("p", null, "\u6B64\u64CD\u4F5C\u4F1A\u4FEE\u6539\u7CFB\u7EDF\u914D\u7F6E\uFF0C\u8BF7\u518D\u6B21\u9A8C\u8BC1\u7BA1\u7406\u5458\u8EAB\u4EFD\u3002"),
-                        React.createElement(Field, { label: "\u5F53\u524D\u5BC6\u7801" },
-                            React.createElement(TextInput, { name: "password", type: "password", autoComplete: "current-password", required: true, autoFocus: true })),
-                        identity?.totp_enabled ? React.createElement(Field, { label: "\u4E24\u6B65\u9A8C\u8BC1\u7801\u6216\u6062\u590D\u7801", hint: "\u5DF2\u5F00\u542F TOTP\uFF0C\u9AD8\u98CE\u9669\u64CD\u4F5C\u5FC5\u987B\u518D\u6B21\u9A8C\u8BC1" },
-                            React.createElement(TextInput, { name: "otp", inputMode: "numeric", autoComplete: "one-time-code", required: true })) : null,
-                        React.createElement("div", { className: "form-actions" },
-                            React.createElement(Button, { onClick: () => { setModal(null); elevationReject.current?.(new Error('已取消二次验证')); elevationResolve.current = null; elevationReject.current = null; } }, "\u53D6\u6D88"),
-                            React.createElement(Button, { type: "submit", tone: "primary" }, "\u9A8C\u8BC1\u5E76\u7EE7\u7EED"))) });
-            });
-            return () => { elevationHandler = null; };
+            elevationHandler = () => {
+                if (elevationPromise.current)
+                    return elevationPromise.current;
+                const pending = new Promise((resolve, reject) => {
+                    elevationResolve.current = () => { elevationPromise.current = null; elevationResolve.current = null; elevationReject.current = null; resolve(); };
+                    elevationReject.current = (error) => { elevationPromise.current = null; elevationResolve.current = null; elevationReject.current = null; reject(error); };
+                    presentModal({ title: '需要二次验证', content: React.createElement("form", { className: "form-stack elevation-form", onSubmit: async (event) => { event.preventDefault(); const values = new FormData(event.currentTarget); const submit = event.currentTarget.querySelector('button[type="submit"]'); if (submit)
+                                submit.disabled = true; try {
+                                await api('/api/v1/auth/elevate', { method: 'POST', body: jsonBody({ password: values.get('password'), otp: values.get('otp') }) });
+                                setModal(null);
+                                elevationResolve.current?.();
+                            }
+                            catch (cause) {
+                                notify('error', '二次验证失败', errorDetail(cause));
+                                if (submit)
+                                    submit.disabled = false;
+                            } } },
+                            React.createElement("p", null, "\u6B64\u64CD\u4F5C\u4F1A\u4FEE\u6539\u7CFB\u7EDF\u914D\u7F6E\uFF0C\u8BF7\u518D\u6B21\u9A8C\u8BC1\u7BA1\u7406\u5458\u8EAB\u4EFD\u3002"),
+                            React.createElement(Field, { label: "\u5F53\u524D\u5BC6\u7801" },
+                                React.createElement(TextInput, { name: "password", type: "password", autoComplete: "current-password", required: true, autoFocus: true })),
+                            identity?.totp_enabled ? React.createElement(Field, { label: "\u4E24\u6B65\u9A8C\u8BC1\u7801\u6216\u6062\u590D\u7801", hint: "\u652F\u6301 6 \u4F4D\u9A8C\u8BC1\u7801\u6216\u5B57\u6BCD\u6062\u590D\u7801" },
+                                React.createElement(SecondFactorInput, { name: "otp", required: true })) : null,
+                            React.createElement("div", { className: "form-actions" },
+                                React.createElement(Button, { onClick: () => { setModal(null); elevationReject.current?.(new Error('已取消二次验证')); } }, "\u53D6\u6D88"),
+                                React.createElement(Button, { type: "submit", tone: "primary" }, "\u9A8C\u8BC1\u5E76\u7EE7\u7EED"))) });
+                });
+                elevationPromise.current = pending;
+                return pending;
+            };
+            return () => { elevationHandler = null; elevationReject.current?.(new Error('二次验证流程已结束')); elevationPromise.current = null; };
         }, [identity?.totp_enabled, notify, presentModal]);
         useEffect(() => {
             const query = window.matchMedia('(max-width: 900px)');

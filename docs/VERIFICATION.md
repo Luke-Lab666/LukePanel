@@ -1,4 +1,4 @@
-# v2.0.2 最终验证结果
+# v2.0.3 最终验证结果
 
 验证日期：2026-08-02
 
@@ -10,10 +10,19 @@
 - `web/` 与 `internal/server/webdist/` 嵌入资源逐文件一致：通过
 - `go test ./...`：通过
 - `go vet ./...`：通过
-- `go test -race ./internal/auth ./internal/config` 与认证关键链路：通过
+- `go test -race ./internal/auth ./internal/config`：通过
+- 本次认证关键链路由 `internal/server/auth_flow_test.go` 在全仓库 Go 测试中通过；未把超时的全量 server Race 伪报为通过
 - Linux AMD64 静态二进制构建：通过
 - Linux ARM64 静态二进制构建：通过
-- AMD64 二进制 `-version`：`v2.0.2`
+- AMD64 二进制 `-version`：`v2.0.3`
+
+## 本次定向回归
+
+- 页头刷新按钮默认边框：通过（未点击状态为 1px solid）
+- 真实 Go Collector Swap 字段 `memory.SwapTotal` / `memory.SwapUsed`：通过
+- 未配置 Swap 不绘制进度条：通过
+- 登录页重复 Passkey 提示文案：已清除
+- Passkey 指纹图标、内存芯片图标、磁盘图标与刷新图标：已同步到正式构建资源
 
 ## 浏览器与交互
 

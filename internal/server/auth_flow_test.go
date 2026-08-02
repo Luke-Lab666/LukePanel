@@ -40,7 +40,7 @@ func newAuthFlowServer(t *testing.T, recoveryCodes ...string) *Server {
 	if err := config.Save(configPath, cfg); err != nil {
 		t.Fatal(err)
 	}
-	srv, err := New(cfg, configPath, "v2.0.2", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv, err := New(cfg, configPath, "v2.0.3", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,5 +229,113 @@ func TestUsernameChangeRequiresSecondFactorInSameForm(t *testing.T) {
 	srv.configMu.RUnlock()
 	if username != "lukeadmin" || remaining != 0 {
 		t.Fatalf("username=%q remaining recovery codes=%d", username, remaining)
+	}
+}
+
+func TestInvalidNewPasswordDoesNotConsumeRecoveryCode(t *testing.T) {
+	const recoveryCode = "KEEP-CODE-SAFE"
+	srv := newAuthFlowServer(t, recoveryCode)
+	session := auth.Session{ID: "session-invalid-password", Username: "admin"}
+	req := authJSONRequest(http.MethodPost, "/api/v1/auth/password", `{"current_password":"StrongPass!123","new_password":"short","otp":"KEEP-CODE-SAFE"}`)
+	req = req.WithContext(withSession(req.Context(), session))
+	recorder := httptest.NewRecorder()
+	srv.changePassword(recorder, req)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%s", recorder.Code, recorder.Body.String())
+	}
+	srv.configMu.RLock()
+	remaining := len(srv.cfg.RecoveryCodeHashes)
+	srv.configMu.RUnlock()
+	if remaining != 1 {
+		t.Fatalf("invalid password consumed recovery code; remaining=%d", remaining)
+	}
+}
+
+func TestNoopUsernameChangeDoesNotConsumeRecoveryCode(t *testing.T) {
+	const recoveryCode = "KEEP-NAME-CODE"
+	srv := newAuthFlowServer(t, recoveryCode)
+	session := auth.Session{ID: "session-noop-username", Username: "admin"}
+	req := authJSONRequest(http.MethodPatch, "/api/v1/auth/account", `{"username":"admin","current_password":"StrongPass!123","otp":"KEEP-NAME-CODE"}`)
+	req = req.WithContext(withSession(req.Context(), session))
+	recorder := httptest.NewRecorder()
+	srv.changeAccount(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", recorder.Code, recorder.Body.String())
+	}
+	srv.configMu.RLock()
+	remaining := len(srv.cfg.RecoveryCodeHashes)
+	srv.configMu.RUnlock()
+	if remaining != 1 {
+		t.Fatalf("no-op username change consumed recovery code; remaining=%d", remaining)
+	}
+}
+
+func TestPasswordSaveFailureDoesNotConsumeRecoveryCodeOrMutateLiveConfig(t *testing.T) {
+	const recoveryCode = "SAVE-FAIL-CODE"
+	srv := newAuthFlowServer(t, recoveryCode)
+	srv.configMu.RLock()
+	originalHash := srv.cfg.PasswordHash
+	srv.configMu.RUnlock()
+	// Renaming a temporary file over an existing directory fails after validation.
+	srv.configPath = t.TempDir()
+	session := auth.Session{ID: "session-save-failure", Username: "admin"}
+	req := authJSONRequest(http.MethodPost, "/api/v1/auth/password", `{"current_password":"StrongPass!123","new_password":"NewStrongPass!456","otp":"SAVE-FAIL-CODE"}`)
+	req = req.WithContext(withSession(req.Context(), session))
+	recorder := httptest.NewRecorder()
+	srv.changePassword(recorder, req)
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body=%s", recorder.Code, recorder.Body.String())
+	}
+	srv.configMu.RLock()
+	remaining := len(srv.cfg.RecoveryCodeHashes)
+	currentHash := srv.cfg.PasswordHash
+	srv.configMu.RUnlock()
+	if remaining != 1 || currentHash != originalHash {
+		t.Fatalf("failed save changed live config: remaining=%d hashChanged=%v", remaining, currentHash != originalHash)
+	}
+}
+
+func TestDecodeJSONRejectsTrailingValue(t *testing.T) {
+	var body map[string]any
+	recorder := httptest.NewRecorder()
+	req := authJSONRequest(http.MethodPost, "/test", `{"ok":true}{"extra":true}`)
+	if err := decodeJSON(recorder, req, 4096, &body); err == nil {
+		t.Fatal("expected trailing JSON value to be rejected")
+	}
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestPasskeyLoginBeginCapsOutstandingChallengesPerIP(t *testing.T) {
+	srv := newAuthFlowServer(t)
+	srv.configMu.Lock()
+	srv.cfg.Passkeys = []auth.PasskeyCredential{{ID: "credential-id", Name: "iPhone", CreatedAt: time.Now().UTC()}}
+	srv.configMu.Unlock()
+	for index := 0; index < 6; index++ {
+		recorder := httptest.NewRecorder()
+		srv.passkeyLoginBegin(recorder, authJSONRequest(http.MethodPost, "/api/v1/auth/passkey/login/begin", `{}`))
+		want := http.StatusOK
+		if index == 5 {
+			want = http.StatusTooManyRequests
+		}
+		if recorder.Code != want {
+			t.Fatalf("request %d status = %d, want %d; body=%s", index+1, recorder.Code, want, recorder.Body.String())
+		}
+	}
+}
+
+func TestWebAuthnContextAcceptsTrustedProxyCIDR(t *testing.T) {
+	srv := newAuthFlowServer(t)
+	srv.configMu.Lock()
+	srv.cfg.TrustedProxy = "192.0.2.0/24"
+	srv.cfg.SecureCookie = false
+	srv.configMu.Unlock()
+	req := httptest.NewRequest(http.MethodPost, "http://panel.example.com/api/v1/auth/passkey/login/begin", nil)
+	req.RemoteAddr = "192.0.2.10:43210"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	origin, rpID := srv.webauthnContext(req)
+	if origin != "https://panel.example.com" || rpID != "panel.example.com" {
+		t.Fatalf("origin=%q rpID=%q", origin, rpID)
 	}
 }

@@ -207,7 +207,7 @@ async def setup_page(browser,w,h,path,authenticated=True,context=None):
     await page.expose_function('__mockRequest',state.request)
     await page.set_content('<!doctype html><html lang="zh-CN"><head><base href="http://lukepanel.test/"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body><div id="app"></div></body></html>')
     await page.add_style_tag(path=str(WEB/'assets/app.css'))
-    await page.evaluate("""({path})=>{ const store={}; Object.defineProperty(window,'localStorage',{configurable:true,value:{getItem:k=>Object.prototype.hasOwnProperty.call(store,k)?store[k]:null,setItem:(k,v)=>{store[k]=String(v)},removeItem:k=>{delete store[k]},clear:()=>{for(const k of Object.keys(store))delete store[k]}}}); window.__LUKEPANEL_VERSION__='v2.0.2'; window.__LUKEPANEL_TEST_PATH__=path; window.fetch=async (input,init={})=>{const url=typeof input==='string'?input:(input&&input.url)||''; const result=await window.__mockRequest({url,method:init.method||'GET',body:init.body||null,headers:{}}); return new Response(JSON.stringify(result.payload),{status:result.status,headers:{'content-type':'application/json'}})}; }""",{'path':path})
+    await page.evaluate("""({path})=>{ const store={}; Object.defineProperty(window,'localStorage',{configurable:true,value:{getItem:k=>Object.prototype.hasOwnProperty.call(store,k)?store[k]:null,setItem:(k,v)=>{store[k]=String(v)},removeItem:k=>{delete store[k]},clear:()=>{for(const k of Object.keys(store))delete store[k]}}}); window.__LUKEPANEL_VERSION__='v2.0.3'; window.__LUKEPANEL_TEST_PATH__=path; window.fetch=async (input,init={})=>{const url=typeof input==='string'?input:(input&&input.url)||''; const result=await window.__mockRequest({url,method:init.method||'GET',body:init.body||null,headers:{}}); return new Response(JSON.stringify(result.payload),{status:result.status,headers:{'content-type':'application/json'}})}; }""",{'path':path})
     if not authenticated:
       await page.evaluate("""()=>{
         window.PublicKeyCredential=function PublicKeyCredential(){};
@@ -617,7 +617,7 @@ async def interaction_tests():
 
 async def main():
   started=time.time(); results,failures=await run_matrix(); interactions=await interaction_tests(); failures.extend({'device':'interaction','route':t['name'],'issues':t['issues']} for t in interactions if not t['passed'])
-  report={'version':'v2.0.2','framework':'React 18.2.0','render_checks':len(results),'render_passed':sum(1 for r in results if r['passed']),'interaction_checks':len(interactions),'interaction_passed':sum(1 for t in interactions if t['passed']),'failures':failures,'interactions':interactions,'results':results,'duration_seconds':round(time.time()-started,2)}
+  report={'version':'v2.0.3','framework':'React 18.2.0','render_checks':len(results),'render_passed':sum(1 for r in results if r['passed']),'interaction_checks':len(interactions),'interaction_passed':sum(1 for t in interactions if t['passed']),'failures':failures,'interactions':interactions,'results':results,'duration_seconds':round(time.time()-started,2)}
   REPORTS.mkdir(exist_ok=True); (REPORTS/'browser-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
   print(json.dumps({k:report[k] for k in ['render_checks','render_passed','interaction_checks','interaction_passed','duration_seconds']},ensure_ascii=False))
   if failures:

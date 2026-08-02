@@ -14,7 +14,7 @@
 建议提交信息：
 
 ```text
-v2.0.2 complete React rebuild
+v2.0.3 mobile UI and resource status fixes
 ```
 
-推送后等待 GitHub Actions 的 Build 工作流通过，再创建 `v2.0.2` 标签或 Release。
+推送后等待 GitHub Actions 的 Build 工作流通过，再创建 `v2.0.3` 标签或 Release。
