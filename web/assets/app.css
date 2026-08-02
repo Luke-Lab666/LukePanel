@@ -656,3 +656,152 @@
     .transfer-meta { font-size: 12px; }
   }
 }
+/* LukePanel v2.0.6 UI affordance and layout polish. */
+@layer tokens {
+  :root { --radius-md: var(--radius); }
+}
+
+@layer components {
+  /* Interactive actions must look interactive before hover/focus. */
+  .button-ghost {
+    border-color: var(--line-strong);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow-sm);
+  }
+  .button-ghost:hover:not(:disabled),
+  .button-ghost:focus-visible {
+    border-color: color-mix(in srgb, var(--primary) 38%, var(--line));
+    background: var(--surface-soft);
+    color: var(--text);
+  }
+
+  .icon-button {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .sidebar .icon-button {
+    border-color: rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    box-shadow: none;
+  }
+  .favorite-button {
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .favorite-button:hover {
+    border-color: color-mix(in srgb, var(--primary) 28%, var(--line));
+    background: var(--surface-soft);
+    color: var(--text);
+  }
+
+  .tab-bar button {
+    border: 1px solid transparent;
+    background: color-mix(in srgb, var(--surface-soft) 76%, transparent);
+  }
+  .tab-bar button:hover {
+    border-color: var(--line);
+    background: var(--surface-soft);
+  }
+  .tab-bar button.active {
+    border-color: color-mix(in srgb, var(--primary) 24%, var(--line));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 7%, transparent);
+  }
+
+  .user-list button {
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .user-list button:hover {
+    border-color: color-mix(in srgb, var(--primary) 30%, var(--line));
+    background: var(--surface-soft);
+  }
+  .user-list button.active {
+    border-color: color-mix(in srgb, var(--primary) 28%, var(--line));
+  }
+
+  /* A calmer, conventional passkey glyph: circular authenticator + key stem. */
+  .passkey-login-button > .icon,
+  .settings-page .card:has(.inline-form) .inline-form .button > .icon,
+  .settings-page .card:has(.inline-form) .credential-icon > .icon,
+  .settings-page .card:has(.inline-form) .empty-icon > .icon {
+    display: none;
+  }
+  .passkey-login-button::before,
+  .settings-page .card:has(.inline-form) .inline-form .button::before,
+  .settings-page .card:has(.inline-form) .credential-icon::before,
+  .settings-page .card:has(.inline-form) .empty-icon::before {
+    content: "";
+    display: block;
+    flex: 0 0 auto;
+    width: 19px;
+    height: 19px;
+    background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='15.5' cy='8.5' r='5.5'/%3E%3Cpath d='M11.6 12.4 3 21v-3.5l2-2h2v-2h2l2.6-2.6'/%3E%3Cpath d='M17.5 7.5h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='15.5' cy='8.5' r='5.5'/%3E%3Cpath d='M11.6 12.4 3 21v-3.5l2-2h2v-2h2l2.6-2.6'/%3E%3Cpath d='M17.5 7.5h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  .passkey-login-button { min-height: 46px; }
+  .settings-page .card:has(.inline-form) {
+    border-color: color-mix(in srgb, var(--primary) 18%, var(--line));
+    background:
+      radial-gradient(circle at 100% 0, color-mix(in srgb, var(--primary-soft) 62%, transparent), transparent 34%),
+      var(--surface);
+  }
+  .settings-page .card:has(.inline-form) .credential-icon,
+  .settings-page .card:has(.inline-form) .empty-icon {
+    color: var(--primary);
+    background: var(--primary-soft);
+  }
+
+  .credential-row,
+  .key-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+  }
+  .credential-row > .button,
+  .key-row > .button {
+    justify-self: end;
+  }
+}
+
+@layer responsive {
+  @media (max-width: 680px) {
+    .section-title:has(.section-actions) {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    .section-actions {
+      width: 100%;
+    }
+    .section-actions > .button {
+      flex: 1 1 150px;
+    }
+    .credential-row,
+    .key-row {
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+    }
+    .credential-row > .button,
+    .key-row > .button {
+      grid-column: 1 / -1;
+      width: 100%;
+      justify-self: stretch;
+    }
+    .file-row > .favorite-button,
+    .file-row > .icon-button {
+      flex: 0 0 auto;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .section-actions {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+    .section-actions > .button {
+      width: 100%;
+    }
+  }
+}

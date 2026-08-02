@@ -11,7 +11,7 @@
   "/api/v1/settings": {
     "status": 200,
     "payload": {
-      "version": "v2.0.5",
+      "version": "v2.0.6",
       "listen": "127.0.0.1:8080",
       "secure_cookie": true,
       "agent_socket": "/run/lukepanel/agent.sock",

@@ -8,7 +8,7 @@ def check(cond,msg):
     if not cond: errors.append(msg)
 def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 version=(ROOT/'VERSION').read_text().strip()
-check(version=='v2.0.5', f'VERSION must be v2.0.5, got {version}')
+check(version=='v2.0.6', f'VERSION must be v2.0.6, got {version}')
 source=(ROOT/'frontend/src/app.tsx').read_text()
 css=(ROOT/'frontend/src/app.css').read_text()
 html=(ROOT/'web/index.html').read_text()
@@ -41,6 +41,11 @@ check('statsError' in source and '容器实时统计读取失败' in source, 'Do
 check('overview.memory?.SwapTotal' in source and 'overview.memory?.SwapUsed' in source, 'dashboard must read the real Go collector Swap fields')
 check("percent={swapTotal ? swapPct : undefined}" in source, 'unconfigured Swap must not render a fake zero-percent progress bar')
 check('header-refresh-button' in source and '.header-refresh-button' in css, 'page refresh button must have a stable default outline')
+check('/* LukePanel v2.0.6 UI affordance and layout polish. */' in css, 'v2.0.6 UI polish layer missing')
+check('.button-ghost {' in css and 'border-color: var(--line-strong);' in css, 'ghost actions must have a stable default button block')
+check('.passkey-login-button::before' in css and '-webkit-mask: url(' in css, 'Passkey replacement glyph missing')
+check('.credential-row,\n  .key-row {\n    display: grid;' in css, 'credential and key rows must use stable grid layout')
+check((ROOT/'tests/browser/ui_regression.py').is_file() and 'tests/browser/ui_regression.py' in (ROOT/'Makefile').read_text(), 'UI regression suite is not wired into browser-test')
 check('无需先输入用户名、密码或两步验证码' not in source and 'Passkey 独立完成强认证' not in source, 'login page still contains redundant authentication hints')
 check('icon="passkey"' in source and "passkey: [" in source, 'Passkey controls must use the dedicated Passkey icon')
 # Frontend API paths must exist in the Go router. Dynamic security/host helpers are expanded separately.
@@ -61,7 +66,7 @@ check('https://' not in html and 'http://' not in html, 'runtime HTML must not l
 for asset in ['vendor-runtime.js','react-18.2.0.js','react-dom-18.2.0.js','react-bootstrap.js','app.js','app.css']:
     check((ROOT/'web/assets'/asset).is_file(), f'missing built asset {asset}')
 meta=json.loads((ROOT/'web/build-meta.json').read_text())
-check(meta.get('version')=='v2.0.5' and meta.get('framework')=='React' and meta.get('react')=='18.2.0','invalid build metadata')
+check(meta.get('version')=='v2.0.6' and meta.get('framework')=='React' and meta.get('react')=='18.2.0','invalid build metadata')
 for webfile in (ROOT/'web').rglob('*'):
     if webfile.is_file():
         peer=ROOT/'internal/server/webdist'/webfile.relative_to(ROOT/'web')
@@ -71,8 +76,8 @@ check('env(safe-area-inset-bottom)' in css, 'mobile safe-area handling missing')
 check('@media' in css and 'max-width: 680px' in css, 'phone breakpoint missing')
 # Version alignment
 for path in ['frontend/package.json','README.md','CHANGELOG.md']:
-    check('2.0.5' in (ROOT/path).read_text(), f'{path} not aligned to 2.0.5')
-check('## v2.0.5' in changelog, 'v2.0.5 changelog section missing')
+    check('2.0.6' in (ROOT/path).read_text(), f'{path} not aligned to 2.0.6')
+check('## v2.0.6' in changelog, 'v2.0.6 changelog section missing')
 if errors:
     print('STATIC AUDIT FAILED')
     for e in errors: print(' -',e)

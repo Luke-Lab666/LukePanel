@@ -1222,7 +1222,7 @@ func (s *Server) securityStatus(w http.ResponseWriter, r *http.Request) {
 	recommendation := ""
 	if !profile.PostQuantumCapable {
 		status = "warn"
-		recommendation = "安装官方 v2.0.5 Release，或使用 Go 1.26.5 重新构建"
+		recommendation = "安装官方 v2.0.6 Release，或使用 Go 1.26.5 重新构建"
 	}
 	checks = append(checks, map[string]any{
 		"id": "post-quantum-tls", "title": "后量子混合 TLS", "status": status,

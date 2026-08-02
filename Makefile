@@ -29,6 +29,7 @@ verify: frontend
 
 browser-test: frontend
 	python3 tests/browser/audit.py
+	python3 tests/browser/ui_regression.py
 	python3 tests/browser/accessibility.py
 	python3 tests/browser/truth_all.py
 
