@@ -14,14 +14,23 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/Luke-Lab666/LukePanel/internal/crypto/argon2"
 )
 
 const (
-	pbkdf2SHA512Iterations = 750_000
+	argon2MemoryKiB     uint32 = 32 * 1024
+	argon2Time          uint32 = 3
+	argon2Threads       uint8  = 1
+	argon2SaltLength           = 24
+	argon2KeyLength     uint32 = 32
+	argon2MaxConcurrent        = 2
+
+	legacySHA512Iterations = 750_000
 	legacySHA256Iterations = 600_000
-	saltLength             = 24
-	keyLength              = 64
 )
+
+var argon2Slots = make(chan struct{}, argon2MaxConcurrent)
 
 var commonPasswords = map[string]struct{}{
 	"123456789012": {}, "1234567890": {}, "password123": {}, "password1234": {},
@@ -103,20 +112,110 @@ func allSameRune(value string) bool {
 	return value != ""
 }
 
+type PasswordKDFProfile struct {
+	Name          string
+	MemoryKiB     uint32
+	Time          uint32
+	Parallelism   uint8
+	MaxConcurrent int
+}
+
+func CurrentPasswordKDFProfile() PasswordKDFProfile {
+	return PasswordKDFProfile{Name: "Argon2id", MemoryKiB: argon2MemoryKiB, Time: argon2Time, Parallelism: argon2Threads, MaxConcurrent: argon2MaxConcurrent}
+}
+
 func HashPassword(password string) (string, error) {
 	if err := ValidatePasswordStrength(password, ""); err != nil {
 		return "", err
 	}
-	salt := make([]byte, saltLength)
+	return hashPasswordArgon2id(password)
+}
+
+// RehashVerifiedPassword is only for migrating a password that has already
+// passed VerifyPassword. It deliberately does not apply today's strength policy,
+// so an existing installation is never locked out during an algorithm upgrade.
+func RehashVerifiedPassword(password string) (string, error) {
+	if password == "" {
+		return "", errors.New("invalid verified password")
+	}
+	return hashPasswordArgon2id(password)
+}
+
+func hashPasswordArgon2id(password string) (string, error) {
+	salt := make([]byte, argon2SaltLength)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	digest := pbkdf2([]byte(password), salt, pbkdf2SHA512Iterations, keyLength, sha512.New)
-	return fmt.Sprintf("$pbkdf2-sha512$i=%d$%s$%s", pbkdf2SHA512Iterations,
+	digest := deriveArgon2id([]byte(password), salt, argon2Time, argon2MemoryKiB, argon2Threads, argon2KeyLength)
+	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s", argon2.Version, argon2MemoryKiB, argon2Time, argon2Threads,
 		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(digest)), nil
 }
 
+func deriveArgon2id(password, salt []byte, rounds, memory uint32, parallelism uint8, keyLength uint32) []byte {
+	argon2Slots <- struct{}{}
+	defer func() { <-argon2Slots }()
+	return argon2.IDKey(password, salt, rounds, memory, parallelism, keyLength)
+}
+
 func VerifyPassword(password, encoded string) (bool, error) {
+	if strings.HasPrefix(encoded, "$argon2id$") {
+		return verifyArgon2id(password, encoded)
+	}
+	return verifyLegacyPBKDF2(password, encoded)
+}
+
+func verifyArgon2id(password, encoded string) (bool, error) {
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 6 || parts[1] != "argon2id" {
+		return false, errors.New("invalid Argon2id password hash")
+	}
+	version, err := strconv.Atoi(strings.TrimPrefix(parts[2], "v="))
+	if err != nil || version != argon2.Version {
+		return false, errors.New("unsupported Argon2id version")
+	}
+	var memory, rounds uint64
+	var parallelism uint64
+	parameters := strings.Split(parts[3], ",")
+	if len(parameters) != 3 {
+		return false, errors.New("invalid Argon2id parameters")
+	}
+	for _, parameter := range parameters {
+		name, value, ok := strings.Cut(parameter, "=")
+		if !ok {
+			return false, errors.New("invalid Argon2id parameters")
+		}
+		parsed, parseErr := strconv.ParseUint(value, 10, 32)
+		if parseErr != nil {
+			return false, errors.New("invalid Argon2id parameters")
+		}
+		switch name {
+		case "m":
+			memory = parsed
+		case "t":
+			rounds = parsed
+		case "p":
+			parallelism = parsed
+		default:
+			return false, errors.New("invalid Argon2id parameters")
+		}
+	}
+	// Bound attacker-controlled configuration values before allocating memory.
+	if memory < 8*1024 || memory > 256*1024 || rounds < 1 || rounds > 10 || parallelism < 1 || parallelism > 8 {
+		return false, errors.New("unsafe Argon2id parameters")
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil || len(salt) < 16 || len(salt) > 64 {
+		return false, errors.New("invalid Argon2id salt")
+	}
+	expected, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil || len(expected) < 16 || len(expected) > 64 {
+		return false, errors.New("invalid Argon2id digest")
+	}
+	actual := deriveArgon2id([]byte(password), salt, uint32(rounds), uint32(memory), uint8(parallelism), uint32(len(expected)))
+	return subtle.ConstantTimeCompare(actual, expected) == 1, nil
+}
+
+func verifyLegacyPBKDF2(password, encoded string) (bool, error) {
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 5 {
 		return false, errors.New("invalid password hash")
@@ -146,24 +245,44 @@ func VerifyPassword(password, encoded string) (bool, error) {
 	return subtle.ConstantTimeCompare(actual, expected) == 1, nil
 }
 
-// NeedsPasswordRehash reports whether a valid stored hash should be upgraded
-// after the next complete password + second-factor login. This keeps existing
-// installations compatible while moving them to the current SHA-512 profile.
+// NeedsPasswordRehash reports whether the stored verifier should be replaced
+// after the administrator explicitly confirms the migration with the current password.
 func NeedsPasswordRehash(encoded string) bool {
 	parts := strings.Split(encoded, "$")
-	if len(parts) != 5 || parts[1] != "pbkdf2-sha512" {
+	if len(parts) != 6 || parts[1] != "argon2id" || parts[2] != fmt.Sprintf("v=%d", argon2.Version) {
 		return true
 	}
-	iterations, err := strconv.Atoi(strings.TrimPrefix(parts[2], "i="))
-	if err != nil || iterations < pbkdf2SHA512Iterations {
+	profile := fmt.Sprintf("m=%d,t=%d,p=%d", argon2MemoryKiB, argon2Time, argon2Threads)
+	if parts[3] != profile {
 		return true
 	}
-	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
-	if err != nil || len(salt) < saltLength {
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil || len(salt) < argon2SaltLength {
 		return true
 	}
-	digest, err := base64.RawStdEncoding.DecodeString(parts[4])
-	return err != nil || len(digest) < keyLength
+	digest, err := base64.RawStdEncoding.DecodeString(parts[5])
+	return err != nil || len(digest) < int(argon2KeyLength)
+}
+
+func PasswordHashAlgorithm(encoded string) string {
+	switch {
+	case strings.HasPrefix(encoded, "$argon2id$"):
+		return "Argon2id"
+	case strings.HasPrefix(encoded, "$pbkdf2-sha512$"):
+		return "PBKDF2-HMAC-SHA-512"
+	case strings.HasPrefix(encoded, "$pbkdf2-sha256$"):
+		return "PBKDF2-HMAC-SHA-256"
+	default:
+		return "未知格式"
+	}
+}
+
+// legacyPBKDF2Hash is used only by migration tests and documents the previous
+// profile accepted by VerifyPassword.
+func legacyPBKDF2Hash(password string, salt []byte) string {
+	digest := pbkdf2([]byte(password), salt, legacySHA256Iterations, 32, sha256.New)
+	return fmt.Sprintf("$pbkdf2-sha256$i=%d$%s$%s", legacySHA256Iterations,
+		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(digest))
 }
 
 func pbkdf2(password, salt []byte, iterations, length int, factory func() hash.Hash) []byte {
@@ -189,10 +308,8 @@ func pbkdf2(password, salt []byte, iterations, length int, factory func() hash.H
 	return result[:length]
 }
 
-// legacyPBKDF2Hash is used only by migration tests and documents the previous
-// profile accepted by VerifyPassword.
-func legacyPBKDF2Hash(password string, salt []byte) string {
-	digest := pbkdf2([]byte(password), salt, legacySHA256Iterations, 32, sha256.New)
-	return fmt.Sprintf("$pbkdf2-sha256$i=%d$%s$%s", legacySHA256Iterations,
+func legacyPBKDF2SHA512Hash(password string, salt []byte) string {
+	digest := pbkdf2([]byte(password), salt, legacySHA512Iterations, 64, sha512.New)
+	return fmt.Sprintf("$pbkdf2-sha512$i=%d$%s$%s", legacySHA512Iterations,
 		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(digest))
 }

@@ -65,6 +65,39 @@ async def inspect_case(browser, name: str, width: int, height: int, path: str, a
         await context.close()
 
 
+async def inspect_password_migration(browser) -> dict:
+    me = a.FIXTURES['/api/v1/auth/me']['payload']
+    settings = a.FIXTURES['/api/v1/settings']['payload']
+    old_me = dict(me)
+    old_settings = dict(settings)
+    me.update({'password_upgrade_required': True, 'password_hash_algorithm': 'PBKDF2-HMAC-SHA-512'})
+    settings.update({'password_upgrade_required': True, 'password_hash_algorithm': 'PBKDF2-HMAC-SHA-512'})
+    context = page = state = None
+    errors = []
+    try:
+        context, page, state, errors = await a.setup_page(browser, 390, 844, '/', True)
+        await page.wait_for_selector('.modal', timeout=3000)
+        body = await page.locator('.modal').inner_text()
+        issues = list(errors)
+        for expected in ('升级密码保护', '不会修改密码', 'Argon2id', '32 MiB'):
+            if expected not in body:
+                issues.append(f'migration prompt missing text: {expected}')
+        await page.locator('.modal input[name="current_password"]').fill('OldPass!123')
+        await page.locator('.modal').get_by_role('button', name='立即升级', exact=True).click()
+        await page.wait_for_timeout(180)
+        requests = [row for row in state.requests if row['method'] == 'POST' and row['path'] == '/api/v1/auth/password/upgrade']
+        if not requests or requests[-1]['body'] != {'current_password': 'OldPass!123'}:
+            issues.append(f'upgrade request mismatch: {requests[-1:] if requests else requests}')
+        if await page.locator('.modal').count() != 0:
+            issues.append('migration prompt did not close after successful upgrade')
+        return {'name': 'password-kdf-migration-phone-390', 'width': 390, 'height': 844, 'path': '/', 'passed': not issues, 'issues': issues}
+    finally:
+        me.clear(); me.update(old_me)
+        settings.clear(); settings.update(old_settings)
+        if context is not None:
+            await context.close()
+
+
 async def main() -> None:
     cases = [
         ('login-phone-390', 390, 844, '/', False),
@@ -77,6 +110,7 @@ async def main() -> None:
         browser = await pw.chromium.launch(executable_path='/usr/bin/chromium', headless=True, args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
         try:
             results = [await inspect_case(browser, *case) for case in cases]
+            results.append(await inspect_password_migration(browser))
         finally:
             await browser.close()
     report = {'checks': len(results), 'passed': sum(1 for row in results if row['passed']), 'results': results}

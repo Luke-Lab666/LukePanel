@@ -40,7 +40,7 @@ func newAuthFlowServer(t *testing.T, recoveryCodes ...string) *Server {
 	if err := config.Save(configPath, cfg); err != nil {
 		t.Fatal(err)
 	}
-	srv, err := New(cfg, configPath, "v2.0.7", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv, err := New(cfg, configPath, "v2.0.8", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,5 +337,79 @@ func TestWebAuthnContextAcceptsTrustedProxyCIDR(t *testing.T) {
 	origin, rpID := srv.webauthnContext(req)
 	if origin != "https://panel.example.com" || rpID != "panel.example.com" {
 		t.Fatalf("origin=%q rpID=%q", origin, rpID)
+	}
+}
+
+const legacyV207PasswordHash = "$pbkdf2-sha512$i=750000$CAgICAgICAgICAgICAgICAgICAgICAgI$Nql9AltWC+f9c0ZrL5jLCFr1T8t4mvFBcegoMDNk53jAQgAq3q9qTAtyMmyXVmA5Z/f8ERj1zOs45z56vrfeFQ"
+
+func TestLegacyPasswordLoginPromptsWithoutSilentMigration(t *testing.T) {
+	const recoveryCode = "KDFU-PGRD-CODE"
+	srv := newAuthFlowServer(t, recoveryCode)
+	srv.configMu.Lock()
+	updated := srv.cfg.Clone()
+	updated.PasswordHash = legacyV207PasswordHash
+	if err := config.Save(srv.configPath, updated); err != nil {
+		t.Fatal(err)
+	}
+	srv.cfg = updated
+	srv.configMu.Unlock()
+
+	req := authJSONRequest(http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"StrongPass!123","otp":"KDFU-PGRD-CODE"}`)
+	recorder := httptest.NewRecorder()
+	srv.login(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	body := decodeAuthResponse(t, recorder)
+	if body["password_upgrade_required"] != true || body["password_hash_algorithm"] != "PBKDF2-HMAC-SHA-512" {
+		t.Fatalf("unexpected migration state: %#v", body)
+	}
+	srv.configMu.RLock()
+	current := srv.cfg.PasswordHash
+	srv.configMu.RUnlock()
+	if current != legacyV207PasswordHash {
+		t.Fatal("login silently migrated the password hash")
+	}
+}
+
+func TestExplicitPasswordKDFUpgradePreservesPassword(t *testing.T) {
+	srv := newAuthFlowServer(t)
+	srv.configMu.Lock()
+	updated := srv.cfg.Clone()
+	updated.PasswordHash = legacyV207PasswordHash
+	if err := config.Save(srv.configPath, updated); err != nil {
+		t.Fatal(err)
+	}
+	srv.cfg = updated
+	srv.configMu.Unlock()
+
+	session := auth.Session{ID: "session-kdf-upgrade", Username: "admin"}
+	wrong := authJSONRequest(http.MethodPost, "/api/v1/auth/password/upgrade", `{"current_password":"WrongPass!999"}`)
+	wrong = wrong.WithContext(withSession(wrong.Context(), session))
+	wrongRecorder := httptest.NewRecorder()
+	srv.upgradePasswordKDF(wrongRecorder, wrong)
+	if wrongRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password status=%d body=%s", wrongRecorder.Code, wrongRecorder.Body.String())
+	}
+
+	req := authJSONRequest(http.MethodPost, "/api/v1/auth/password/upgrade", `{"current_password":"StrongPass!123"}`)
+	req = req.WithContext(withSession(req.Context(), session))
+	recorder := httptest.NewRecorder()
+	srv.upgradePasswordKDF(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	srv.configMu.RLock()
+	migrated := srv.cfg.PasswordHash
+	srv.configMu.RUnlock()
+	if !strings.HasPrefix(migrated, "$argon2id$") {
+		t.Fatalf("unexpected hash: %s", migrated)
+	}
+	ok, err := auth.VerifyPassword(authTestPassword, migrated)
+	if err != nil || !ok {
+		t.Fatalf("migrated password failed: ok=%v err=%v", ok, err)
+	}
+	if auth.NeedsPasswordRehash(migrated) {
+		t.Fatal("new Argon2id hash still requires migration")
 	}
 }

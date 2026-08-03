@@ -11,8 +11,8 @@ func TestPasswordRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(hash, "$pbkdf2-sha512$") {
-		t.Fatalf("expected current SHA-512 profile, got %q", hash)
+	if !strings.HasPrefix(hash, "$argon2id$") {
+		t.Fatalf("expected current Argon2id profile, got %q", hash)
 	}
 	if NeedsPasswordRehash(hash) {
 		t.Fatal("current hash unexpectedly requires migration")
@@ -49,5 +49,31 @@ func TestLegacyPasswordHashMigrates(t *testing.T) {
 	}
 	if !NeedsPasswordRehash(hash) {
 		t.Fatal("legacy SHA-256 profile must require migration")
+	}
+	sha512Hash := legacyPBKDF2SHA512Hash("correct-horse-battery-staple", bytes.Repeat([]byte{8}, 24))
+	ok, err = VerifyPassword("correct-horse-battery-staple", sha512Hash)
+	if err != nil || !ok {
+		t.Fatalf("v2.0.7 SHA-512 profile should verify: ok=%v err=%v", ok, err)
+	}
+	if !NeedsPasswordRehash(sha512Hash) {
+		t.Fatal("v2.0.7 SHA-512 profile must require Argon2id migration")
+	}
+}
+
+func TestVerifiedLegacyWeakPasswordCanBeRehashed(t *testing.T) {
+	hash, err := RehashVerifiedPassword("legacy-weak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, err := VerifyPassword("legacy-weak", hash)
+	if err != nil || !ok {
+		t.Fatalf("rehash failed: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestArgon2ParametersAreBoundedBeforeAllocation(t *testing.T) {
+	encoded := "$argon2id$v=19$m=1048576,t=3,p=1$MTIzNDU2Nzg5MDEyMzQ1Ng$MTIzNDU2Nzg5MDEyMzQ1Ng"
+	if _, err := VerifyPassword("password", encoded); err == nil {
+		t.Fatal("unbounded memory cost was accepted")
 	}
 }

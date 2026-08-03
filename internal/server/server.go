@@ -78,6 +78,7 @@ func New(cfg config.Config, configPath, version, githubClientID string, logger *
 	mux.HandleFunc("/api/v1/auth/passkeys", s.requireAuth(s.passkeyManagement))
 	mux.HandleFunc("/api/v1/auth/logout", s.requireAuth(s.logout))
 	mux.HandleFunc("/api/v1/auth/password", s.requireAuth(s.changePassword))
+	mux.HandleFunc("/api/v1/auth/password/upgrade", s.requireAuth(s.upgradePasswordKDF))
 	mux.HandleFunc("/api/v1/auth/account", s.requireAuth(s.changeAccount))
 	mux.HandleFunc("/api/v1/auth/elevate", s.requireAuth(s.elevate))
 	mux.HandleFunc("/api/v1/auth/me", s.requireAuth(s.me))
@@ -289,31 +290,67 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 			s.audit.Write(AuditEvent{IP: ip, User: req.Username, Action: "auth.login.recovery", Result: "success"})
 		}
 	}
-	s.upgradePasswordHash(req.Password, passwordHash)
 	s.establishSession(w, r, req.Username, "auth.login")
 }
 
-func (s *Server) upgradePasswordHash(password, currentHash string) {
-	if !auth.NeedsPasswordRehash(currentHash) {
+func (s *Server) passwordUpgradeStatus() (required bool, algorithm string) {
+	s.configMu.RLock()
+	hash := s.cfg.PasswordHash
+	s.configMu.RUnlock()
+	return auth.NeedsPasswordRehash(hash), auth.PasswordHashAlgorithm(hash)
+}
+
+func (s *Server) upgradePasswordKDF(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
 		return
 	}
-	upgraded, err := auth.HashPassword(password)
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+	}
+	if decodeJSON(w, r, 4096, &req) != nil {
+		return
+	}
+	session, _ := sessionFromContext(r)
+	ip := clientIP(r, s.cfg.TrustedProxy)
+	s.configMu.RLock()
+	currentHash := s.cfg.PasswordHash
+	s.configMu.RUnlock()
+	if !auth.NeedsPasswordRehash(currentHash) {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "upgraded": false, "password_upgrade_required": false, "password_hash_algorithm": auth.PasswordHashAlgorithm(currentHash)})
+		return
+	}
+	valid, err := auth.VerifyPassword(req.CurrentPassword, currentHash)
+	if err != nil || !valid {
+		s.audit.Write(AuditEvent{IP: ip, User: session.Username, Action: "auth.password.kdf.upgrade", Result: "failed"})
+		writeError(w, http.StatusUnauthorized, "当前密码错误")
+		return
+	}
+	upgraded, err := auth.RehashVerifiedPassword(req.CurrentPassword)
 	if err != nil {
-		s.logger.Warn("password hash migration failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "无法生成新的密码校验值")
 		return
 	}
 	s.configMu.Lock()
-	defer s.configMu.Unlock()
 	if s.cfg.PasswordHash != currentHash {
+		s.configMu.Unlock()
+		writeError(w, http.StatusConflict, "账户配置已变化，请刷新后重试")
 		return
 	}
 	updated := s.cfg.Clone()
 	updated.PasswordHash = upgraded
-	if err := config.Save(s.configPath, updated); err != nil {
-		s.logger.Warn("password hash migration could not be saved", "error", err)
+	err = config.Save(s.configPath, updated)
+	if err == nil {
+		s.cfg = updated
+	}
+	s.configMu.Unlock()
+	if err != nil {
+		s.logger.Error("password KDF migration could not be saved", "error", err)
+		writeError(w, http.StatusInternalServerError, "密码保护升级保存失败")
 		return
 	}
-	s.cfg = updated
+	s.audit.Write(AuditEvent{IP: ip, User: session.Username, Action: "auth.password.kdf.upgrade", Target: "Argon2id", Result: "success", Detail: "m=32768,t=3,p=1"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "upgraded": true, "password_upgrade_required": false, "password_hash_algorithm": "Argon2id"})
 }
 
 func (s *Server) expireLegacyTrustedDeviceCookie(w http.ResponseWriter) {
@@ -516,7 +553,8 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, _ := sessionFromContext(r)
-	writeJSON(w, http.StatusOK, map[string]any{"username": session.Username, "csrf_token": session.CSRFToken, "session_id": session.ID, "totp_enabled": s.totpEnabled()})
+	required, algorithm := s.passwordUpgradeStatus()
+	writeJSON(w, http.StatusOK, map[string]any{"username": session.Username, "csrf_token": session.CSRFToken, "session_id": session.ID, "totp_enabled": s.totpEnabled(), "password_upgrade_required": required, "password_hash_algorithm": algorithm})
 }
 
 func (s *Server) sessionManagement(w http.ResponseWriter, r *http.Request) {
@@ -1231,7 +1269,7 @@ func (s *Server) securityStatus(w http.ResponseWriter, r *http.Request) {
 	recommendation := ""
 	if !profile.PostQuantumCapable {
 		status = "warn"
-		recommendation = "安装官方 v2.0.7 Release，或使用 Go 1.26.5 重新构建"
+		recommendation = "安装官方 v2.0.8 Release，或使用 Go 1.26.5 重新构建"
 	}
 	checks = append(checks, map[string]any{
 		"id": "post-quantum-tls", "title": "后量子混合 TLS", "status": status,
@@ -1594,7 +1632,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		s.configMu.RLock()
 		cfg := s.cfg.Clone()
 		s.configMu.RUnlock()
-		writeJSON(w, http.StatusOK, map[string]any{"version": s.version, "listen": cfg.Listen, "secure_cookie": cfg.SecureCookie, "auto_refresh_seconds": cfg.AutoRefreshSeconds, "allowed_roots": cfg.AllowedRoots, "agent_socket": cfg.AgentSocket, "admin_user": cfg.AdminUser, "crypto": currentCryptoRuntimeProfile()})
+		writeJSON(w, http.StatusOK, map[string]any{"version": s.version, "listen": cfg.Listen, "secure_cookie": cfg.SecureCookie, "auto_refresh_seconds": cfg.AutoRefreshSeconds, "allowed_roots": cfg.AllowedRoots, "agent_socket": cfg.AgentSocket, "admin_user": cfg.AdminUser, "password_hash_algorithm": auth.PasswordHashAlgorithm(cfg.PasswordHash), "password_upgrade_required": auth.NeedsPasswordRehash(cfg.PasswordHash), "crypto": currentCryptoRuntimeProfile()})
 	case http.MethodPatch:
 		var req struct {
 			AutoRefreshSeconds int `json:"auto_refresh_seconds"`

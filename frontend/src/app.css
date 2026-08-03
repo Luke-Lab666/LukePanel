@@ -330,6 +330,12 @@
   .notice { padding: 13px 15px; border: 1px solid color-mix(in srgb, var(--info) 28%, var(--line)); border-radius: 11px; background: var(--info-soft); color: var(--info); }
   .notice > div { display: grid; gap: 3px; }
   .notice > div > span { display: block; }
+
+  .kdf-upgrade-notice { display: flex; align-items: flex-start; gap: 10px; }
+  .kdf-upgrade-notice > svg { flex: 0 0 auto; margin-top: 1px; }
+  .kdf-upgrade-notice > div { flex: 1 1 auto; min-width: 0; }
+  .kdf-upgrade-notice > .button { flex: 0 0 auto; margin-left: auto; }
+  .inline-status { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
   .warning { border-color: color-mix(in srgb, var(--warning) 32%, var(--line)); background: var(--warning-soft); color: var(--warning); }
 
   .container-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -656,7 +662,7 @@
     .transfer-meta { font-size: 12px; }
   }
 }
-/* LukePanel v2.0.7 UI and security hardening. */
+/* LukePanel v2.0.8 UI and security hardening. */
 @layer tokens {
   :root { --radius-md: var(--radius); }
 }
@@ -804,4 +810,9 @@
       width: 100%;
     }
   }
+}
+
+@media (max-width: 640px) {
+  .kdf-upgrade-notice { flex-wrap: wrap; }
+  .kdf-upgrade-notice > .button { width: 100%; margin-left: 0; }
 }

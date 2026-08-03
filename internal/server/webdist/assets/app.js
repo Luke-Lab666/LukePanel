@@ -1,9 +1,9 @@
 "use strict";
-/* LukePanel v2.0.7 React 18 frontend. No runtime CDN, no direct DOM templating. */
+/* LukePanel v2.0.8 React 18 frontend. No runtime CDN, no direct DOM templating. */
 (() => {
     'use strict';
     const { useCallback, useEffect, useMemo, useRef, useState } = React;
-    const VERSION = window.__LUKEPANEL_VERSION__ || 'v2.0.7';
+    const VERSION = window.__LUKEPANEL_VERSION__ || 'v2.0.8';
     const ROUTES = [
         { path: '/', title: '概览', subtitle: '服务器状态与关键指标', level: 1, nav: true, icon: 'dashboard' },
         { path: '/system', title: '系统', subtitle: '主机、服务、网络与维护', level: 1, nav: true, icon: 'system' },
@@ -3240,9 +3240,38 @@
         const registerPasskey = () => run('Passkey 注册失败', async () => { if (!window.PublicKeyCredential || !navigator.credentials)
             throw new Error('当前浏览器不支持 Passkey'); const name = passkeyName.trim() || navigator.platform || '当前设备'; const begin = asObject(await secureApi('/api/v1/auth/passkey/register/begin', { method: 'POST', body: jsonBody({ name }) })); const credential = await navigator.credentials.create({ publicKey: normalizeCreationOptions(begin.public_key || begin.options || begin) }); if (!credential)
             throw new Error('未完成 Passkey 创建'); await secureApi('/api/v1/auth/passkey/register/finish', { method: 'POST', body: jsonBody({ flow_id: begin.flow_id, name, credential: serializeCredential(credential) }) }); setPasskeyName(''); await reload(); props.notify('success', 'Passkey 已添加'); });
+        const upgradePasswordProtection = () => props.openModal({ title: '升级密码保护', content: React.createElement("form", { className: "form-stack", onSubmit: async (event) => { event.preventDefault(); const form = event.currentTarget; const submit = form.querySelector('button[type="submit"]'); if (submit)
+                    submit.disabled = true; try {
+                    await api('/api/v1/auth/password/upgrade', { method: 'POST', body: jsonBody({ current_password: new FormData(form).get('current_password') }) });
+                    props.closeModal();
+                    await reload();
+                    props.notify('success', '密码保护已升级为 Argon2id');
+                }
+                catch (cause) {
+                    props.notify('error', '密码保护升级失败', errorDetail(cause));
+                    if (submit)
+                        submit.disabled = false;
+                } } },
+                React.createElement("div", { className: "notice info kdf-upgrade-notice" },
+                    React.createElement(Icon, { name: "security" }),
+                    React.createElement("div", null,
+                        React.createElement("strong", null, "\u4E0D\u4F1A\u4FEE\u6539\u4F60\u7684\u767B\u5F55\u5BC6\u7801"),
+                        React.createElement("span", null, "\u7CFB\u7EDF\u53EA\u4F1A\u5728\u786E\u8BA4\u5F53\u524D\u5BC6\u7801\u6B63\u786E\u540E\uFF0C\u7528 Argon2id \u91CD\u65B0\u751F\u6210\u5E76\u4FDD\u5B58\u5BC6\u7801\u6821\u9A8C\u503C\u3002"))),
+                React.createElement(Field, { label: "\u5F53\u524D\u5BC6\u7801" },
+                    React.createElement(TextInput, { name: "current_password", type: "password", autoComplete: "current-password", required: true, autoFocus: true })),
+                React.createElement("p", { className: "form-help" }, "Argon2id \u4F7F\u7528 32 MiB \u4E34\u65F6\u5185\u5B58\u30013 \u8F6E\u8BA1\u7B97\u3001\u5E76\u884C\u5EA6 1\uFF1B\u4EC5\u5728\u767B\u5F55\u6216\u9A8C\u8BC1\u5BC6\u7801\u65F6\u77ED\u6682\u5360\u7528\u3002"),
+                React.createElement("div", { className: "form-actions" },
+                    React.createElement(Button, { onClick: props.closeModal }, "\u7A0D\u540E"),
+                    React.createElement(Button, { type: "submit", tone: "primary" }, "\u7ACB\u5373\u5347\u7EA7"))) });
         return React.createElement("div", { className: "page-stack settings-page" },
             React.createElement(PageHeader, { ...props, busy: loading, onRefresh: reload, actions: React.createElement(Button, { tone: "danger", onClick: props.onLogout }, "\u9000\u51FA\u767B\u5F55") }),
             error ? React.createElement(ErrorState, { error: error, retry: reload }) : loading && !settings.version ? React.createElement(LoadingState, { rows: 6 }) : React.createElement(React.Fragment, null,
+                settings.password_upgrade_required ? React.createElement("div", { className: "notice warning kdf-upgrade-notice" },
+                    React.createElement(Icon, { name: "security" }),
+                    React.createElement("div", null,
+                        React.createElement("strong", null, "\u5BC6\u7801\u4FDD\u62A4\u4ECD\u4F7F\u7528\u517C\u5BB9\u6A21\u5F0F"),
+                        React.createElement("span", null, "\u65E7 PBKDF2 \u6821\u9A8C\u503C\u4ECD\u53EF\u6B63\u5E38\u767B\u5F55\uFF1B\u5347\u7EA7\u4E3A Argon2id \u540E\u53EF\u83B7\u5F97\u66F4\u5F3A\u7684 GPU \u66B4\u529B\u7834\u89E3\u9632\u62A4\u3002")),
+                    React.createElement(Button, { tone: "primary", onClick: upgradePasswordProtection }, "\u7ACB\u5373\u5347\u7EA7")) : null,
                 React.createElement("div", { className: "settings-grid" },
                     React.createElement(Card, { className: "setting-card" },
                         React.createElement(SectionTitle, { title: "\u7BA1\u7406\u5458\u8D26\u6237", subtitle: "\u4FEE\u6539\u7528\u6237\u540D\u540E\u4F1A\u64A4\u9500\u5176\u4ED6\u767B\u5F55\u4F1A\u8BDD" }),
@@ -3288,8 +3317,14 @@
                             React.createElement(KeyValue, { label: "\u7248\u672C", value: text(settings.version, VERSION) }),
                             React.createElement(KeyValue, { label: "\u76D1\u542C", value: text(settings.listen), mono: true }),
                             React.createElement(KeyValue, { label: "HTTPS Cookie", value: boolText(settings.secure_cookie) }),
+                            React.createElement(KeyValue, { label: "\u5F53\u524D\u5BC6\u7801\u5B58\u50A8", value: React.createElement("span", { className: "inline-status" },
+                                    text(settings.password_hash_algorithm, '未知'),
+                                    settings.password_upgrade_required ? React.createElement(Badge, { tone: "warning" }, "\u5F85\u5347\u7EA7") : React.createElement(Badge, { tone: "success" }, "\u5F53\u524D\u65B9\u6848")) }),
                             React.createElement(KeyValue, { label: "\u5BC6\u7801\u6D3E\u751F", value: text(settings.crypto?.password_kdf) }),
-                            React.createElement(KeyValue, { label: "\u8FED\u4EE3\u6210\u672C", value: number(settings.crypto?.password_iterations).toLocaleString('zh-CN') }),
+                            React.createElement(KeyValue, { label: "\u5185\u5B58\u6210\u672C", value: `${number(settings.crypto?.password_memory_mib)} MiB（验证时临时占用）` }),
+                            React.createElement(KeyValue, { label: "\u65F6\u95F4\u6210\u672C", value: `${number(settings.crypto?.password_time_cost)} 轮` }),
+                            React.createElement(KeyValue, { label: "\u5E76\u884C\u5EA6", value: number(settings.crypto?.password_parallelism) }),
+                            React.createElement(KeyValue, { label: "\u6D3E\u751F\u5E76\u53D1\u4E0A\u9650", value: `${number(settings.crypto?.password_max_concurrent)}（约 ${number(settings.crypto?.password_memory_mib) * number(settings.crypto?.password_max_concurrent)} MiB 峰值）` }),
                             React.createElement(KeyValue, { label: "\u4F1A\u8BDD\u7B7E\u540D", value: text(settings.crypto?.session_mac) }),
                             React.createElement(KeyValue, { label: "\u540E\u91CF\u5B50\u51FA\u7AD9", value: settings.crypto?.post_quantum_capable ? React.createElement(Badge, { tone: "success" }, "\u5DF2\u542F\u7528\u6DF7\u5408 ML-KEM") : React.createElement(Badge, { tone: "warning" }, "\u5F53\u524D\u6784\u5EFA\u672A\u542F\u7528") }),
                             React.createElement(KeyValue, { label: "\u534F\u5546\u65B9\u6848", value: text(settings.crypto?.outbound_tls) }),
@@ -3397,6 +3432,41 @@
             } });
             return () => { active = false; };
         }, [applyIdentity, resetAuth]);
+        useEffect(() => {
+            if (!identity?.password_upgrade_required || !identity.session_id)
+                return;
+            const dismissedKey = `lukepanel:kdf-upgrade-prompted:${identity.session_id}`;
+            if (sessionStorage.getItem(dismissedKey) === '1')
+                return;
+            sessionStorage.setItem(dismissedKey, '1');
+            const timer = window.setTimeout(() => presentModal({ title: '升级密码保护', content: React.createElement("form", { className: "form-stack", onSubmit: async (event) => { event.preventDefault(); const form = event.currentTarget; const submit = form.querySelector('button[type="submit"]'); if (submit)
+                        submit.disabled = true; try {
+                        await api('/api/v1/auth/password/upgrade', { method: 'POST', body: jsonBody({ current_password: new FormData(form).get('current_password') }) });
+                        setIdentity(current => current ? { ...current, password_upgrade_required: false, password_hash_algorithm: 'Argon2id' } : current);
+                        setModal(null);
+                        sessionStorage.removeItem(dismissedKey);
+                        notify('success', '密码保护已升级为 Argon2id');
+                    }
+                    catch (cause) {
+                        notify('error', '密码保护升级失败', errorDetail(cause));
+                        if (submit)
+                            submit.disabled = false;
+                    } } },
+                    React.createElement("div", { className: "notice info kdf-upgrade-notice" },
+                        React.createElement(Icon, { name: "security" }),
+                        React.createElement("div", null,
+                            React.createElement("strong", null, "\u68C0\u6D4B\u5230\u65E7\u7248\u5BC6\u7801\u6821\u9A8C\u683C\u5F0F"),
+                            React.createElement("span", null,
+                                text(identity.password_hash_algorithm, 'PBKDF2'),
+                                " \u4ECD\u53EF\u6B63\u5E38\u767B\u5F55\u3002\u786E\u8BA4\u5F53\u524D\u5BC6\u7801\u540E\uFF0C\u7CFB\u7EDF\u4F1A\u539F\u5730\u66FF\u6362\u4E3A Argon2id\uFF0C\u4E0D\u4F1A\u4FEE\u6539\u5BC6\u7801\uFF0C\u4E5F\u4E0D\u4F1A\u5F71\u54CD Passkey \u6216\u4E24\u6B65\u9A8C\u8BC1\u3002"))),
+                    React.createElement(Field, { label: "\u5F53\u524D\u5BC6\u7801" },
+                        React.createElement(TextInput, { name: "current_password", type: "password", autoComplete: "current-password", required: true, autoFocus: true })),
+                    React.createElement("p", { className: "form-help" }, "\u5347\u7EA7\u8FC7\u7A0B\u4E34\u65F6\u4F7F\u7528\u7EA6 32 MiB \u5185\u5B58\uFF0C\u5B8C\u6210\u540E\u7ACB\u5373\u91CA\u653E\u3002\u4EE5\u540E\u4EC5\u5728\u767B\u5F55\u3001\u4FEE\u6539\u5BC6\u7801\u6216\u4E8C\u6B21\u9A8C\u8BC1\u65F6\u77ED\u6682\u4F7F\u7528\u3002"),
+                    React.createElement("div", { className: "form-actions" },
+                        React.createElement(Button, { onClick: () => setModal(null) }, "\u7A0D\u540E\u5904\u7406"),
+                        React.createElement(Button, { type: "submit", tone: "primary" }, "\u7ACB\u5373\u5347\u7EA7"))) }), 250);
+            return () => window.clearTimeout(timer);
+        }, [identity?.password_upgrade_required, identity?.password_hash_algorithm, identity?.session_id, notify, presentModal]);
         useEffect(() => {
             elevationHandler = () => {
                 if (elevationPromise.current)

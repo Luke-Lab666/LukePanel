@@ -5,13 +5,15 @@
       "username": "admin",
       "csrf_token": "audit-csrf",
       "session_id": "audit-session",
-      "totp_enabled": true
+      "totp_enabled": true,
+      "password_upgrade_required": false,
+      "password_hash_algorithm": "Argon2id"
     }
   },
   "/api/v1/settings": {
     "status": 200,
     "payload": {
-      "version": "v2.0.7",
+      "version": "v2.0.8",
       "listen": "127.0.0.1:8080",
       "secure_cookie": true,
       "agent_socket": "/run/lukepanel/agent.sock",
@@ -19,15 +21,20 @@
       "auto_refresh_seconds": 5,
       "crypto": {
         "runtime": "go1.26.5",
-        "password_kdf": "PBKDF2-HMAC-SHA-512",
-        "password_iterations": 750000,
+        "password_kdf": "Argon2id",
         "session_mac": "HMAC-SHA-512",
         "outbound_tls": "X25519MLKEM768 + SecP256r1MLKEM768 + SecP384r1MLKEM1024",
         "post_quantum_capable": true,
         "post_quantum_detail": "出站 HTTPS 优先协商传统算法 + ML-KEM 混合密钥交换",
         "inbound_tls": "由反向代理与浏览器协商",
-        "negotiation_required": true
-      }
+        "negotiation_required": true,
+        "password_memory_mib": 32,
+        "password_time_cost": 3,
+        "password_parallelism": 1,
+        "password_max_concurrent": 2
+      },
+      "password_upgrade_required": false,
+      "password_hash_algorithm": "Argon2id"
     }
   },
   "/api/v1/system/overview": {

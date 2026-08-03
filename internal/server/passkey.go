@@ -365,7 +365,8 @@ func (s *Server) establishSession(w http.ResponseWriter, r *http.Request, userna
 	ip := clientIP(r, s.cfg.TrustedProxy)
 	s.audit.Write(AuditEvent{IP: ip, User: username, Action: action, Target: session.ID, Result: "success"})
 	s.notifyLoginAsync(username, ip, r.UserAgent(), action)
-	writeJSON(w, 200, map[string]any{"username": username, "csrf_token": session.CSRFToken, "session_id": session.ID, "totp_enabled": s.totpEnabled()})
+	required, algorithm := s.passwordUpgradeStatus()
+	writeJSON(w, 200, map[string]any{"username": username, "csrf_token": session.CSRFToken, "session_id": session.ID, "totp_enabled": s.totpEnabled(), "password_upgrade_required": required, "password_hash_algorithm": algorithm})
 }
 
 func (s *Server) webauthnContext(r *http.Request) (string, string) {

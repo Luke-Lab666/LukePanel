@@ -6,20 +6,25 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/Luke-Lab666/LukePanel/internal/auth"
 )
 
 var goRuntimeVersionPattern = regexp.MustCompile(`go1\.(\d+)`)
 
 type cryptoRuntimeProfile struct {
-	Runtime             string `json:"runtime"`
-	PasswordKDF         string `json:"password_kdf"`
-	PasswordIterations  int    `json:"password_iterations"`
-	SessionMAC          string `json:"session_mac"`
-	OutboundTLS         string `json:"outbound_tls"`
-	PostQuantumCapable  bool   `json:"post_quantum_capable"`
-	PostQuantumDetail   string `json:"post_quantum_detail"`
-	InboundTLS          string `json:"inbound_tls"`
-	NegotiationRequired bool   `json:"negotiation_required"`
+	Runtime               string `json:"runtime"`
+	PasswordKDF           string `json:"password_kdf"`
+	PasswordMemoryMiB     int    `json:"password_memory_mib"`
+	PasswordTimeCost      int    `json:"password_time_cost"`
+	PasswordParallelism   int    `json:"password_parallelism"`
+	PasswordMaxConcurrent int    `json:"password_max_concurrent"`
+	SessionMAC            string `json:"session_mac"`
+	OutboundTLS           string `json:"outbound_tls"`
+	PostQuantumCapable    bool   `json:"post_quantum_capable"`
+	PostQuantumDetail     string `json:"post_quantum_detail"`
+	InboundTLS            string `json:"inbound_tls"`
+	NegotiationRequired   bool   `json:"negotiation_required"`
 }
 
 func currentCryptoRuntimeProfile() cryptoRuntimeProfile {
@@ -27,13 +32,17 @@ func currentCryptoRuntimeProfile() cryptoRuntimeProfile {
 }
 
 func cryptoProfileFor(goVersion, godebug string) cryptoRuntimeProfile {
+	kdf := auth.CurrentPasswordKDFProfile()
 	profile := cryptoRuntimeProfile{
-		Runtime:             goVersion,
-		PasswordKDF:         "PBKDF2-HMAC-SHA-512",
-		PasswordIterations:  750_000,
-		SessionMAC:          "HMAC-SHA-512",
-		InboundTLS:          "由反向代理与浏览器协商",
-		NegotiationRequired: true,
+		Runtime:               goVersion,
+		PasswordKDF:           kdf.Name,
+		PasswordMemoryMiB:     int(kdf.MemoryKiB / 1024),
+		PasswordTimeCost:      int(kdf.Time),
+		PasswordParallelism:   int(kdf.Parallelism),
+		PasswordMaxConcurrent: kdf.MaxConcurrent,
+		SessionMAC:            "HMAC-SHA-512",
+		InboundTLS:            "由反向代理与浏览器协商",
+		NegotiationRequired:   true,
 	}
 	minor := 0
 	if match := goRuntimeVersionPattern.FindStringSubmatch(goVersion); len(match) == 2 {
@@ -60,7 +69,7 @@ func cryptoProfileFor(goVersion, godebug string) cryptoRuntimeProfile {
 		if disableAll {
 			profile.PostQuantumDetail = "GODEBUG=tlsmlkem=0 已关闭后量子混合密钥交换"
 		} else {
-			profile.PostQuantumDetail = "请安装官方 v2.0.7 Release；源码自行构建时使用 Go 1.26.5 或更高安全修订版"
+			profile.PostQuantumDetail = "请安装官方 v2.0.8 Release；源码自行构建时使用 Go 1.26.5 或更高安全修订版"
 		}
 	}
 	return profile

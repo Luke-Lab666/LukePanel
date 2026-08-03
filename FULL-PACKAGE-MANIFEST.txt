@@ -1,30 +1,34 @@
-LukePanel v2.0.7 security hardening complete source package
+LukePanel v2.0.8 Argon2id migration complete source package
 
 Package type: complete repository source (not a patch)
-Version: v2.0.7
+Version: v2.0.8
 Repository: Luke-Lab666/LukePanel
-Base package: LukePanel v2.0.6 complete source
-Indexed source files: 153
-Indexed bytes: 3280220
+Base package: LukePanel v2.0.7 complete source
+Indexed source files: 156
+Indexed bytes: 3331355
 
-Security corrections:
-- Require a recent 5-minute elevation grant before any file content, preview, download, archive listing, backup listing or diff is read.
-- Require elevation before Docker logs, container Inspect data or Compose configuration is returned.
-- Remove recovery tokens from URLs; recovery uses a token-free page and POST body submission.
-- Count valid-password/missing-TOTP attempts toward login throttling.
-- Pin WebAuthn Origin and RP ID after successful assertion or registration.
-- Reduce the public health response to status only.
+Password migration:
+- New and changed passwords use Argon2id: 32 MiB, 3 rounds, parallelism 1, 24-byte salt and 32-byte digest.
+- Existing PBKDF2-HMAC-SHA-512 (750,000) and SHA-256 (600,000) hashes remain valid for login.
+- A successful legacy login displays an upgrade prompt; no hash is silently rewritten.
+- Upgrade requires the current password again and preserves the password, Passkeys, TOTP, recovery codes and current session.
+- Postponed migration remains available in the settings page.
+- At most two Argon2id derivations run concurrently, for about 64 MiB default peak working memory.
 
 Verification completed on this package:
 - React frontend build: pass
 - Go test ./...: pass
 - Go vet ./...: pass
+- Linux AMD64 and ARM64 static builds: pass
 - Static audit: 18 routes, pass
 - web/ and internal/server/webdist/: identical
 - install.sh and uninstall.sh syntax: pass
-- UI visibility regression: 5/5
+- UI and password migration prompt regression: 6/6
 - Accessibility: 36/36 route/view combinations, 0 issues
-- Full browser matrix: not claimed because the execution environment timed out; no old report is presented as a new v2.0.7 result
+- Full browser matrix: 198/198
+- Interaction contracts: 51/51
+- Visible-control truth audit: 149/149
+- Targeted Argon2 known-answer and password round-trip Race checks: pass
 
 Excluded from source package:
 - .git

@@ -25,6 +25,7 @@ class MockState:
     REGISTERED_MUTATIONS = {
         ('POST','/api/v1/auth/elevate'), ('POST','/api/v1/auth/logout'),
         ('PATCH','/api/v1/auth/account'), ('POST','/api/v1/auth/password'),
+        ('POST','/api/v1/auth/password/upgrade'),
         ('DELETE','/api/v1/auth/sessions'), ('DELETE','/api/v1/auth/passkeys'),
         ('POST','/api/v1/auth/totp/setup'),
         ('POST','/api/v1/auth/totp/confirm'), ('POST','/api/v1/auth/totp/disable'),
@@ -210,7 +211,7 @@ async def setup_page(browser,w,h,path,authenticated=True,context=None):
     await page.expose_function('__mockRequest',state.request)
     await page.set_content('<!doctype html><html lang="zh-CN"><head><base href="http://lukepanel.test/"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body><div id="app"></div></body></html>')
     await page.add_style_tag(path=str(WEB/'assets/app.css'))
-    await page.evaluate("""({path,version})=>{ const store={}; Object.defineProperty(window,'localStorage',{configurable:true,value:{getItem:k=>Object.prototype.hasOwnProperty.call(store,k)?store[k]:null,setItem:(k,v)=>{store[k]=String(v)},removeItem:k=>{delete store[k]},clear:()=>{for(const k of Object.keys(store))delete store[k]}}}); window.__LUKEPANEL_VERSION__=version; window.__LUKEPANEL_TEST_PATH__=path; window.fetch=async (input,init={})=>{const url=typeof input==='string'?input:(input&&input.url)||''; const result=await window.__mockRequest({url,method:init.method||'GET',body:init.body||null,headers:{}}); return new Response(JSON.stringify(result.payload),{status:result.status,headers:{'content-type':'application/json'}})}; }""",{'path':path,'version':VERSION})
+    await page.evaluate("""({path,version})=>{ const store={}; const sessionStore={}; const storage=(data)=>({getItem:k=>Object.prototype.hasOwnProperty.call(data,k)?data[k]:null,setItem:(k,v)=>{data[k]=String(v)},removeItem:k=>{delete data[k]},clear:()=>{for(const k of Object.keys(data))delete data[k]}}); Object.defineProperty(window,'localStorage',{configurable:true,value:storage(store)}); Object.defineProperty(window,'sessionStorage',{configurable:true,value:storage(sessionStore)}); window.__LUKEPANEL_VERSION__=version; window.__LUKEPANEL_TEST_PATH__=path; window.fetch=async (input,init={})=>{const url=typeof input==='string'?input:(input&&input.url)||''; const result=await window.__mockRequest({url,method:init.method||'GET',body:init.body||null,headers:{}}); return new Response(JSON.stringify(result.payload),{status:result.status,headers:{'content-type':'application/json'}})}; }""",{'path':path,'version':VERSION})
     if not authenticated:
       await page.evaluate("""()=>{
         window.PublicKeyCredential=function PublicKeyCredential(){};
