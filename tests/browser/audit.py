@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from playwright.async_api import async_playwright
 
 ROOT=Path(__file__).resolve().parents[2]
+VERSION=(ROOT/'VERSION').read_text().strip()
 WEB=ROOT/'web'
 REPORTS=ROOT/'reports'
 SHOTS=REPORTS/'screenshots'
@@ -181,7 +182,7 @@ class MockState:
         if path=='/api/v1/files/search' and method=='GET': return self.response(200,{'entries':[{'name':'nginx.conf','path':'/etc/nginx.conf','is_dir':False,'size':40}]})
         if path=='/api/v1/tools/run' and method=='POST': return self.response(200,{'success':True,'output':'diagnostic ok','duration_ms':10})
         if path=='/api/v1/ssh/keys/generate' and method=='POST': return self.response(200,{'filename':'id_ed25519','private_key':'-----BEGIN OPENSSH PRIVATE KEY-----\nAUDIT\n-----END OPENSSH PRIVATE KEY-----','public_key':'ssh-ed25519 AAAA audit','fingerprint':'SHA256:audit'})
-        if path=='/api/v1/security/ip-allowlist' and method=='POST': return self.response(200,{'ok':True,'recovery_path':'/api/v1/security/ip-allowlist/recover?token=audit'})
+        if path=='/api/v1/security/ip-allowlist' and method=='POST': return self.response(200,{'ok':True,'recovery_path':'/recover-access','recovery_token':'audit-recovery-token','expires_in':900})
         if path=='/api/v1/auth/totp/setup' and method=='POST': return self.response(200,{'secret':'AUDITSECRET','otpauth_uri':'otpauth://totp/LukePanel:admin','recovery_codes':['AAAA-BBBB']})
         if path=='/api/v1/auth/passkey/register/begin' and method=='POST': return self.response(200,{'flow_id':'register-flow','public_key':{'challenge':'AQID','rp':{'name':'LukePanel'},'user':{'id':'AQID','name':'admin','display_name':'admin'},'pub_key_cred_params':[{'type':'public-key','alg':-7}]}})
         if (method,path) in self.REGISTERED_MUTATIONS:
@@ -209,7 +210,7 @@ async def setup_page(browser,w,h,path,authenticated=True,context=None):
     await page.expose_function('__mockRequest',state.request)
     await page.set_content('<!doctype html><html lang="zh-CN"><head><base href="http://lukepanel.test/"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body><div id="app"></div></body></html>')
     await page.add_style_tag(path=str(WEB/'assets/app.css'))
-    await page.evaluate("""({path})=>{ const store={}; Object.defineProperty(window,'localStorage',{configurable:true,value:{getItem:k=>Object.prototype.hasOwnProperty.call(store,k)?store[k]:null,setItem:(k,v)=>{store[k]=String(v)},removeItem:k=>{delete store[k]},clear:()=>{for(const k of Object.keys(store))delete store[k]}}}); window.__LUKEPANEL_VERSION__='v2.0.6'; window.__LUKEPANEL_TEST_PATH__=path; window.fetch=async (input,init={})=>{const url=typeof input==='string'?input:(input&&input.url)||''; const result=await window.__mockRequest({url,method:init.method||'GET',body:init.body||null,headers:{}}); return new Response(JSON.stringify(result.payload),{status:result.status,headers:{'content-type':'application/json'}})}; }""",{'path':path})
+    await page.evaluate("""({path,version})=>{ const store={}; Object.defineProperty(window,'localStorage',{configurable:true,value:{getItem:k=>Object.prototype.hasOwnProperty.call(store,k)?store[k]:null,setItem:(k,v)=>{store[k]=String(v)},removeItem:k=>{delete store[k]},clear:()=>{for(const k of Object.keys(store))delete store[k]}}}); window.__LUKEPANEL_VERSION__=version; window.__LUKEPANEL_TEST_PATH__=path; window.fetch=async (input,init={})=>{const url=typeof input==='string'?input:(input&&input.url)||''; const result=await window.__mockRequest({url,method:init.method||'GET',body:init.body||null,headers:{}}); return new Response(JSON.stringify(result.payload),{status:result.status,headers:{'content-type':'application/json'}})}; }""",{'path':path,'version':VERSION})
     if not authenticated:
       await page.evaluate("""()=>{
         window.PublicKeyCredential=function PublicKeyCredential(){};
@@ -619,7 +620,7 @@ async def interaction_tests():
 
 async def main():
   started=time.time(); results,failures=await run_matrix(); interactions=await interaction_tests(); failures.extend({'device':'interaction','route':t['name'],'issues':t['issues']} for t in interactions if not t['passed'])
-  report={'version':'v2.0.6','framework':'React 18.2.0','render_checks':len(results),'render_passed':sum(1 for r in results if r['passed']),'interaction_checks':len(interactions),'interaction_passed':sum(1 for t in interactions if t['passed']),'failures':failures,'interactions':interactions,'results':results,'duration_seconds':round(time.time()-started,2)}
+  report={'version':VERSION,'framework':'React 18.2.0','render_checks':len(results),'render_passed':sum(1 for r in results if r['passed']),'interaction_checks':len(interactions),'interaction_passed':sum(1 for t in interactions if t['passed']),'failures':failures,'interactions':interactions,'results':results,'duration_seconds':round(time.time()-started,2)}
   REPORTS.mkdir(exist_ok=True); (REPORTS/'browser-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
   print(json.dumps({k:report[k] for k in ['render_checks','render_passed','interaction_checks','interaction_passed','duration_seconds']},ensure_ascii=False))
   if failures:

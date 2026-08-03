@@ -149,6 +149,10 @@ func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	s.configMu.Lock()
 	updated := s.cfg.Clone()
+	if updated.WebAuthnOrigin == "" && updated.WebAuthnRPID == "" {
+		updated.WebAuthnOrigin = challenge.Origin
+		updated.WebAuthnRPID = challenge.RPID
+	}
 	found := false
 	for i := range updated.Passkeys {
 		if updated.Passkeys[i].ID == credentials[index].ID {
@@ -269,6 +273,10 @@ func (s *Server) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	s.configMu.Lock()
 	updated := s.cfg.Clone()
+	if updated.WebAuthnOrigin == "" && updated.WebAuthnRPID == "" {
+		updated.WebAuthnOrigin = challenge.Origin
+		updated.WebAuthnRPID = challenge.RPID
+	}
 	for _, existing := range updated.Passkeys {
 		if existing.ID == credential.ID {
 			s.configMu.Unlock()
@@ -361,14 +369,19 @@ func (s *Server) establishSession(w http.ResponseWriter, r *http.Request, userna
 }
 
 func (s *Server) webauthnContext(r *http.Request) (string, string) {
+	s.configMu.RLock()
+	pinnedOrigin := strings.TrimSpace(s.cfg.WebAuthnOrigin)
+	pinnedRPID := strings.TrimSpace(s.cfg.WebAuthnRPID)
+	secureCookie, trustedProxy := s.cfg.SecureCookie, s.cfg.TrustedProxy
+	s.configMu.RUnlock()
+	if pinnedOrigin != "" && pinnedRPID != "" {
+		return pinnedOrigin, pinnedRPID
+	}
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
 	host = strings.TrimSuffix(strings.ToLower(strings.Trim(host, "[]")), ".")
-	s.configMu.RLock()
-	secureCookie, trustedProxy := s.cfg.SecureCookie, s.cfg.TrustedProxy
-	s.configMu.RUnlock()
 	scheme := "http"
 	if secureCookie {
 		scheme = "https"

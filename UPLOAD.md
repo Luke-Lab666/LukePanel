@@ -14,10 +14,10 @@
 建议提交信息：
 
 ```text
-v2.0.6 UI affordance and Passkey polish
+v2.0.7 security hardening
 ```
 
-推送后等待 GitHub Actions 的 Build 工作流通过，再创建 `v2.0.6` 标签或 Release。
+推送后等待 GitHub Actions 的 Build 工作流通过，再创建 `v2.0.7` 标签或 Release。
 
 
 ## GitHub 助手上传说明

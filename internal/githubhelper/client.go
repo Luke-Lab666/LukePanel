@@ -336,7 +336,7 @@ func (c *Client) CreateTag(ctx context.Context, owner, repo, tag, targetSHA, tok
 		return err
 	}
 	if !tagPattern.MatchString(tag) {
-		return errors.New("版本号必须以小写 v 开头，例如 v2.0.6")
+		return errors.New("版本号必须以小写 v 开头，例如 v2.0.7")
 	}
 	if strings.TrimSpace(token) == "" {
 		return errors.New("需要一次性 GitHub Token")

@@ -425,6 +425,8 @@ func (s *Server) backupImport(w http.ResponseWriter, r *http.Request) {
 	restored.SessionSecret = current.SessionSecret
 	restored.SecureCookie = current.SecureCookie
 	restored.TrustedProxy = current.TrustedProxy
+	restored.WebAuthnOrigin = current.WebAuthnOrigin
+	restored.WebAuthnRPID = current.WebAuthnRPID
 	if restored.AutoRefreshSeconds == 0 {
 		restored.AutoRefreshSeconds = config.Default().AutoRefreshSeconds
 	}

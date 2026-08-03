@@ -2,7 +2,7 @@
 from __future__ import annotations
 import json
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[2]; reports=ROOT/'reports'; parts=reports/'browser-parts'
+ROOT=Path(__file__).resolve().parents[2]; VERSION=(ROOT/'VERSION').read_text().strip(); reports=ROOT/'reports'; parts=reports/'browser-parts'
 devices=[('phone-320',320,900),('phone-360',360,800),('iphone-se',375,667),('iphone-390',390,844),('iphone-max',430,932),('phone-landscape',844,390),('tablet-768',768,1024),('tablet-landscape',1024,768),('desktop-1280',1280,800),('desktop-1440',1440,900),('desktop-1920',1920,1080)]
 rows=[]; failures=[]; duration=0.0
 for name,_,_ in devices:
@@ -19,7 +19,7 @@ for path in expected_files:
 if interaction_checks != interaction_count:
     raise SystemExit(f'expected {interaction_count} interaction checks, got {interaction_checks}')
 failures.extend({'device':'interaction','route':t['name'],'issues':t['issues']} for t in interaction_tests if not t['passed'])
-report={'version':'v2.0.6','framework':'React 18.2.0','render_checks':len(rows),'render_passed':sum(1 for r in rows if r['passed']),'interaction_checks':interaction_checks,'interaction_passed':interaction_passed,'failures':failures,'interactions':interaction_tests,'results':rows,'duration_seconds':round(duration,2)}
+report={'version':VERSION,'framework':'React 18.2.0','render_checks':len(rows),'render_passed':sum(1 for r in rows if r['passed']),'interaction_checks':interaction_checks,'interaction_passed':interaction_passed,'failures':failures,'interactions':interaction_tests,'results':rows,'duration_seconds':round(duration,2)}
 (reports/'browser-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
 print(json.dumps({k:report[k] for k in ('render_checks','render_passed','interaction_checks','interaction_passed','duration_seconds')},ensure_ascii=False))
 if failures: raise SystemExit(1)

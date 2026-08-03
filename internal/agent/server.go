@@ -685,13 +685,14 @@ func (s *Server) updateInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, data)
 }
 func (s *Server) requireSensitiveFileElevation(w http.ResponseWriter, r *http.Request, path string, wantDir bool) bool {
-	resolved, _, err := s.files.ResolveExisting(path, wantDir)
-	if err != nil {
+	if _, _, err := s.files.ResolveExisting(path, wantDir); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return false
 	}
-	if filemanager.IsSensitivePath(resolved) && r.URL.Query().Get("elevated") != "1" {
-		writeError(w, http.StatusForbidden, "需要二次验证后访问敏感文件")
+	// File contents may contain credentials regardless of path, extension, or name.
+	// Directory listing is a separate operation and does not use this gate.
+	if !wantDir && r.URL.Query().Get("elevated") != "1" {
+		writeError(w, http.StatusForbidden, "需要二次验证后访问文件内容")
 		return false
 	}
 	return true

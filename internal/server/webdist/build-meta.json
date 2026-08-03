@@ -1,15 +1,15 @@
 {
-  "version": "v2.0.6",
+  "version": "v2.0.7",
   "framework": "React",
   "react": "18.2.0",
   "files": {
     "assets/app.css": {
-      "bytes": 54891,
-      "sha256": "c3ec6cbd79cbfb3b30e928a7011bf547c3d388df5b80b114c7bd086de28ed6c2"
+      "bytes": 54885,
+      "sha256": "5779b39187e3e1f1875e0cc46af6d8a39c921a916205026ee7dff279acb62e29"
     },
     "assets/app.js": {
-      "bytes": 319999,
-      "sha256": "02f13927607303b6cd01fa8d0744fcc9cd144b204a2c8ee04b368b876050bfb8"
+      "bytes": 320373,
+      "sha256": "57464fc295e9c9265d491d42b3f5dd7dde133e1c257562e3fdb65e827fe47bbc"
     },
     "assets/apple-touch-icon.png": {
       "bytes": 34268,
@@ -49,7 +49,7 @@
     },
     "index.html": {
       "bytes": 1275,
-      "sha256": "719e2ed014e32d27f2a2658956f1a721f0a23795cec7d2d1542fcd311344fbfc"
+      "sha256": "df2fc714ac445b37b4ca258923c422de5a2b2fe84cf111f8e58c3783f83b0942"
     },
     "manifest.webmanifest": {
       "bytes": 544,

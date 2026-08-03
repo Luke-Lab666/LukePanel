@@ -1,7 +1,7 @@
 {
   "name": "lukepanel-frontend",
   "private": true,
-  "version": "2.0.6",
+  "version": "2.0.7",
   "description": "LukePanel React 18 management console",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",

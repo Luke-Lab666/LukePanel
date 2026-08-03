@@ -180,6 +180,7 @@ func New(cfg config.Config, configPath, version, githubClientID string, logger *
 	mux.HandleFunc("/api/v1/security/status", s.requireAuth(s.securityStatus))
 	mux.HandleFunc("/api/v1/security/ip-allowlist", s.requireAuth(s.ipAllowlist))
 	mux.HandleFunc("/api/v1/security/ip-allowlist/recover", s.ipAllowlistRecover)
+	mux.HandleFunc("/recover-access", s.ipAllowlistRecoveryPage)
 	mux.HandleFunc("/api/v1/security/login-notifications", s.requireAuth(s.loginNotifications))
 	mux.HandleFunc("/api/v1/security/fail2ban/install", s.requireAuth(s.fail2banInstall))
 	mux.HandleFunc("/api/v1/security/fail2ban", s.requireAuth(s.fail2ban))
@@ -237,7 +238,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "time": time.Now().UTC(), "version": s.version})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -272,6 +273,8 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	if totpEnabled {
 		if isSecondFactorMissing(req.OTP) {
+			s.limiter.Fail(ip)
+			s.audit.Write(AuditEvent{IP: ip, User: req.Username, Action: "auth.login.totp", Result: "failed", Detail: "second factor missing"})
 			writeErrorCode(w, http.StatusUnauthorized, "请输入身份验证器验证码或恢复码", "totp_required")
 			return
 		}
@@ -699,9 +702,15 @@ func (s *Server) dockerStats(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/docker/stats", query), nil, "")
 }
 func (s *Server) dockerLogs(w http.ResponseWriter, r *http.Request) {
-	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/docker/logs", url.Values{"id": {r.URL.Query().Get("id")}, "tail": {r.URL.Query().Get("tail")}}), nil, "")
+	if !s.requireElevation(w, r) {
+		return
+	}
+	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/docker/logs", url.Values{"id": {r.URL.Query().Get("id")}, "tail": {r.URL.Query().Get("tail")}}), nil, "docker.logs")
 }
 func (s *Server) dockerInspect(w http.ResponseWriter, r *http.Request) {
+	if !s.requireElevation(w, r) {
+		return
+	}
 	s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/docker/inspect", url.Values{"id": {r.URL.Query().Get("id")}}), nil, "docker.inspect")
 }
 
@@ -1222,7 +1231,7 @@ func (s *Server) securityStatus(w http.ResponseWriter, r *http.Request) {
 	recommendation := ""
 	if !profile.PostQuantumCapable {
 		status = "warn"
-		recommendation = "安装官方 v2.0.6 Release，或使用 Go 1.26.5 重新构建"
+		recommendation = "安装官方 v2.0.7 Release，或使用 Go 1.26.5 重新构建"
 	}
 	checks = append(checks, map[string]any{
 		"id": "post-quantum-tls", "title": "后量子混合 TLS", "status": status,
@@ -2018,7 +2027,10 @@ func (s *Server) snapshots(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) dockerComposeConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/docker/compose/config", url.Values{"project": {r.URL.Query().Get("project")}}), nil, "")
+		if !s.requireElevation(w, r) {
+			return
+		}
+		s.proxyAgentJSON(w, r, http.MethodGet, agent.Query("/v1/docker/compose/config", url.Values{"project": {r.URL.Query().Get("project")}}), nil, "docker.compose.config.read")
 		return
 	}
 	if r.Method != http.MethodPut {

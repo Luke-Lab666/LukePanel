@@ -11,9 +11,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -87,7 +87,7 @@ func (s *Server) ipAllowlist(w http.ResponseWriter, r *http.Request) {
 		out := map[string]any{"enabled": req.Enabled, "entries": entries}
 		if token != "" {
 			out["recovery_token"] = token
-			out["recovery_path"] = "/api/v1/security/ip-allowlist/recover?token=" + url.QueryEscape(token)
+			out["recovery_path"] = "/recover-access"
 			out["expires_in"] = 900
 		}
 		writeJSON(w, 200, out)
@@ -96,13 +96,32 @@ func (s *Server) ipAllowlist(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) ipAllowlistRecover(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+func (s *Server) ipAllowlistRecoveryPage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return
 	}
-	token := strings.TrimSpace(r.URL.Query().Get("token"))
-	if token == "" {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LukePanel 访问恢复</title><style>body{font-family:system-ui,sans-serif;max-width:560px;margin:8vh auto;padding:24px;line-height:1.6}form{display:grid;gap:14px}input,button{font:inherit;padding:12px;border-radius:10px;border:1px solid #94a3b8}button{cursor:pointer;font-weight:700}</style></head>
+<body><h1>LukePanel 访问恢复</h1><p>输入启用 IP 允许列表时保存的一次性恢复令牌。成功后，IP 允许列表会被关闭，令牌立即失效。</p>
+<form method="post" action="/api/v1/security/ip-allowlist/recover"><label>恢复令牌<input name="token" type="password" autocomplete="off" required></label><button type="submit">关闭 IP 允许列表</button></form></body></html>`)
+}
+
+func (s *Server) ipAllowlistRecover(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if site := strings.ToLower(r.Header.Get("Sec-Fetch-Site")); site == "cross-site" {
+		writeError(w, http.StatusForbidden, "拒绝跨站恢复请求")
+		return
+	}
+	var token string
+	if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
 		var req struct {
 			Token string `json:"token"`
 		}
@@ -110,12 +129,24 @@ func (s *Server) ipAllowlistRecover(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		token = req.Token
+	} else {
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		if err := r.ParseForm(); err != nil {
+			writeError(w, http.StatusBadRequest, "恢复请求格式错误")
+			return
+		}
+		token = r.FormValue("token")
+	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		writeError(w, http.StatusBadRequest, "恢复令牌不能为空")
+		return
 	}
 	s.configMu.Lock()
 	updated := s.cfg.Clone()
 	if updated.IPRecoveryHash == "" || time.Now().After(updated.IPRecoveryExpires) || !subtleStringEqual(updated.IPRecoveryHash, hashToken(token)) {
 		s.configMu.Unlock()
-		writeError(w, 403, "恢复链接无效或已过期")
+		writeError(w, http.StatusForbidden, "恢复令牌无效或已过期")
 		return
 	}
 	updated.IPAllowlistEnabled = false
@@ -127,11 +158,11 @@ func (s *Server) ipAllowlistRecover(w http.ResponseWriter, r *http.Request) {
 	}
 	s.configMu.Unlock()
 	if err != nil {
-		writeError(w, 500, "恢复失败")
+		writeError(w, http.StatusInternalServerError, "恢复失败")
 		return
 	}
 	s.audit.Write(AuditEvent{IP: clientIP(r, s.cfg.TrustedProxy), User: "recovery", Action: "security.ip-allowlist.recover", Result: "success"})
-	writeJSON(w, 200, map[string]any{"ok": true, "message": "IP 允许列表已关闭，现在可以重新登录"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "IP 允许列表已关闭，现在可以重新登录"})
 }
 
 func (s *Server) ipAllowedRequest(r *http.Request) bool {

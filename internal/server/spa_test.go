@@ -41,7 +41,8 @@ func TestSPAStillServesReactStaticAssets(t *testing.T) {
 		t.Fatalf("index status = %d", indexRecorder.Code)
 	}
 	index := indexRecorder.Body.String()
-	if !strings.Contains(index, "/assets/app.js?v=v2.0.6") || !strings.Contains(index, "/assets/app.css?v=v2.0.6") {
+	version := repositoryVersion(t)
+	if !strings.Contains(index, "/assets/app.js?v="+version) || !strings.Contains(index, "/assets/app.css?v="+version) {
 		t.Fatal("versioned frontend asset URLs are missing from index")
 	}
 	for _, asset := range []string{"/assets/vendor-runtime.js", "/assets/react-18.2.0.js", "/assets/react-dom-18.2.0.js", "/assets/react-bootstrap.js", "/assets/app.js"} {

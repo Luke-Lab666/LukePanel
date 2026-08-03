@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,6 +38,8 @@ type Config struct {
 	AgentSocket        string                   `json:"agent_socket"`
 	TrustedProxy       string                   `json:"trusted_proxy"`
 	SecureCookie       bool                     `json:"secure_cookie"`
+	WebAuthnOrigin     string                   `json:"webauthn_origin,omitempty"`
+	WebAuthnRPID       string                   `json:"webauthn_rp_id,omitempty"`
 	AllowedRoots       []string                 `json:"allowed_roots"`
 	AutoRefreshSeconds int                      `json:"auto_refresh_seconds"`
 	TOTPSecret         string                   `json:"totp_secret,omitempty"`
@@ -236,6 +239,31 @@ func (c Config) Validate() error {
 	}
 	if c.AutoRefreshSeconds < 2 || c.AutoRefreshSeconds > 300 {
 		return errors.New("auto_refresh_seconds must be between 2 and 300")
+	}
+	origin := strings.TrimSpace(c.WebAuthnOrigin)
+	rpID := strings.TrimSpace(c.WebAuthnRPID)
+	if (origin == "") != (rpID == "") {
+		return errors.New("webauthn_origin and webauthn_rp_id must be configured together")
+	}
+	if origin != "" {
+		if origin != c.WebAuthnOrigin || rpID != c.WebAuthnRPID {
+			return errors.New("WebAuthn origin and RP ID must not contain surrounding whitespace")
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+			return errors.New("webauthn_origin must be an origin without path, query, fragment or credentials")
+		}
+		host := strings.ToLower(parsed.Hostname())
+		if host == "" || !strings.EqualFold(host, rpID) {
+			return errors.New("webauthn_rp_id must match the WebAuthn origin hostname")
+		}
+		loopback := host == "localhost"
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			loopback = true
+		}
+		if parsed.Scheme != "https" && !(parsed.Scheme == "http" && loopback) {
+			return errors.New("WebAuthn requires HTTPS except on loopback hosts")
+		}
 	}
 	return nil
 }

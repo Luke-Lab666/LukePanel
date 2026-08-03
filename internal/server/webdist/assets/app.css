@@ -656,7 +656,7 @@
     .transfer-meta { font-size: 12px; }
   }
 }
-/* LukePanel v2.0.6 UI affordance and layout polish. */
+/* LukePanel v2.0.7 UI and security hardening. */
 @layer tokens {
   :root { --radius-md: var(--radius); }
 }

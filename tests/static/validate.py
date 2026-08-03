@@ -8,7 +8,7 @@ def check(cond,msg):
     if not cond: errors.append(msg)
 def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 version=(ROOT/'VERSION').read_text().strip()
-check(version=='v2.0.6', f'VERSION must be v2.0.6, got {version}')
+check(re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:[._-][A-Za-z0-9.-]+)?', version) is not None, f'invalid VERSION: {version}')
 source=(ROOT/'frontend/src/app.tsx').read_text()
 css=(ROOT/'frontend/src/app.css').read_text()
 html=(ROOT/'web/index.html').read_text()
@@ -41,7 +41,7 @@ check('statsError' in source and '容器实时统计读取失败' in source, 'Do
 check('overview.memory?.SwapTotal' in source and 'overview.memory?.SwapUsed' in source, 'dashboard must read the real Go collector Swap fields')
 check("percent={swapTotal ? swapPct : undefined}" in source, 'unconfigured Swap must not render a fake zero-percent progress bar')
 check('header-refresh-button' in source and '.header-refresh-button' in css, 'page refresh button must have a stable default outline')
-check('/* LukePanel v2.0.6 UI affordance and layout polish. */' in css, 'v2.0.6 UI polish layer missing')
+check(f'/* LukePanel {version} ' in css, f'{version} UI release marker missing')
 check('.button-ghost {' in css and 'border-color: var(--line-strong);' in css, 'ghost actions must have a stable default button block')
 check('.passkey-login-button::before' in css and '-webkit-mask: url(' in css, 'Passkey replacement glyph missing')
 check('.credential-row,\n  .key-row {\n    display: grid;' in css, 'credential and key rows must use stable grid layout')
@@ -66,7 +66,7 @@ check('https://' not in html and 'http://' not in html, 'runtime HTML must not l
 for asset in ['vendor-runtime.js','react-18.2.0.js','react-dom-18.2.0.js','react-bootstrap.js','app.js','app.css']:
     check((ROOT/'web/assets'/asset).is_file(), f'missing built asset {asset}')
 meta=json.loads((ROOT/'web/build-meta.json').read_text())
-check(meta.get('version')=='v2.0.6' and meta.get('framework')=='React' and meta.get('react')=='18.2.0','invalid build metadata')
+check(meta.get('version')==version and meta.get('framework')=='React' and meta.get('react')=='18.2.0','invalid build metadata')
 for webfile in (ROOT/'web').rglob('*'):
     if webfile.is_file():
         peer=ROOT/'internal/server/webdist'/webfile.relative_to(ROOT/'web')
@@ -75,9 +75,15 @@ check("font-size: 16px" in css, 'mobile CSS must include 16px form controls')
 check('env(safe-area-inset-bottom)' in css, 'mobile safe-area handling missing')
 check('@media' in css and 'max-width: 680px' in css, 'phone breakpoint missing')
 # Version alignment
-for path in ['frontend/package.json','README.md','CHANGELOG.md']:
-    check('2.0.6' in (ROOT/path).read_text(), f'{path} not aligned to 2.0.6')
-check('## v2.0.6' in changelog, 'v2.0.6 changelog section missing')
+plain_version=version.removeprefix('v')
+package=json.loads((ROOT/'frontend/package.json').read_text())
+check(package.get('version')==plain_version, f'frontend/package.json not aligned to {plain_version}')
+check(f'当前版本：<code>{version}</code>' in readme, f'README not aligned to {version}')
+check(f'## {version} - ' in changelog, f'{version} changelog section missing')
+# Security-hardening contracts
+check('if !s.requireElevation(w, r)' in server_source and 'docker.compose.config.read' in server_source, 'sensitive Docker reads must require elevation')
+check('recovery_path"] = "/recover-access"' in (ROOT/'internal/server/security_auth.go').read_text(), 'recovery page path missing')
+check('r.Method != http.MethodPost' in (ROOT/'internal/server/security_auth.go').read_text(), 'recovery endpoint must reject non-POST methods')
 if errors:
     print('STATIC AUDIT FAILED')
     for e in errors: print(' -',e)

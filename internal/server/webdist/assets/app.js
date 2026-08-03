@@ -1,9 +1,9 @@
 "use strict";
-/* LukePanel v2.0.6 React 18 frontend. No runtime CDN, no direct DOM templating. */
+/* LukePanel v2.0.7 React 18 frontend. No runtime CDN, no direct DOM templating. */
 (() => {
     'use strict';
     const { useCallback, useEffect, useMemo, useRef, useState } = React;
-    const VERSION = window.__LUKEPANEL_VERSION__ || 'v2.0.6';
+    const VERSION = window.__LUKEPANEL_VERSION__ || 'v2.0.7';
     const ROUTES = [
         { path: '/', title: '概览', subtitle: '服务器状态与关键指标', level: 1, nav: true, icon: 'dashboard' },
         { path: '/system', title: '系统', subtitle: '主机、服务、网络与维护', level: 1, nav: true, icon: 'system' },
@@ -1432,7 +1432,7 @@
                 return;
         } await mutate('/api/v1/docker/action', { id: item.id, action }, action === 'remove' ? '容器已删除' : '容器状态已更新'); };
         const showLogs = async (item) => { try {
-            const result = await api(`/api/v1/docker/logs${query({ id: item.id, tail: 500 })}`);
+            const result = await secureApi(`/api/v1/docker/logs${query({ id: item.id, tail: 500 })}`);
             props.openModal({ title: `${containerName(item)} · 日志`, size: 'large', content: React.createElement(Terminal, { maxHeight: 650 }, result.logs) });
         }
         catch (cause) {
@@ -1452,7 +1452,7 @@
                     React.createElement(Button, { onClick: props.closeModal }, "\u53D6\u6D88"),
                     React.createElement(Button, { type: "submit", tone: "primary", icon: "terminal" }, "\u6267\u884C"))) }); };
         const editContainer = async (item) => { try {
-            const edit = asObject(await api(`/api/v1/docker/inspect${query({ id: item.id })}`));
+            const edit = asObject(await secureApi(`/api/v1/docker/inspect${query({ id: item.id })}`));
             const ports = listOf(edit.ports).map(port => [port.host_ip, port.host_port, `${port.container_port}/${port.protocol || 'tcp'}`].filter(Boolean).join('|')).join('\n');
             const mounts = listOf(edit.mounts).map(mount => `${mount.type || 'bind'}|${mount.source}|${mount.target}|${mount.read_only ? 'ro' : 'rw'}`).join('\n');
             props.openModal({ title: `编辑容器 · ${containerName(item)}`, size: 'large', content: React.createElement("form", { className: "form-stack", onSubmit: async (event) => { event.preventDefault(); const values = new FormData(event.currentTarget); const parsePorts = (value) => lines(value).map(line => { const fields = line.split('|').map(part => part.trim()); if (fields.length < 2 || fields.length > 3)
@@ -1512,7 +1512,7 @@
             return; await mutate('/api/v1/docker/compose/action', { project: project.name, action }, 'Compose 操作完成'); };
         const editCompose = async (project) => {
             try {
-                const config = asObject(await api(`/api/v1/docker/compose/config${query({ project: project.name })}`));
+                const config = asObject(await secureApi(`/api/v1/docker/compose/config${query({ project: project.name })}`));
                 const files = listOf(config, 'files');
                 if (!files.length)
                     throw new Error('项目没有可编辑的 Compose 配置文件');
@@ -3009,13 +3009,17 @@
             try {
                 const result = asObject(await secureApi('/api/v1/security/ip-allowlist', { method: 'POST', body: jsonBody({ enabled: !!allowlist.enabled, entries: lines(allowlistText) }) }));
                 await reload();
-                if (result.recovery_path)
-                    props.openModal({ title: '保存恢复地址', content: React.createElement("div", { className: "form-stack" },
-                            React.createElement("p", null, "\u8BBF\u95EE\u9650\u5236\u5DF2\u542F\u7528\u3002\u8BF7\u7ACB\u5373\u4FDD\u5B58\u4E0B\u9762\u7684\u4E34\u65F6\u6062\u590D\u5730\u5740\uFF0C\u5931\u8054\u65F6\u53EF\u7528\u5B83\u5173\u95ED\u9650\u5236\u3002"),
-                            React.createElement(Terminal, null, `${location.origin}${result.recovery_path}`),
+                if (result.recovery_path && result.recovery_token) {
+                    const recoveryPage = `${location.origin}${result.recovery_path}`;
+                    const recoveryToken = text(result.recovery_token);
+                    const recoveryBundle = `恢复页面：${recoveryPage}\n一次性恢复令牌：${recoveryToken}`;
+                    props.openModal({ title: '保存访问恢复信息', content: React.createElement("div", { className: "form-stack" },
+                            React.createElement("p", null, "\u8BBF\u95EE\u9650\u5236\u5DF2\u542F\u7528\u3002\u8BF7\u5C06\u6062\u590D\u9875\u9762\u548C\u4E00\u6B21\u6027\u4EE4\u724C\u5206\u5F00\u5B89\u5168\u4FDD\u5B58\uFF1B\u4EE4\u724C\u4E0D\u4F1A\u51FA\u73B0\u5728 URL \u4E2D\uFF0C\u6709\u6548\u671F\u4E3A 15 \u5206\u949F\u3002"),
+                            React.createElement(Terminal, null, recoveryBundle),
                             React.createElement("div", { className: "form-actions" },
-                                React.createElement(Button, { icon: "copy", onClick: () => copyText(`${location.origin}${result.recovery_path}`).then(() => props.notify('success', '恢复地址已复制')) }, "\u590D\u5236"),
+                                React.createElement(Button, { icon: "copy", onClick: () => copyText(recoveryBundle).then(() => props.notify('success', '恢复信息已复制')) }, "\u590D\u5236\u6062\u590D\u4FE1\u606F"),
                                 React.createElement(Button, { tone: "primary", onClick: props.closeModal }, "\u6211\u5DF2\u4FDD\u5B58"))) });
+                }
                 else
                     props.notify('success', 'IP 允许列表已保存');
             }

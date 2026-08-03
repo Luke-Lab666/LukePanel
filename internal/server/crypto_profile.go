@@ -60,7 +60,7 @@ func cryptoProfileFor(goVersion, godebug string) cryptoRuntimeProfile {
 		if disableAll {
 			profile.PostQuantumDetail = "GODEBUG=tlsmlkem=0 已关闭后量子混合密钥交换"
 		} else {
-			profile.PostQuantumDetail = "请安装官方 v2.0.6 Release；源码自行构建时使用 Go 1.26.5 或更高安全修订版"
+			profile.PostQuantumDetail = "请安装官方 v2.0.7 Release；源码自行构建时使用 Go 1.26.5 或更高安全修订版"
 		}
 	}
 	return profile

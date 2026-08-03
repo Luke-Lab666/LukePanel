@@ -9,13 +9,22 @@
 </p>
 
 <p align="center">
-  当前版本：<code>v2.0.6</code>
+  当前版本：<code>v2.0.7</code>
 </p>
 
 LukePanel 面向需要维护单台 Debian 或 Ubuntu 服务器的个人用户和小型团队。它提供系统、Docker、文件、SSH、安全与审计管理，同时避免把浏览器变成任意 root WebShell。
 
 Web 服务以普通系统用户运行；需要 root 权限的操作由独立 Agent 通过本地 Unix Socket 执行。Agent 只接受经过校验的固定动作，不接收浏览器传入的任意 Shell 命令。
 
+
+## v2.0.7 安全加固
+
+- 所有文件内容、预览、下载和历史版本读取统一要求近期二次验证，目录浏览仍可直接使用。
+- Docker 日志、容器 Inspect 与 Compose 配置读取改为二次验证后开放。
+- IP 允许列表恢复令牌不再进入请求 URL；恢复仅接受 POST，并提供不携带令牌的独立恢复页面。
+- 密码正确但缺少 TOTP 也计入登录限速，减少密码确认探测和高成本哈希滥用。
+- WebAuthn Origin 与 RP ID 在首次成功验证后固定，后续不再信任任意 Host 请求头。
+- 公共健康接口不再暴露版本和服务器时间。
 
 ## v2.0.6 交互可见性与 Passkey UI 修正
 

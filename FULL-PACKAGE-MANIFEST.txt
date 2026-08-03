@@ -1,34 +1,35 @@
-LukePanel v2.0.6 UI affordance and Passkey polish complete source package
+LukePanel v2.0.7 security hardening complete source package
 
 Package type: complete repository source (not a patch)
-Version: v2.0.6
+Version: v2.0.7
 Repository: Luke-Lab666/LukePanel
-Indexed source files: 151
-Indexed bytes: 3268476
+Base package: LukePanel v2.0.6 complete source
+Indexed source files: 153
+Indexed bytes: 3280220
 
-Primary corrections:
-- Replaced the visually dense Passkey fingerprint with a clean circular key glyph.
-- Restored a visible default block, border and surface for ghost action buttons.
-- Added stable grid layouts for Passkey/SSH credentials and mobile full-row actions.
-- Refined small-screen title/action layout, file actions, favorites and user selection.
-- Bumped asset cache keys to v2.0.6 so Safari cannot reuse the old CSS.
-- Added tests/browser/ui_regression.py and wired it into make browser-test.
+Security corrections:
+- Require a recent 5-minute elevation grant before any file content, preview, download, archive listing, backup listing or diff is read.
+- Require elevation before Docker logs, container Inspect data or Compose configuration is returned.
+- Remove recovery tokens from URLs; recovery uses a token-free page and POST body submission.
+- Count valid-password/missing-TOTP attempts toward login throttling.
+- Pin WebAuthn Origin and RP ID after successful assertion or registration.
+- Reduce the public health response to status only.
 
-Verification:
+Verification completed on this package:
 - React frontend build: pass
-- Static audit: 18 routes, pass
 - Go test ./...: pass
 - Go vet ./...: pass
-- Browser render matrix: 198/198
-- Interaction contracts: 51/51
+- Static audit: 18 routes, pass
+- web/ and internal/server/webdist/: identical
+- install.sh and uninstall.sh syntax: pass
 - UI visibility regression: 5/5
-- Visible controls truth audit: 149/149
-- Accessibility: 36 route/view combinations, 0 issues
-- Upload progress regression: pass
+- Accessibility: 36/36 route/view combinations, 0 issues
+- Full browser matrix: not claimed because the execution environment timed out; no old report is presented as a new v2.0.7 result
 
 Excluded from source package:
 - .git
 - node_modules
 - frontend/dist temporary compiler output
-- reports and screenshots (provided separately)
+- reports and screenshots
 - Python caches
+- locally built binaries
